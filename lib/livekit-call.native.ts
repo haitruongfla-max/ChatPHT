@@ -1,4 +1,4 @@
-import { AudioSession } from "@livekit/react-native";
+import { AndroidAudioTypePresets, AudioSession } from "@livekit/react-native";
 import { LocalVideoTrack, Room, Track } from "livekit-client";
 import { Platform } from "react-native";
 
@@ -17,10 +17,18 @@ export class LiveKitCall {
 
   async connect(session: LiveKitSession, kind: "audio" | "video") {
     ensureLiveKitGlobals();
+    await AudioSession.configureAudio({
+      android: {
+        preferredOutputList: ["speaker", "bluetooth", "headset", "earpiece"],
+        audioTypeOptions: { ...AndroidAudioTypePresets.communication, forceHandleAudioRouting: true },
+      },
+      ios: { defaultOutput: "speaker" },
+    });
     await AudioSession.startAudioSession();
     await this.room.connect(session.serverUrl, session.token);
     await this.room.localParticipant.setMicrophoneEnabled(true);
     if (kind === "video") await this.room.localParticipant.setCameraEnabled(true);
+    await this.setSpeakerEnabled(true);
   }
 
   async setMicrophoneEnabled(enabled: boolean) {
@@ -48,8 +56,9 @@ export class LiveKitCall {
       return;
     }
     const outputs = await AudioSession.getAudioOutputs();
-    const selected = enabled ? "speaker" : "earpiece";
-    if (outputs.includes(selected)) await AudioSession.selectAudioOutput(selected);
+    const preferred = enabled ? "speaker" : "earpiece";
+    const selected = outputs.includes(preferred) ? preferred : outputs.includes("speaker") ? "speaker" : outputs[0];
+    if (selected) await AudioSession.selectAudioOutput(selected);
   }
 
   getRoom() {

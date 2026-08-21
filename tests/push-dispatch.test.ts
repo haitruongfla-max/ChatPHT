@@ -10,7 +10,7 @@ import { buildIncomingCallPushPayload, buildNewMessagePushPayload, dispatchNewMe
 describe("private chat push dispatch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({ data: [{ status: "ok" }] }) }));
   });
 
   it("builds a notification without exposing sender identity or message content", () => {
@@ -61,5 +61,17 @@ describe("private chat push dispatch", () => {
         body: JSON.stringify([buildNewMessagePushPayload("ExponentPushToken[recipient-device]", 18)]),
       }),
     );
+  });
+
+  it("does not count a notification as sent when Expo rejects its token", async () => {
+    vi.mocked(db.listConversationRecipientDevices).mockResolvedValue([
+      { token: "ExponentPushToken[expired-device]", platform: "android" },
+    ] as any);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ data: [{ status: "error", details: { error: "DeviceNotRegistered" } }] }),
+    }));
+
+    await expect(dispatchNewMessagePushNotifications({ conversationId: 18, senderId: 7 })).resolves.toEqual({ sent: 0 });
   });
 });

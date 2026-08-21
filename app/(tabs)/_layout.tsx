@@ -3,7 +3,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { PushNotificationManager } from "@/components/push-notification-manager";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/hooks/use-auth";
 import { useEffect } from "react";
@@ -32,9 +31,7 @@ export default function TabLayout() {
   }, [markAllDelivered, userId]);
 
   return (
-    <>
-      <PushNotificationManager />
-      <Tabs
+    <Tabs
         screenOptions={{
           tabBarActiveTintColor: colors.tint,
           headerShown: false,
@@ -70,7 +67,6 @@ export default function TabLayout() {
             tabBarIcon: ({ color }) => <IconSymbol size={25} name="person.fill" color={color} />,
           }}
         />
-      </Tabs>
-    </>
+    </Tabs>
   );
 }

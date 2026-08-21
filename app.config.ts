@@ -25,6 +25,7 @@ const bundleId =
 // e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
 const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
 const schemeFromBundleId = `manus${timestamp}`;
+const expoProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
 
 const env = {
   // App branding - update these values directly (do not use env vars)
@@ -68,7 +69,7 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT"],
+    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE"],
     intentFilters: [
       {
         action: "VIEW",
@@ -88,6 +89,7 @@ const config: ExpoConfig = {
     output: "static",
     favicon: "./assets/images/favicon.png",
   },
+  extra: expoProjectId ? { eas: { projectId: expoProjectId } } : undefined,
   plugins: [
     "expo-router",
     "@livekit/react-native-expo-plugin",

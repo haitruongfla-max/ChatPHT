@@ -22,6 +22,7 @@ import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-run
 import { AppLockGate } from "@/components/app-lock-gate";
 import { IncomingCallWatcher } from "@/components/incoming-call-watcher";
 import { CallMiniOverlay } from "@/components/call-mini-overlay";
+import { PushNotificationManager } from "@/components/push-notification-manager";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -99,6 +100,7 @@ export default function RootLayout() {
             <Stack.Screen name="call" options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }} />
           </Stack>
           <IncomingCallWatcher />
+          <PushNotificationManager />
           <CallMiniOverlay />
           <AppLockGate />
           <StatusBar style="auto" />

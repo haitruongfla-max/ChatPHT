@@ -94,3 +94,8 @@
 - [x] Đồng bộ hủy, nhận và hết hạn cuộc gọi giữa hai thiết bị để không còn màn hình gọi cũ.
 - [x] Thêm chuông báo trong ứng dụng và thông báo cuộc gọi đến khi ứng dụng ở nền.
 - [x] Kiểm thử hai chiều luồng gọi, thông báo và toàn bộ ChatPHT; lưu checkpoint ổn định.
+- [x] Chẩn đoán quyền micro/camera và xuất bản media LiveKit cho cuộc gọi video hai chiều.
+- [x] Đồng bộ mốc bắt đầu thời lượng từ lúc cuộc gọi được nhận thay vì lúc người gọi bắt đầu đổ chuông.
+- [x] Rà soát và khắc phục chuỗi đăng ký thiết bị, gửi thông báo, hiển thị thông báo, chuông và nhạc chờ.
+- [x] Kiểm thử hồi quy cuộc gọi audio/video, thời lượng và thông báo trên ChatPHT; lưu checkpoint ổn định.
+- [x] Loại bỏ tệp chuông riêng dung lượng lớn, dùng chuông hệ thống và lưu phiên bản nhẹ.

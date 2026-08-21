@@ -13,27 +13,30 @@ export function conversationIdFromPushData(data: unknown): number | null {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+export async function ensureChatNotificationChannels() {
+  if (Platform.OS !== "android") return;
+  await Notifications.setNotificationChannelAsync("messages", {
+    name: "Tin nhắn mới",
+    description: "Thông báo khi bạn nhận được tin nhắn ChatPHT mới.",
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 180, 100, 180],
+    lightColor: "#2563EB",
+  });
+  await Notifications.setNotificationChannelAsync("calls", {
+    name: "Cuộc gọi đến",
+    description: "Chuông và thông báo khi có cuộc gọi ChatPHT đến.",
+    importance: Notifications.AndroidImportance.MAX,
+    sound: "default",
+    vibrationPattern: [0, 400, 180, 400, 180, 400],
+    lightColor: "#22C55E",
+  });
+}
+
 export async function registerForChatPushNotifications() {
   if (Platform.OS === "web") return null;
   if (!(await areChatPushNotificationsEnabled())) return null;
 
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("messages", {
-      name: "Tin nhắn mới",
-      description: "Thông báo khi bạn nhận được tin nhắn SwiftChat mới.",
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 180, 100, 180],
-      lightColor: "#2563EB",
-    });
-    await Notifications.setNotificationChannelAsync("calls", {
-      name: "Cuộc gọi đến",
-      description: "Chuông và thông báo khi có cuộc gọi ChatPHT đến.",
-      importance: Notifications.AndroidImportance.MAX,
-      sound: "default",
-      vibrationPattern: [0, 400, 180, 400, 180, 400],
-      lightColor: "#22C55E",
-    });
-  }
+  await ensureChatNotificationChannels();
 
   const existing = await Notifications.getPermissionsAsync();
   const permission = existing.status === "granted" ? existing : await Notifications.requestPermissionsAsync();

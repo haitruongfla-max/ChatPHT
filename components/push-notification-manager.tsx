@@ -8,7 +8,7 @@ import { trpc } from "@/lib/trpc";
 import { router } from "expo-router";
 import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useRef } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 
 if (Platform.OS !== "web") {
   Notifications.setNotificationHandler({
@@ -70,18 +70,22 @@ export function PushNotificationManager() {
   useEffect(() => {
     if (!user || Platform.OS === "web") return;
     let active = true;
-    void (async () => {
+    const registerDeviceForPush = async () => {
       try {
         const token = await registerForChatPushNotifications();
         if (!token || !active) return;
         await saveToken(token);
-        if (!active) return;
       } catch (error) {
         console.warn("[Push] Không thể đăng ký thông báo trên thiết bị này.", error);
       }
-    })();
+    };
+    void registerDeviceForPush();
+    const appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void registerDeviceForPush();
+    });
     return () => {
       active = false;
+      appStateSubscription.remove();
     };
   }, [saveToken, user]);
 

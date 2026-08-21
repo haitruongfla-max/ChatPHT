@@ -7,6 +7,7 @@ import { LiveKitRoom, useTracks, VideoTrack } from "@livekit/react-native";
 import { Track } from "livekit-client";
 
 import { activeCall } from "@/lib/active-call";
+import { createCallTonePlayer, stopCallTone } from "@/lib/call-sounds";
 import { LiveKitCall } from "@/lib/livekit-call";
 import { trpc } from "@/lib/trpc";
 
@@ -34,6 +35,7 @@ export default function CallScreen() {
   const [isConnecting, setIsConnecting] = useState(false);
   const call = useRef(resumed?.call ?? new LiveKitCall()).current;
   const ringingScale = useRef(new Animated.Value(1)).current;
+  const ringbackTone = useRef<Awaited<ReturnType<typeof createCallTonePlayer>> | null>(null);
   const started = useRef(Boolean(resumed?.connected));
   const finalized = useRef(false);
   const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: 900 });
@@ -41,10 +43,33 @@ export default function CallScreen() {
   const join = trpc.calls.join.useMutation();
   const decline = trpc.calls.decline.useMutation();
   const end = trpc.calls.end.useMutation();
+  const answeredAt = details.data?.answeredAt ? new Date(details.data.answeredAt).getTime() : null;
+  const isAnswered = details.data?.status === "active";
 
   useEffect(() => () => {
     if (!activeCall.isMinimized(callId)) void call.disconnect();
+    stopCallTone(ringbackTone.current);
   }, [call, callId]);
+
+  useEffect(() => {
+    const shouldPlayRingback = direction === "outgoing" && connected && !isAnswered;
+    if (!shouldPlayRingback) {
+      stopCallTone(ringbackTone.current);
+      ringbackTone.current = null;
+      return;
+    }
+    let active = true;
+    void createCallTonePlayer().then((player) => {
+      if (!active || isAnswered) return stopCallTone(player);
+      ringbackTone.current = player;
+      player.play();
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+      stopCallTone(ringbackTone.current);
+      ringbackTone.current = null;
+    };
+  }, [connected, direction, isAnswered]);
 
   useEffect(() => {
     const status = details.data?.status;
@@ -57,23 +82,24 @@ export default function CallScreen() {
   }, [call, callId, details.data?.status]);
 
   useEffect(() => {
-    if (connected) {
-      const timer = setInterval(() => {
-        setSeconds((value) => {
-          const next = value + 1;
-          activeCall.update(callId, { seconds: next });
-          return next;
-        });
-      }, 1000);
+    if (connected && isAnswered && answeredAt) {
+      const updateDuration = () => {
+        const next = Math.max(0, Math.floor((Date.now() - answeredAt) / 1000));
+        setSeconds(next);
+        activeCall.update(callId, { seconds: next });
+      };
+      updateDuration();
+      const timer = setInterval(updateDuration, 1000);
       return () => clearInterval(timer);
     }
+    if (connected) return;
     const animation = Animated.loop(Animated.sequence([
       Animated.timing(ringingScale, { toValue: 1.06, duration: 850, useNativeDriver: true }),
       Animated.timing(ringingScale, { toValue: 1, duration: 850, useNativeDriver: true }),
     ]));
     animation.start();
     return () => animation.stop();
-  }, [callId, connected, ringingScale]);
+  }, [answeredAt, callId, connected, isAnswered, ringingScale]);
 
   useEffect(() => {
     if (direction !== "outgoing" || started.current || !callId || activeCall.get(callId)?.connected) return;
@@ -127,7 +153,7 @@ export default function CallScreen() {
         await call.connect(session, kind);
       }
       setConnected(true);
-      publishActiveState();
+      publishActiveState({ seconds: 0 });
     } catch (error) {
       if (isAnswer) {
         void end.mutateAsync({ callId }).catch(() => undefined);
@@ -208,10 +234,10 @@ export default function CallScreen() {
   }
 
   const subtitle = useMemo(() => {
-    if (connected) return callDuration(seconds);
+    if (connected && isAnswered) return callDuration(seconds);
     if (direction === "incoming") return kind === "video" ? "Cuộc gọi video đến" : "Cuộc gọi thoại đến";
     return kind === "video" ? "Đang mời tham gia video…" : "Đang gọi…";
-  }, [connected, direction, kind, seconds]);
+  }, [connected, direction, isAnswered, kind, seconds]);
 
   if (details.isLoading && !connected) return <SafeAreaView style={styles.safe}><View style={styles.center}><Text style={styles.mutedText}>Đang chuẩn bị cuộc gọi…</Text></View></SafeAreaView>;
 
@@ -247,8 +273,14 @@ export default function CallScreen() {
 
 function VideoStage() {
   const tracks = useTracks([Track.Source.Camera]);
-  const track = tracks.find((item) => item.publication?.track);
-  return <View style={styles.video}>{track ? <VideoTrack trackRef={track} style={styles.videoTrack} mirror={track.participant.isLocal} zOrder={0} /> : <Text style={styles.mutedText}>Đang chờ hình ảnh video…</Text>}</View>;
+  const remoteTrack = tracks.find((item) => !item.participant.isLocal && item.publication?.track);
+  const localTrack = tracks.find((item) => item.participant.isLocal && item.publication?.track);
+  return (
+    <View style={styles.video}>
+      {remoteTrack ? <VideoTrack trackRef={remoteTrack} style={styles.videoTrack} mirror={false} zOrder={0} /> : <Text style={styles.mutedText}>Đang chờ hình ảnh từ người bên kia…</Text>}
+      {localTrack ? <View style={styles.localPreview}><VideoTrack trackRef={localTrack} style={styles.videoTrack} mirror zOrder={1} /></View> : null}
+    </View>
+  );
 }
 
 function Control({ label, icon, active, onPress }: { label: string; icon: React.ComponentProps<typeof MaterialIcons>["name"]; active: boolean; onPress: () => void }) { return <Pressable onPress={onPress} style={({ pressed }) => [styles.control, pressed && styles.pressed]}><View style={[styles.controlIcon, active && styles.controlActive]}><MaterialIcons name={icon} size={23} color="#FFF" /></View><Text style={styles.controlLabel}>{label}</Text></Pressable>; }
@@ -286,5 +318,6 @@ const styles = StyleSheet.create({
   pending: { alignItems: "center" },
   video: { height: 265, marginTop: 18, borderRadius: 22, overflow: "hidden", backgroundColor: "#101B30", alignItems: "center", justifyContent: "center" },
   videoTrack: { flex: 1, width: "100%" },
+  localPreview: { position: "absolute", right: 12, top: 12, width: 96, height: 136, borderRadius: 14, overflow: "hidden", backgroundColor: "#182641", borderWidth: 2, borderColor: "#A9CBFF" },
   pressed: { opacity: 0.72 },
 });

@@ -12,6 +12,31 @@ type PushPayload = {
   data: Record<string, number | string>;
 };
 
+type ExpoPushTicket = {
+  status?: "ok" | "error";
+  message?: string;
+  details?: { error?: string };
+};
+
+async function getAcceptedPushCount(response: Response, expectedCount: number, label: string) {
+  if (!response.ok) {
+    console.warn(`[Push] Expo service rejected ${label} with HTTP ${response.status}.`);
+    return 0;
+  }
+  const payload = (await response.json().catch(() => null)) as { data?: ExpoPushTicket[] } | null;
+  const tickets = Array.isArray(payload?.data) ? payload.data : [];
+  if (!tickets.length) {
+    console.warn(`[Push] Expo service returned no tickets for ${label}.`);
+    return 0;
+  }
+  const rejected = tickets.filter((ticket) => ticket.status !== "ok");
+  if (rejected.length) {
+    const detail = rejected.map((ticket) => ticket.details?.error ?? ticket.message ?? "unknown error").join("; ");
+    console.warn(`[Push] Expo rejected ${rejected.length}/${expectedCount} ${label}: ${detail}`);
+  }
+  return tickets.filter((ticket) => ticket.status === "ok").length;
+}
+
 export function buildNewMessagePushPayload(token: string, conversationId: number): PushPayload {
   return {
     to: token,
@@ -52,11 +77,7 @@ export async function dispatchNewMessagePushNotifications(input: { conversationI
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(tokens.map((token) => buildNewMessagePushPayload(token, input.conversationId))),
     });
-    if (!response.ok) {
-      console.warn("[Push] Expo service rejected a notification batch.");
-      return { sent: 0 };
-    }
-    return { sent: tokens.length };
+    return { sent: await getAcceptedPushCount(response, tokens.length, "message notification(s)") };
   } catch (error) {
     console.warn("[Push] Could not dispatch a new-message notification.", error);
     return { sent: 0 };
@@ -74,7 +95,7 @@ export async function dispatchIncomingCallPushNotification(input: { conversation
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(tokens.map((token) => buildIncomingCallPushPayload(token, input))),
     });
-    return { sent: response.ok ? tokens.length : 0 };
+    return { sent: await getAcceptedPushCount(response, tokens.length, "incoming-call notification(s)") };
   } catch (error) {
     console.warn("[Push] Could not dispatch an incoming-call notification.", error);
     return { sent: 0 };
