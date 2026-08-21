@@ -480,7 +480,7 @@ export default function ChatScreen() {
                         ? () => confirmRecall(item)
                         : undefined
                     }
-                    delayLongPress={350}
+                    delayLongPress={750}
                     style={[
                       styles.bubble,
                       mine ? styles.mineBubble : styles.theirBubble,
@@ -543,6 +543,8 @@ export default function ChatScreen() {
                         ) : null}
                         {item.body ? (
                           <Text
+                            selectable
+                            accessibilityHint="Nhấn giữ nội dung để chọn hoặc sao chép văn bản"
                             style={[
                               styles.messageText,
                               mine && styles.mineText,
@@ -692,6 +694,10 @@ export default function ChatScreen() {
               returnKeyType="send"
               onSubmitEditing={() => void send()}
               blurOnSubmit={false}
+              contextMenuHidden={false}
+              selectionColor="#2563EB"
+              accessibilityLabel="Nội dung tin nhắn"
+              accessibilityHint="Nhấn giữ trong ô soạn để chọn, sao chép, cắt hoặc dán văn bản"
             />
             <Pressable
               disabled={uploading || !draft.trim() || sendText.isPending}

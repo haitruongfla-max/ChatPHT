@@ -90,7 +90,13 @@ export default function AssistantScreen() {
       <Text style={[styles.bubbleLabel, item.role === "user" ? styles.userLabel : styles.aiLabel]}>
         {item.role === "user" ? "Bạn" : "Trợ lý AI"}
       </Text>
-      <Text style={[styles.bubbleText, item.role === "user" ? styles.userText : styles.aiText]}>{item.content}</Text>
+      <Text
+        selectable
+        accessibilityHint="Nhấn giữ nội dung để chọn hoặc sao chép văn bản"
+        style={[styles.bubbleText, item.role === "user" ? styles.userText : styles.aiText]}
+      >
+        {item.content}
+      </Text>
     </View>
   );
 
@@ -190,7 +196,10 @@ export default function AssistantScreen() {
             onSubmitEditing={() => submit()}
             style={styles.input}
             editable={!askAssistant.isPending}
+            contextMenuHidden={false}
+            selectionColor="#2563EB"
             accessibilityLabel="Câu hỏi dành cho Trợ lý AI"
+            accessibilityHint="Nhấn giữ trong ô soạn để chọn, sao chép, cắt hoặc dán văn bản"
           />
           <Pressable
             accessibilityRole="button"
@@ -206,7 +215,9 @@ export default function AssistantScreen() {
             {askAssistant.isPending ? <ActivityIndicator color="#FFFFFF" size="small" /> : <MaterialIcons name="arrow-upward" size={22} color="#FFFFFF" />}
           </Pressable>
         </View>
-        <Text style={styles.notice}>Trợ lý AI có thể sai; không nhập mật khẩu hoặc thông tin nhạy cảm.</Text>
+        <Text style={styles.notice}>
+          Nhấn giữ nội dung để chọn hoặc sao chép. Nhấn giữ ô soạn để dán, cắt hoặc chỉnh sửa. Trợ lý AI có thể sai; không nhập mật khẩu hoặc thông tin nhạy cảm.
+        </Text>
       </KeyboardAvoidingView>
     </ScreenContainer>
   );

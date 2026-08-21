@@ -69,3 +69,7 @@
 - [x] Khắc phục API trợ lý AI, hiển thị lỗi có thể hành động và cho phép gửi lại câu hỏi an toàn.
 - [x] Hoàn thiện lịch sử hỏi đáp, cuộn theo câu mới và bố cục AI tương thích bàn phím.
 - [x] Kiểm thử hồi quy trợ lý AI, cập nhật TODO và lưu checkpoint bàn giao.
+- [x] Rà soát luồng chọn văn bản, nhập liệu và nhấn giữ hiện tại trong chat và Trợ lý AI.
+- [x] Bổ sung menu nhấn giữ để sao chép nội dung tin nhắn và hỗ trợ chọn, dán, cắt trong ô nhập chat.
+- [x] Áp dụng thao tác sao chép/chọn và chỉnh sửa văn bản an toàn cho nội dung Trợ lý AI.
+- [x] Kiểm thử hồi quy thao tác văn bản, cập nhật TODO và lưu checkpoint bàn giao.
