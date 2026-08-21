@@ -5,6 +5,7 @@ import { assertValidUsername, hashPassword, normalizeUsername, verifyPassword } 
 import { getSessionCookieOptions } from "./_core/cookies";
 import { sdk } from "./_core/sdk";
 import { systemRouter } from "./_core/systemRouter";
+import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
 import { dispatchNewMessagePushNotifications } from "./push";
 import { storageCreateUploadUrl, storageDelete, storageGetSignedUrl, storagePut } from "./storage";
@@ -27,6 +28,10 @@ const videoMimeSchema = z.enum(["video/mp4", "video/quicktime"]);
 const reactionEmojiSchema = z.enum(["👍", "❤️", "😂", "😮", "😢", "🔥"]);
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const assistantTurnSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().trim().min(1).max(1200),
+});
 
 function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | Awaited<ReturnType<typeof db.listMessages>>[number], mediaUrl: string | null) {
   return {
@@ -42,6 +47,7 @@ function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | A
     recalledBy: message.recalledBy,
     createdAt: message.createdAt,
     mediaUrl,
+    mediaCacheKey: message.mediaKey ?? null,
     reactions: "reactions" in message ? message.reactions : [],
   };
 }
@@ -114,6 +120,39 @@ export const appRouter = router({
   }),
   profile: router({
     me: protectedProcedure.query(({ ctx }) => db.toPublicProfile(ctx.user)),
+  }),
+  assistant: router({
+    ask: protectedProcedure
+      .input(
+        z.object({
+          message: z.string().trim().min(1, "Hãy nhập câu hỏi của bạn.").max(2000, "Câu hỏi quá dài."),
+          context: z.array(assistantTurnSchema).max(6).default([]),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        try {
+          const result = await invokeLLM({
+            model: "gpt-5-mini",
+            maxTokens: 600,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "Bạn là trợ lý AI riêng của ChatPHT. Trả lời bằng tiếng Việt rõ ràng, hữu ích và ngắn gọn. Không khẳng định bạn có thể xem dữ liệu, hội thoại hay tệp riêng tư của người dùng. Khi câu hỏi cần chuyên gia y tế, pháp lý hoặc tài chính, hãy khuyến khích người dùng tham khảo chuyên gia phù hợp.",
+              },
+              ...input.context.map((turn) => ({ role: turn.role, content: turn.content })),
+              { role: "user", content: input.message },
+            ],
+          });
+          const content = result.choices[0]?.message.content;
+          const answer = typeof content === "string" ? content.trim().slice(0, 1200) : "";
+          if (!answer) throw new Error("Trợ lý chưa thể tạo câu trả lời.");
+          return { answer };
+        } catch (error) {
+          console.error("[assistant.ask]", error instanceof Error ? error.message : "Unknown AI error");
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Trợ lý AI đang bận. Vui lòng thử lại sau ít phút." });
+        }
+      }),
   }),
   notifications: router({
     registerDevice: protectedProcedure

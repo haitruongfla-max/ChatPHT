@@ -45,3 +45,15 @@
 - [x] Thêm dữ liệu, API và giao diện thả cảm xúc emoji theo từng tin nhắn trong hội thoại riêng tư.
 - [x] Đổi thương hiệu SwiftChat thành ChatPHT, bổ sung biểu tượng và giới thiệu tác giả Phùng Hải Trường.
 - [x] Kiểm thử hồi quy gửi ảnh/video, tiến trình tải, cảm xúc và nhận diện thương hiệu; lưu checkpoint bàn giao.
+- [x] Thiết kế dữ liệu và trải nghiệm trả lời trực tiếp cho tin nhắn văn bản, ảnh và video.
+- [x] Không tiếp tục mở rộng schema, truy vấn và API trả lời trực tiếp theo yêu cầu dừng của người dùng.
+- [x] Không tiếp tục giao diện trả lời trực tiếp theo yêu cầu dừng của người dùng.
+- [x] Dừng kiểm thử và bàn giao tính năng trả lời trực tiếp theo yêu cầu dừng của người dùng.
+- [x] Đánh giá tải media hiện tại, thiết kế trải nghiệm xem nhanh và chính sách làm mới lịch sử sau ba ngày.
+- [x] Tối ưu cache, ảnh xem trước và phát video theo yêu cầu để ảnh/video mở nhanh mà không ảnh hưởng gửi media.
+- [x] Nâng cấp nền và giao diện ChatPHT theo phong cách hiện đại, an toàn với vùng hiển thị điện thoại.
+- [x] Bổ sung không gian hỏi đáp AI riêng tư, giới hạn ngữ cảnh và bảo vệ dữ liệu hội thoại.
+- [x] Không triển khai cơ chế làm mới lịch sử ba ngày theo yêu cầu người dùng; tránh xóa nhầm dữ liệu.
+- [x] Không kiểm thử cơ chế tự xóa vì tính năng này đã được bỏ qua theo yêu cầu người dùng.
+- [x] Không triển khai tự động xóa lịch sử sau ba ngày theo yêu cầu người dùng; giữ thao tác xóa sạch thủ công hiện có.
+- [x] Kiểm thử hồi quy hiệu năng media, giao diện và hỏi đáp AI; lưu checkpoint bàn giao.

@@ -23,7 +23,7 @@ export function toPublicProfile(user: User): PublicProfile {
   return {
     id: user.id,
     username: user.username ?? user.openId.replace(/^local:/, ""),
-    displayName: user.name ?? user.username ?? "Người dùng SwiftChat",
+    displayName: user.name ?? user.username ?? "Người dùng ChatPHT",
   };
 }
 
@@ -320,7 +320,7 @@ export async function listConversations(userId: number) {
     .sort(
       (first, second) =>
         (second.latestMessage?.createdAt?.getTime() ?? 0) - (first.latestMessage?.createdAt?.getTime() ?? 0),
-    );
+  );
 }
 
 export async function listMessages(conversationId: number, userId: number) {
@@ -342,7 +342,10 @@ export async function listMessages(conversationId: number, userId: number) {
     existing.push({ emoji: reaction.emoji, userId: reaction.userId });
     reactionsByMessage.set(reaction.messageId, existing);
   }
-  return result.reverse().map((message) => ({ ...message, reactions: reactionsByMessage.get(message.id) ?? [] }));
+  return result.reverse().map((message) => ({
+    ...message,
+    reactions: reactionsByMessage.get(message.id) ?? [],
+  }));
 }
 
 /**

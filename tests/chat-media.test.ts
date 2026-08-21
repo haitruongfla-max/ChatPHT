@@ -79,6 +79,7 @@ describe("chat media access controls", () => {
       id: 55,
       contentType: "image",
       mediaUrl: "https://temporary.example/media.jpg",
+      mediaCacheKey: "swiftchat/18/7/example.jpg",
     });
     expect(storage.storagePut).toHaveBeenCalledWith(expect.stringContaining("summer_photo.jpg"), expect.any(Buffer), "image/jpeg");
   });

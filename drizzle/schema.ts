@@ -102,7 +102,9 @@ export const messages = mysqlTable(
     recalledBy: int("recalledBy"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
-  (table) => [index("message_conversation_created_idx").on(table.conversationId, table.createdAt)],
+  (table) => [
+    index("message_conversation_created_idx").on(table.conversationId, table.createdAt),
+  ],
 );
 
 export const messageReactions = mysqlTable(

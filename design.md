@@ -78,3 +78,19 @@ Video tối đa **100 MB** được tải trực tiếp từ tệp thiết bị 
 Khi người dùng chọn ảnh hoặc video, thanh soạn thảo chuyển sang trạng thái **Đang tải lên — n%**. Phần trăm được tính từ số byte đã gửi trên tổng số byte cần gửi; một thanh chỉ báo mảnh màu Xanh Swift xuất hiện ngay phía trên thanh soạn thảo, không che danh sách tin nhắn hoặc bàn phím. Trong thời gian tải, nút gửi và nút đính kèm bị vô hiệu hóa để tránh tạo hai lần cùng một yêu cầu; người dùng vẫn có thể đọc hội thoại. Trạng thái bị xóa ngay khi tải hoàn tất hoặc thất bại, đồng thời lỗi hiển thị rõ ràng mà không làm mất văn bản đang soạn.
 
 Mục **Xóa sạch toàn bộ nội dung** là thao tác vĩnh viễn, khác với xóa hội thoại theo từng tài khoản. Sau một hộp thoại xác nhận nêu rõ phạm vi, máy chủ xác minh người yêu cầu là thành viên rồi xóa mọi tin nhắn, mọi bản ghi tệp đính kèm và các tệp ảnh/video tương ứng trong kho riêng tư. Việc này áp dụng đồng thời cho cả hai thành viên; bản ghi hội thoại và quan hệ thành viên được giữ để hai người có thể bắt đầu một luồng trò chuyện trống ngay sau đó. Khi hoàn tất, giao diện làm mới hộp thư và danh sách tin nhắn tức thì.
+
+## Trả lời trực tiếp tin nhắn
+
+Người dùng có thể chạm nút **Trả lời** trên từng tin nhắn chưa bị thu hồi để neo câu trả lời vào đúng ngữ cảnh. Thanh soạn thảo hiện một thẻ trích dẫn gọn gồm tên người gửi và bản xem trước: nội dung văn bản được rút gọn một dòng, ảnh hiển thị nhãn “Ảnh”, còn video hiển thị nhãn “Video”. Nút đóng trên thẻ cho phép hủy thao tác mà không làm mất nội dung đang soạn; việc chọn ảnh/video vẫn được hỗ trợ và tin nhắn media mới cũng giữ tham chiếu trả lời.
+
+Mỗi tin nhắn mới có thể lưu một `replyToMessageId` tùy chọn, chỉ được chấp nhận khi tin nguồn thuộc cùng hội thoại và người gửi là thành viên. Tin hiển thị thẻ trích dẫn phía trên bong bóng; chạm vào thẻ sẽ cuộn đến tin nguồn khi còn tồn tại. Nếu tin nguồn đã thu hồi hoặc xóa sạch hội thoại, câu trả lời vẫn giữ nguyên nhưng thay bằng nhãn trung tính “Tin nhắn gốc không còn khả dụng”, không tiết lộ nội dung đã bị gỡ.
+
+## Xem media nhanh và tối ưu bộ nhớ
+
+Danh sách hội thoại chỉ hiển thị ảnh bằng bộ nhớ đệm đĩa/bộ nhớ với khóa ổn định, để ảnh đã mở không phải tải lại khi danh sách tự làm mới. Video trong danh sách không được tạo trình phát riêng cho từng bong bóng; thay vào đó hiển thị thẻ xem trước có nút phát tức thì. Chỉ khi người dùng chạm vào video, ứng dụng mới mở một trình phát duy nhất trong modal toàn màn hình, có chỉ báo đệm dữ liệu và cache nội dung theo cơ chế ít dùng trước. Cách này giữ thao tác cuộn, mở ảnh và mở video nhanh ngay cả khi lịch sử có nhiều tệp đính kèm.
+
+Ứng dụng **không tự động xóa** lịch sử sau ba ngày. Lịch sử dài không tự làm hỏng khả năng gửi tin hoặc media; hiệu năng được bảo vệ bởi giới hạn tải tin gần đây, cache có kiểm soát và chỉ khởi tạo media khi cần. Thao tác xóa sạch thủ công vẫn giữ nguyên: người dùng có thể xóa vĩnh viễn toàn bộ nội dung chung khi chủ động xác nhận.
+
+## Hỏi đáp AI riêng tư
+
+ChatPHT có một tab **Hỏi đáp AI** độc lập với hội thoại bạn bè. Chỉ câu hỏi do người dùng nhập trong tab này được gửi đến máy chủ để tạo câu trả lời; ứng dụng không tự chuyển nội dung của bất kỳ hội thoại riêng tư nào cho AI. Màn hình dùng nền chuyển sắc nhẹ, vùng hỏi lớn ở đáy, các thẻ gợi ý ngắn và lịch sử cục bộ trong phiên để thao tác một tay. Máy chủ giới hạn độ dài câu hỏi, chỉ dùng mô hình tích hợp phía máy chủ và trả về văn bản thuần, giúp không đưa khóa truy cập hay nội dung chat cá nhân ra ứng dụng khách.

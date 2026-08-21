@@ -11,7 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export type ChatMediaPreview = MediaSaveItem;
 
 function FullScreenVideo({ uri }: { uri: string }) {
-  const player = useVideoPlayer(uri, (instance) => {
+  const player = useVideoPlayer({ uri, useCaching: true }, (instance) => {
     instance.pause();
   });
 
@@ -60,7 +60,7 @@ export function ChatMediaViewer({ item, onClose }: { item: ChatMediaPreview | nu
               <Text style={styles.saveLabel}>Lưu</Text>
             </Pressable>
           </View>
-          <View style={styles.mediaFrame}>{item?.type === "image" ? <Image source={item.uri} style={styles.image} contentFit="contain" transition={180} /> : item ? <FullScreenVideo uri={item.uri} /> : null}</View>
+          <View style={styles.mediaFrame}>{item?.type === "image" ? <Image source={{ uri: item.uri, cacheKey: `viewer-${item.uri.split("?")[0]}` }} cachePolicy="memory-disk" style={styles.image} contentFit="contain" transition={120} /> : item ? <FullScreenVideo uri={item.uri} /> : null}</View>
         </SafeAreaView>
       </View>
     </Modal>
