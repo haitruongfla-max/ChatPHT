@@ -65,3 +65,7 @@
 - [x] Mở rộng dữ liệu và API cập nhật trạng thái đang nhập theo đúng thành viên hội thoại.
 - [x] Hiển thị đang nhập, thời gian đã đọc chi tiết và cuộn đầy đủ cho nội dung dài trong mục Tôi.
 - [x] Kiểm thử hồi quy trạng thái đang nhập, thời điểm đọc, bố cục hồ sơ và lưu checkpoint bàn giao.
+- [x] Chẩn đoán lỗi phản hồi AI và kiểm tra khả năng hiển thị lịch sử hỏi đáp trên thiết bị.
+- [x] Khắc phục API trợ lý AI, hiển thị lỗi có thể hành động và cho phép gửi lại câu hỏi an toàn.
+- [x] Hoàn thiện lịch sử hỏi đáp, cuộn theo câu mới và bố cục AI tương thích bàn phím.
+- [x] Kiểm thử hồi quy trợ lý AI, cập nhật TODO và lưu checkpoint bàn giao.

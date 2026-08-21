@@ -28,7 +28,8 @@ describe("assistant.ask", () => {
 
     expect(invokeLLM).toHaveBeenCalledWith(expect.objectContaining({
       model: "gpt-5-mini",
-      maxTokens: 600,
+      maxCompletionTokens: 900,
+      reasoning: { effort: "minimal" },
       messages: expect.arrayContaining([
         expect.objectContaining({ role: "system" }),
         expect.objectContaining({ role: "user", content: "Ưu tiên ngắn gọn" }),
@@ -49,7 +50,18 @@ describe("assistant.ask", () => {
 
     await expect(callerFor().assistant.ask({ message: "Xin chào", context: [] })).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
-      message: "Trợ lý AI đang bận. Vui lòng thử lại sau ít phút.",
+      message: "Không thể kết nối với Trợ lý AI lúc này. Hãy kiểm tra mạng và chạm “Thử lại”.",
+    });
+  });
+
+  it("trả yêu cầu thử lại có thể hành động khi mô hình không có nội dung hiển thị", async () => {
+    vi.mocked(invokeLLM).mockResolvedValue({
+      choices: [{ message: { role: "assistant", content: [] } }],
+    } as any);
+
+    await expect(callerFor().assistant.ask({ message: "Xin chào", context: [] })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Chưa nhận được câu trả lời từ AI. Hãy chạm “Thử lại” để gửi lại câu hỏi của bạn.",
     });
   });
 });

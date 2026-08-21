@@ -57,6 +57,8 @@ export type InvokeParams = {
   tools?: Tool[];
   toolChoice?: ToolChoice;
   tool_choice?: ToolChoice;
+  maxCompletionTokens?: number;
+  max_completion_tokens?: number;
   maxTokens?: number;
   max_tokens?: number;
   outputSchema?: OutputSchema;
@@ -332,6 +334,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     model,
     thinking,
     reasoning,
+    maxCompletionTokens,
+    max_completion_tokens,
     maxTokens,
     max_tokens,
   } = params;
@@ -353,9 +357,14 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  const resolvedMaxTokens = max_tokens ?? maxTokens;
-  if (typeof resolvedMaxTokens === "number") {
-    payload.max_tokens = resolvedMaxTokens;
+  const resolvedMaxCompletionTokens = max_completion_tokens ?? maxCompletionTokens;
+  if (typeof resolvedMaxCompletionTokens === "number") {
+    payload.max_completion_tokens = resolvedMaxCompletionTokens;
+  } else {
+    const resolvedMaxTokens = max_tokens ?? maxTokens;
+    if (typeof resolvedMaxTokens === "number") {
+      payload.max_tokens = resolvedMaxTokens;
+    }
   }
 
   if (thinking) {

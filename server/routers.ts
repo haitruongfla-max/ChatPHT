@@ -33,6 +33,20 @@ const assistantTurnSchema = z.object({
   content: z.string().trim().min(1).max(1200),
 });
 
+function getAssistantText(content: unknown): string {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .map((part) =>
+      part && typeof part === "object" && "type" in part && "text" in part && part.type === "text" && typeof part.text === "string"
+        ? part.text
+        : "",
+    )
+    .join("\n")
+    .trim();
+}
+
 function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | Awaited<ReturnType<typeof db.listMessages>>[number], mediaUrl: string | null) {
   return {
     id: message.id,
@@ -135,7 +149,8 @@ export const appRouter = router({
         try {
           const result = await invokeLLM({
             model: "gpt-5-mini",
-            maxTokens: 600,
+            maxCompletionTokens: 900,
+            reasoning: { effort: "minimal" },
             messages: [
               {
                 role: "system",
@@ -146,13 +161,21 @@ export const appRouter = router({
               { role: "user", content: input.message },
             ],
           });
-          const content = result.choices[0]?.message.content;
-          const answer = typeof content === "string" ? content.trim().slice(0, 1200) : "";
-          if (!answer) throw new Error("Trợ lý chưa thể tạo câu trả lời.");
+          const answer = getAssistantText(result.choices[0]?.message.content).slice(0, 1200);
+          if (!answer) {
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Chưa nhận được câu trả lời từ AI. Hãy chạm “Thử lại” để gửi lại câu hỏi của bạn.",
+            });
+          }
           return { answer };
         } catch (error) {
+          if (error instanceof TRPCError) throw error;
           console.error("[assistant.ask]", error instanceof Error ? error.message : "Unknown AI error");
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Trợ lý AI đang bận. Vui lòng thử lại sau ít phút." });
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Không thể kết nối với Trợ lý AI lúc này. Hãy kiểm tra mạng và chạm “Thử lại”.",
+          });
         }
       }),
   }),
