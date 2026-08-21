@@ -43,6 +43,13 @@
       "when": 1787296045781,
       "tag": "0005_familiar_rhodey",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1787297156910,
+      "tag": "0006_clean_chameleon",
+      "breakpoints": true
     }
   ]
 }

@@ -291,6 +291,37 @@ export async function markConversationRead(conversationId: number, userId: numbe
     .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
 }
 
+/** Stores a short-lived typing heartbeat only for the authenticated conversation member. */
+export async function setConversationTyping(conversationId: number, userId: number, isTyping: boolean) {
+  const db = requireDb(await getDb());
+  if (!(await isConversationMember(conversationId, userId))) {
+    throw new Error("Bạn không có quyền cập nhật trạng thái hội thoại này.");
+  }
+  const typingUntil = isTyping ? new Date(Date.now() + 5_000) : null;
+  await db
+    .update(conversationMembers)
+    .set({ typingUntil })
+    .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
+  return { typingUntil };
+}
+
+/** Returns only the other member's non-expired typing heartbeat for a private conversation. */
+export async function getConversationTypingStatus(conversationId: number, userId: number) {
+  const db = requireDb(await getDb());
+  if (!(await isConversationMember(conversationId, userId))) {
+    throw new Error("Bạn không có quyền xem trạng thái hội thoại này.");
+  }
+  const peer = (
+    await db
+      .select({ typingUntil: conversationMembers.typingUntil })
+      .from(conversationMembers)
+      .where(and(eq(conversationMembers.conversationId, conversationId), ne(conversationMembers.userId, userId)))
+      .limit(1)
+  )[0];
+  const typingUntil = peer?.typingUntil && peer.typingUntil.getTime() > Date.now() ? peer.typingUntil : null;
+  return { isTyping: Boolean(typingUntil), typingUntil };
+}
+
 export async function isConversationMember(conversationId: number, userId: number) {
   const db = requireDb(await getDb());
   const membership = await db

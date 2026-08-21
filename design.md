@@ -100,3 +100,11 @@ ChatPHT có một tab **Hỏi đáp AI** độc lập với hội thoại bạn 
 Mỗi thành viên hội thoại lưu hai mốc thời gian riêng: `lastDeliveredAt` khi ứng dụng của họ tải được các tin nhắn mới, và `lastReadAt` khi họ mở đúng hội thoại để xem. Với tin nhắn do người dùng gửi, giao diện hiển thị **Đã gửi** ngay sau khi máy chủ lưu thành công; chuyển thành **Đã nhận** khi mốc nhận của thành viên còn lại đi qua thời điểm tạo tin; và chuyển thành **Đã đọc** khi mốc đọc của người đó đi qua thời điểm tạo tin. Chỉ người gửi được xem trạng thái của tin do mình gửi; người nhận không thấy hoạt động đọc của đối phương trên các tin họ đã gửi.
 
 Khi người dùng vào ChatPHT, hộp thư đánh dấu các tin mới là đã nhận. Khi họ mở một hội thoại, ứng dụng đánh dấu các tin của thành viên còn lại là đã đọc. Các mốc được cập nhật trên máy chủ sau khi xác minh thành viên và được làm mới định kỳ nhẹ trên màn hội thoại, để không tạo một yêu cầu cho từng tin nhắn và không làm lộ nội dung tin nhắn qua trạng thái giao nhận.
+
+## Đang nhập, thời điểm đã đọc và cuộn hồ sơ
+
+Mỗi thành viên hội thoại có một mốc `typingUntil` tạm thời, chỉ tồn tại vài giây và chỉ được cập nhật khi ô soạn thảo thực sự có nội dung. Khi người dùng dừng gõ, đóng màn hội thoại hoặc hết thời hạn, trạng thái tự tắt để không tạo chỉ báo sai. Thành viên còn lại thấy dòng “Đang nhập tin nhắn…” với ba chấm chuyển động nhẹ ngay phía trên thanh soạn thảo; API chỉ trả về trạng thái của người còn lại trong chính hội thoại được xác thực.
+
+Với các tin do người dùng gửi, nhãn trạng thái đã đọc hiển thị thời gian địa phương ngắn gọn, chẳng hạn **“Đã đọc lúc 14:21”**, khi mốc đọc của người nhận vượt qua thời điểm gửi. Nếu chỉ mới nhận, nhãn vẫn là “Đã nhận”; khi chưa có mốc nhận, là “Đã gửi”. Thời gian không xuất hiện cho người nhận hoặc cho tin nhắn không phải của họ.
+
+Màn **Tôi** dùng vùng cuộn dọc bao toàn bộ phần hồ sơ, bảo mật, cài đặt và giới thiệu ứng dụng. Vùng cuộn tôn trọng vùng an toàn trên/dưới, cho phép nội dung dài được kéo xem đầy đủ mà vẫn giữ nút đăng xuất dễ chạm và không che thanh điều hướng.

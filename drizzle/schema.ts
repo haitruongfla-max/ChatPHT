@@ -63,6 +63,7 @@ export const conversationMembers = mysqlTable(
     hiddenAt: timestamp("hiddenAt"),
     lastDeliveredAt: timestamp("lastDeliveredAt"),
     lastReadAt: timestamp("lastReadAt"),
+    typingUntil: timestamp("typingUntil"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => [

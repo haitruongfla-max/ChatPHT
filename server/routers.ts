@@ -275,6 +275,24 @@ export const appRouter = router({
           return appError(error, "Không thể cập nhật trạng thái đã đọc.");
         }
       }),
+    typingStatus: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        try {
+          return await db.getConversationTypingStatus(input.conversationId, ctx.user.id);
+        } catch (error) {
+          return appError(error, "Không thể tải trạng thái đang nhập.");
+        }
+      }),
+    setTyping: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), isTyping: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await db.setConversationTyping(input.conversationId, ctx.user.id, input.isTyping);
+        } catch (error) {
+          return appError(error, "Không thể cập nhật trạng thái đang nhập.");
+        }
+      }),
     sendText: protectedProcedure
       .input(z.object({ conversationId: z.number().int().positive(), body: z.string().trim().min(1).max(2000) }))
       .mutation(async ({ ctx, input }) => {

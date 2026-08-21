@@ -10,6 +10,8 @@ vi.mock("../server/db", () => ({
   toggleMessageReaction: vi.fn(),
   markAllConversationsDelivered: vi.fn(),
   markConversationRead: vi.fn(),
+  setConversationTyping: vi.fn(),
+  getConversationTypingStatus: vi.fn(),
   upsertPushDevice: vi.fn(),
   removePushDevice: vi.fn(),
   listConversationRecipientDevices: vi.fn().mockResolvedValue([]),
@@ -166,6 +168,28 @@ describe("chat media access controls", () => {
 
     await expect(callerFor(9).messages.markRead({ conversationId: 18 })).resolves.toEqual({ success: true });
     expect(db.markConversationRead).toHaveBeenCalledWith(18, 9);
+  });
+
+  it("updates the signed-in member's short-lived typing heartbeat", async () => {
+    const typingUntil = new Date("2026-08-21T10:00:05.000Z");
+    vi.mocked(db.setConversationTyping).mockResolvedValue({ typingUntil });
+
+    await expect(callerFor(9).messages.setTyping({ conversationId: 18, isTyping: true })).resolves.toMatchObject({
+      typingUntil,
+    });
+    expect(db.setConversationTyping).toHaveBeenCalledWith(18, 9, true);
+  });
+
+  it("returns only the other member's non-expired typing status", async () => {
+    vi.mocked(db.getConversationTypingStatus).mockResolvedValue({
+      isTyping: true,
+      typingUntil: new Date("2026-08-21T10:00:05.000Z"),
+    });
+
+    await expect(callerFor(7).messages.typingStatus({ conversationId: 18 })).resolves.toMatchObject({
+      isTyping: true,
+    });
+    expect(db.getConversationTypingStatus).toHaveBeenCalledWith(18, 7);
   });
 
   it("only registers a valid device token against the signed-in account", async () => {

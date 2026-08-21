@@ -61,3 +61,7 @@
 - [x] Mở rộng schema, truy vấn và API để lưu thời điểm nhận/đọc tin nhắn cho đúng thành viên.
 - [x] Hiển thị trạng thái gửi nhận đọc tức thì dưới tin nhắn của người gửi và làm mới khi người nhận mở chat.
 - [x] Kiểm thử hồi quy trạng thái gửi nhận đọc, cập nhật TODO và lưu checkpoint bàn giao.
+- [x] Thiết kế trạng thái đang nhập có thời hạn, thời điểm đã đọc chi tiết và trải nghiệm cuộn mục Tôi.
+- [x] Mở rộng dữ liệu và API cập nhật trạng thái đang nhập theo đúng thành viên hội thoại.
+- [x] Hiển thị đang nhập, thời gian đã đọc chi tiết và cuộn đầy đủ cho nội dung dài trong mục Tôi.
+- [x] Kiểm thử hồi quy trạng thái đang nhập, thời điểm đọc, bố cục hồ sơ và lưu checkpoint bàn giao.
