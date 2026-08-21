@@ -1,9 +1,10 @@
-import { and, desc, eq, like, ne, or } from "drizzle-orm";
+import { and, desc, eq, inArray, like, ne, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   conversationMembers,
   conversations,
   friendRequests,
+  messageReactions,
   messages,
   pushDevices,
   type InsertUser,
@@ -331,7 +332,17 @@ export async function listMessages(conversationId: number, userId: number) {
     .where(eq(messages.conversationId, conversationId))
     .orderBy(desc(messages.createdAt))
     .limit(60);
-  return result.reverse();
+  const messageIds = result.map((message) => message.id);
+  const reactionRows = messageIds.length
+    ? await db.select().from(messageReactions).where(inArray(messageReactions.messageId, messageIds))
+    : [];
+  const reactionsByMessage = new Map<number, Array<{ emoji: string; userId: number }>>();
+  for (const reaction of reactionRows) {
+    const existing = reactionsByMessage.get(reaction.messageId) ?? [];
+    existing.push({ emoji: reaction.emoji, userId: reaction.userId });
+    reactionsByMessage.set(reaction.messageId, existing);
+  }
+  return result.reverse().map((message) => ({ ...message, reactions: reactionsByMessage.get(message.id) ?? [] }));
 }
 
 /**
@@ -356,6 +367,10 @@ export async function clearConversationContent(conversationId: number, requester
     ),
   );
 
+  const messageIds = messageRows.map((message) => message.id);
+  if (messageIds.length) {
+    await db.delete(messageReactions).where(inArray(messageReactions.messageId, messageIds));
+  }
   await db.delete(messages).where(eq(messages.conversationId, conversationId));
   await db
     .update(conversationMembers)
@@ -407,6 +422,7 @@ export async function recallMessage(messageId: number, senderId: number) {
   )[0];
   if (!message) throw new Error("Bạn chỉ có thể thu hồi tin nhắn do mình gửi.");
   if (message.recalledAt) return message;
+  await db.delete(messageReactions).where(eq(messageReactions.messageId, messageId));
   await db
     .update(messages)
     .set({
@@ -422,4 +438,43 @@ export async function recallMessage(messageId: number, senderId: number) {
   const recalled = (await db.select().from(messages).where(eq(messages.id, messageId)).limit(1))[0];
   if (!recalled) throw new Error("Không thể thu hồi tin nhắn.");
   return recalled;
+}
+
+export async function toggleMessageReaction(input: {
+  messageId: number;
+  userId: number;
+  emoji: string;
+}) {
+  const db = requireDb(await getDb());
+  const message = (await db.select().from(messages).where(eq(messages.id, input.messageId)).limit(1))[0];
+  if (!message) throw new Error("Tin nhắn không còn tồn tại.");
+  if (message.recalledAt) throw new Error("Không thể thả cảm xúc vào tin nhắn đã thu hồi.");
+  if (!(await isConversationMember(message.conversationId, input.userId))) {
+    throw new Error("Bạn không có quyền tương tác với tin nhắn này.");
+  }
+
+  const existing = (
+    await db
+      .select()
+      .from(messageReactions)
+      .where(
+        and(
+          eq(messageReactions.messageId, input.messageId),
+          eq(messageReactions.userId, input.userId),
+          eq(messageReactions.emoji, input.emoji),
+        ),
+      )
+      .limit(1)
+  )[0];
+  if (existing) {
+    await db.delete(messageReactions).where(eq(messageReactions.id, existing.id));
+    return { conversationId: message.conversationId, active: false as const };
+  }
+
+  await db.insert(messageReactions).values({
+    messageId: input.messageId,
+    userId: input.userId,
+    emoji: input.emoji,
+  });
+  return { conversationId: message.conversationId, active: true as const };
 }

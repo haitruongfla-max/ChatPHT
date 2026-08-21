@@ -40,3 +40,8 @@
 - [x] Thêm thao tác xóa sạch hội thoại có xác nhận, làm mới danh sách chat ngay sau khi hoàn thành.
 - [x] Kiểm thử bảo toàn quyền, tiến trình tải và khả năng bắt đầu lại hội thoại trống.
 - [x] Hoàn tất kiểm tra, cập nhật TODO, tạo checkpoint xóa sạch/tiến trình tải và bàn giao.
+- [x] Chẩn đoán lỗi gửi ảnh/video và tiến trình tải biến mất sớm trên thiết bị thật.
+- [x] Khắc phục upload ảnh/video đa nền tảng, giữ trạng thái phần trăm đến khi tin nhắn media hoàn tất.
+- [x] Thêm dữ liệu, API và giao diện thả cảm xúc emoji theo từng tin nhắn trong hội thoại riêng tư.
+- [x] Đổi thương hiệu SwiftChat thành ChatPHT, bổ sung biểu tượng và giới thiệu tác giả Phùng Hải Trường.
+- [x] Kiểm thử hồi quy gửi ảnh/video, tiến trình tải, cảm xúc và nhận diện thương hiệu; lưu checkpoint bàn giao.

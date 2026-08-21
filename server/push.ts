@@ -15,7 +15,7 @@ type PushPayload = {
 export function buildNewMessagePushPayload(token: string, conversationId: number): PushPayload {
   return {
     to: token,
-    title: "SwiftChat",
+    title: "ChatPHT",
     body: "Bạn có tin nhắn mới",
     sound: "default",
     priority: "high",

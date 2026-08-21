@@ -1,7 +1,7 @@
 import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
 import { ChatMediaPreview, ChatMediaViewer } from "@/components/chat-media-viewer";
-import { uploadMediaDirectly } from "@/lib/direct-media-upload";
+import { resolveMediaUploadUri, uploadMediaDirectly } from "@/lib/direct-media-upload";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
@@ -32,7 +32,10 @@ type ChatMessage = {
   recalledAt: Date | null;
   recalledBy: number | null;
   createdAt: Date;
+  reactions: { emoji: string; userId: number }[];
 };
+
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
 
 function VideoBubble({ uri, onOpen }: { uri: string; onOpen: () => void }) {
   const player = useVideoPlayer(uri);
@@ -51,12 +54,15 @@ export default function ChatScreen() {
   const [draft, setDraft] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadLabel, setUploadLabel] = useState("Đang tải lên");
+  const [reactionPickerFor, setReactionPickerFor] = useState<number | null>(null);
   const [preview, setPreview] = useState<ChatMediaPreview | null>(null);
   const utils = trpc.useUtils();
   const messages = trpc.messages.list.useQuery({ conversationId }, { enabled: Boolean(user) && Number.isInteger(conversationId), refetchInterval: 1800 });
   const sendText = trpc.messages.sendText.useMutation();
   const requestMediaUpload = trpc.messages.requestMediaUpload.useMutation();
   const completeMediaUpload = trpc.messages.completeMediaUpload.useMutation();
+  const toggleReaction = trpc.messages.toggleReaction.useMutation();
   const recall = trpc.messages.recall.useMutation();
   const removeConversation = trpc.conversations.remove.useMutation();
   const clearConversation = trpc.conversations.clearContent.useMutation();
@@ -93,19 +99,24 @@ export default function ChatScreen() {
     if (!(mimeType.startsWith("image/") || mimeType === "video/mp4" || mimeType === "video/quicktime")) { Alert.alert("Định dạng chưa hỗ trợ", "Hãy chọn ảnh JPEG/PNG/WEBP/GIF hoặc video MP4/MOV."); return; }
     setUploading(true);
     setUploadProgress(0);
+    setUploadLabel("Chuẩn bị tệp...");
     try {
+      const uploadUri = await resolveMediaUploadUri(asset.uri, asset.assetId);
       const prepared = await requestMediaUpload.mutateAsync({
         conversationId,
         filename,
         mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "video/mp4" | "video/quicktime",
         size: fileSize,
       });
+      setUploadLabel("Đang tải lên");
       await uploadMediaDirectly({
-        uri: asset.uri,
+        uri: uploadUri,
         uploadUrl: prepared.uploadUrl,
         mimeType,
         onProgress: setUploadProgress,
       });
+      setUploadProgress(100);
+      setUploadLabel("Đang gửi tin nhắn...");
       await completeMediaUpload.mutateAsync({
         conversationId,
         key: prepared.key,
@@ -113,9 +124,10 @@ export default function ChatScreen() {
         mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "video/mp4" | "video/quicktime",
         size: fileSize,
       });
-      refresh();
+      await utils.messages.list.invalidate({ conversationId });
+      void utils.conversations.list.invalidate();
     } catch (error) { Alert.alert("Không tải được tệp", error instanceof Error ? error.message : "Vui lòng thử lại bằng tệp nhỏ hơn."); }
-    finally { setUploading(false); setUploadProgress(null); }
+    finally { setUploading(false); setUploadProgress(null); setUploadLabel("Đang tải lên"); }
   };
 
   const remove = async () => {
@@ -156,19 +168,37 @@ export default function ChatScreen() {
     { text: "Thu hồi", style: "destructive", onPress: () => void recall.mutateAsync({ messageId: item.id }).then(refresh).catch((error) => Alert.alert("Không thể thu hồi", error instanceof Error ? error.message : "Vui lòng thử lại.")) },
   ]);
 
+  const reactToMessage = async (messageId: number, emoji: (typeof REACTION_EMOJIS)[number]) => {
+    if (toggleReaction.isPending) return;
+    setReactionPickerFor(null);
+    try {
+      await toggleReaction.mutateAsync({ messageId, emoji });
+      await utils.messages.list.invalidate({ conversationId });
+    } catch (error) {
+      Alert.alert("Không thể thả cảm xúc", error instanceof Error ? error.message : "Vui lòng thử lại.");
+    }
+  };
+
   return <SafeAreaView style={styles.safe} edges={["top", "bottom", "left", "right"]}>
     <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0}>
       <View style={styles.header}><Pressable onPress={() => router.back()} style={({pressed}) => [styles.back, pressed && styles.pressed]}><MaterialIcons name="arrow-back" size={22} color="#172554" /></Pressable><View style={styles.headerText}><Text style={styles.headerTitle}>{header.title}</Text><Text style={styles.headerSubtitle}>{header.subtitle}</Text></View><Pressable onPress={confirmRemove} disabled={removeConversation.isPending || clearConversation.isPending} style={({pressed}) => [styles.deleteConversation, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Xóa hội thoại khỏi hộp thư"><MaterialIcons name="delete-outline" size={21} color="#C2410C" /></Pressable><Pressable onPress={confirmClearContent} disabled={removeConversation.isPending || clearConversation.isPending} style={({pressed}) => [styles.clearConversation, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Xóa sạch toàn bộ tin nhắn, ảnh và video"><MaterialIcons name="delete-forever" size={21} color="#B91C1C" /></Pressable><View style={styles.shield}><MaterialIcons name="shield" size={19} color="#16713B" /></View></View>
       <FlatList ref={listRef} data={(messages.data ?? []) as ChatMessage[]} keyExtractor={(item) => String(item.id)} style={styles.list} contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })} renderItem={({ item }) => {
         const mine = item.senderId === user.id;
-        return <View style={[styles.messageRow, mine ? styles.mineRow : styles.theirRow]}><Pressable onLongPress={mine && !item.recalledAt ? () => confirmRecall(item) : undefined} delayLongPress={350} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble]}>{item.recalledAt ? <View style={styles.recalled}><MaterialIcons name="undo" size={15} color={mine ? "#D9E5FF" : "#64748B"}/><Text style={[styles.recalledText, mine && styles.mineRecalledText]}>Bạn đã thu hồi tin nhắn</Text></View> : <>{item.contentType === "image" && item.mediaUrl ? <Pressable onPress={() => setPreview({ uri: item.mediaUrl as string, type: "image", name: item.mediaName })} accessibilityRole="button" accessibilityLabel="Mở ảnh toàn màn hình"><Image source={item.mediaUrl} style={styles.image} contentFit="cover" transition={180} /></Pressable> : null}{item.contentType === "video" && item.mediaUrl ? <VideoBubble uri={item.mediaUrl} onOpen={() => setPreview({ uri: item.mediaUrl as string, type: "video", name: item.mediaName })} /> : null}{item.body ? <Text style={[styles.messageText, mine && styles.mineText]}>{item.body}</Text> : null}</>}<Text style={[styles.messageTime, mine && styles.mineTime]}>{relativeTime(item.createdAt)}</Text></Pressable></View>;
+        const groupedReactions = item.reactions.reduce<Record<string, { count: number; mine: boolean }>>((accumulator, reaction) => {
+          const value = accumulator[reaction.emoji] ?? { count: 0, mine: false };
+          value.count += 1;
+          value.mine = value.mine || reaction.userId === user.id;
+          accumulator[reaction.emoji] = value;
+          return accumulator;
+        }, {});
+        return <View style={[styles.messageRow, mine ? styles.mineRow : styles.theirRow]}><View style={styles.messageStack}><Pressable onLongPress={mine && !item.recalledAt ? () => confirmRecall(item) : undefined} delayLongPress={350} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble]}>{item.recalledAt ? <View style={styles.recalled}><MaterialIcons name="undo" size={15} color={mine ? "#D9E5FF" : "#64748B"}/><Text style={[styles.recalledText, mine && styles.mineRecalledText]}>Bạn đã thu hồi tin nhắn</Text></View> : <>{item.contentType === "image" && item.mediaUrl ? <Pressable onPress={() => setPreview({ uri: item.mediaUrl as string, type: "image", name: item.mediaName })} accessibilityRole="button" accessibilityLabel="Mở ảnh toàn màn hình"><Image source={item.mediaUrl} style={styles.image} contentFit="cover" transition={180} /></Pressable> : null}{item.contentType === "video" && item.mediaUrl ? <VideoBubble uri={item.mediaUrl} onOpen={() => setPreview({ uri: item.mediaUrl as string, type: "video", name: item.mediaName })} /> : null}{item.body ? <Text style={[styles.messageText, mine && styles.mineText]}>{item.body}</Text> : null}</>}<Text style={[styles.messageTime, mine && styles.mineTime]}>{relativeTime(item.createdAt)}</Text></Pressable>{!item.recalledAt ? <View style={[styles.reactionRow, mine ? styles.mineReactionRow : styles.theirReactionRow]}>{Object.entries(groupedReactions).map(([emoji, value]) => <Pressable key={emoji} onPress={() => void reactToMessage(item.id, emoji as (typeof REACTION_EMOJIS)[number])} style={({ pressed }) => [styles.reactionBadge, value.mine && styles.reactionBadgeMine, pressed && styles.pressed]}><Text style={styles.reactionBadgeText}>{emoji} {value.count}</Text></Pressable>)}<Pressable onPress={() => setReactionPickerFor(reactionPickerFor === item.id ? null : item.id)} style={({ pressed }) => [styles.reactionAdd, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Thả cảm xúc"><MaterialIcons name="add-reaction" size={16} color="#64748B" /></Pressable></View> : null}{reactionPickerFor === item.id ? <View style={[styles.reactionPicker, mine ? styles.mineReactionPicker : styles.theirReactionPicker]}>{REACTION_EMOJIS.map((emoji) => <Pressable key={emoji} onPress={() => void reactToMessage(item.id, emoji)} style={({ pressed }) => [styles.reactionOption, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={`Thả cảm xúc ${emoji}`}><Text style={styles.reactionOptionText}>{emoji}</Text></Pressable>)}</View> : null}</View></View>;
       }} ListEmptyComponent={<View style={styles.empty}><View style={styles.emptyIcon}><MaterialIcons name="lock" size={26} color="#2563EB"/></View><Text style={styles.emptyTitle}>Không có tin nhắn nào</Text><Text style={styles.emptyText}>Bắt đầu cuộc trò chuyện riêng tư của bạn.</Text></View>} />
-      <View style={styles.composer}>{uploading && uploadProgress !== null ? <View style={styles.uploadStatus} accessibilityLiveRegion="polite"><View style={styles.uploadLabelRow}><Text style={styles.uploadLabel}>Đang tải lên</Text><Text style={styles.uploadPercent}>{uploadProgress}%</Text></View><View style={styles.uploadTrack}><View style={[styles.uploadFill, { width: `${uploadProgress}%` }]} /></View></View> : null}<View style={styles.composerRow}><Pressable disabled={uploading} onPress={() => void chooseMedia()} style={({pressed}) => [styles.attach, (pressed || uploading) && styles.pressed]}>{uploading ? <ActivityIndicator color="#2563EB" size="small"/> : <MaterialIcons name="attach-file" size={23} color="#2563EB"/>}</Pressable><TextInput value={draft} onChangeText={setDraft} placeholder="Viết tin nhắn..." placeholderTextColor="#8A96A8" style={styles.input} multiline maxLength={2000} returnKeyType="send" onSubmitEditing={() => void send()} blurOnSubmit={false}/><Pressable disabled={uploading || !draft.trim() || sendText.isPending} onPress={() => void send()} style={({pressed}) => [styles.send, (uploading || !draft.trim() || sendText.isPending) && styles.sendDisabled, pressed && styles.pressed]}>{sendText.isPending ? <ActivityIndicator color="#FFF" size="small"/> : <MaterialIcons name="send" size={20} color="#FFF"/>}</Pressable></View></View>
+      <View style={styles.composer}>{uploading && uploadProgress !== null ? <View style={styles.uploadStatus} accessibilityLiveRegion="polite"><View style={styles.uploadLabelRow}><Text style={styles.uploadLabel}>{uploadLabel}</Text><Text style={styles.uploadPercent}>{uploadProgress}%</Text></View><View style={styles.uploadTrack}><View style={[styles.uploadFill, { width: `${uploadProgress}%` }]} /></View></View> : null}<View style={styles.composerRow}><Pressable disabled={uploading} onPress={() => void chooseMedia()} style={({pressed}) => [styles.attach, (pressed || uploading) && styles.pressed]}>{uploading ? <ActivityIndicator color="#2563EB" size="small"/> : <MaterialIcons name="attach-file" size={23} color="#2563EB"/>}</Pressable><TextInput value={draft} onChangeText={setDraft} placeholder="Viết tin nhắn..." placeholderTextColor="#8A96A8" style={styles.input} multiline maxLength={2000} returnKeyType="send" onSubmitEditing={() => void send()} blurOnSubmit={false}/><Pressable disabled={uploading || !draft.trim() || sendText.isPending} onPress={() => void send()} style={({pressed}) => [styles.send, (uploading || !draft.trim() || sendText.isPending) && styles.sendDisabled, pressed && styles.pressed]}>{sendText.isPending ? <ActivityIndicator color="#FFF" size="small"/> : <MaterialIcons name="send" size={20} color="#FFF"/>}</Pressable></View></View>
       <ChatMediaViewer item={preview} onClose={() => setPreview(null)} />
     </KeyboardAvoidingView>
   </SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
-  safe:{flex:1,backgroundColor:"#F6F8FC"}, loading:{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:"#F6F8FC"},keyboard:{flex:1},header:{height:68,paddingHorizontal:16,borderBottomWidth:1,borderBottomColor:"#E6EAF1",backgroundColor:"#F6F8FC",flexDirection:"row",alignItems:"center",gap:8},back:{height:42,width:42,borderRadius:14,alignItems:"center",justifyContent:"center",backgroundColor:"#E9EFFD"},headerText:{flex:1},headerTitle:{color:"#172554",fontSize:16,fontWeight:"800"},headerSubtitle:{marginTop:3,color:"#718096",fontSize:11.5},deleteConversation:{height:36,width:36,borderRadius:12,alignItems:"center",justifyContent:"center",backgroundColor:"#FFF0E9"},clearConversation:{height:36,width:36,borderRadius:12,alignItems:"center",justifyContent:"center",backgroundColor:"#FEE2E2"},shield:{height:36,width:36,borderRadius:12,backgroundColor:"#ECFDF3",alignItems:"center",justifyContent:"center"},list:{flex:1},listContent:{paddingHorizontal:16,paddingVertical:14,gap:9,flexGrow:1},messageRow:{flexDirection:"row"},mineRow:{justifyContent:"flex-end"},theirRow:{justifyContent:"flex-start"},bubble:{maxWidth:"82%",borderRadius:18,paddingHorizontal:13,paddingVertical:9,overflow:"hidden"},mineBubble:{backgroundColor:"#2563EB",borderBottomRightRadius:5},theirBubble:{backgroundColor:"#E9EEF8",borderBottomLeftRadius:5},messageText:{color:"#1E293B",fontSize:15.5,lineHeight:21},mineText:{color:"#FFF"},messageTime:{color:"#718096",alignSelf:"flex-end",fontSize:10.5,marginTop:4},mineTime:{color:"#D9E5FF"},image:{width:220,height:190,borderRadius:12,marginBottom:3},videoFrame:{width:220,height:150,borderRadius:12,marginBottom:3,overflow:"hidden",backgroundColor:"#172554"},video:{width:"100%",height:"100%"},videoOverlay:{...StyleSheet.absoluteFillObject,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(0,0,0,.12)"},recalled:{flexDirection:"row",alignItems:"center",gap:6,paddingVertical:3},recalledText:{color:"#64748B",fontStyle:"italic",fontSize:14},mineRecalledText:{color:"#D9E5FF"},empty:{flex:1,alignItems:"center",justifyContent:"center",paddingBottom:45},emptyIcon:{height:55,width:55,borderRadius:19,alignItems:"center",justifyContent:"center",backgroundColor:"#E9EFFD"},emptyTitle:{color:"#475569",fontSize:16,fontWeight:"800",marginTop:12},emptyText:{color:"#8190A5",fontSize:13,marginTop:5},composer:{paddingHorizontal:12,paddingVertical:10,borderTopWidth:1,borderColor:"#E3E8F0",backgroundColor:"#FFF"},composerRow:{flexDirection:"row",alignItems:"flex-end",gap:8},uploadStatus:{paddingHorizontal:2,paddingBottom:9},uploadLabelRow:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginBottom:5},uploadLabel:{color:"#475569",fontSize:12.5,fontWeight:"700"},uploadPercent:{color:"#2563EB",fontSize:12.5,fontWeight:"800"},uploadTrack:{height:5,borderRadius:999,backgroundColor:"#E6ECF7",overflow:"hidden"},uploadFill:{height:"100%",borderRadius:999,backgroundColor:"#2563EB"},attach:{height:43,width:43,borderRadius:14,backgroundColor:"#E9EFFD",alignItems:"center",justifyContent:"center"},input:{flex:1,maxHeight:94,minHeight:43,borderRadius:16,paddingHorizontal:14,paddingVertical:10,backgroundColor:"#F0F3F8",color:"#172554",fontSize:15.5},send:{height:43,width:43,borderRadius:14,alignItems:"center",justifyContent:"center",backgroundColor:"#2563EB"},sendDisabled:{backgroundColor:"#AAB4C5"},pressed:{opacity:.75,transform:[{scale:.97}]},
+  safe:{flex:1,backgroundColor:"#F6F8FC"}, loading:{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:"#F6F8FC"},keyboard:{flex:1},header:{height:68,paddingHorizontal:16,borderBottomWidth:1,borderBottomColor:"#E6EAF1",backgroundColor:"#F6F8FC",flexDirection:"row",alignItems:"center",gap:8},back:{height:42,width:42,borderRadius:14,alignItems:"center",justifyContent:"center",backgroundColor:"#E9EFFD"},headerText:{flex:1},headerTitle:{color:"#172554",fontSize:16,fontWeight:"800"},headerSubtitle:{marginTop:3,color:"#718096",fontSize:11.5},deleteConversation:{height:36,width:36,borderRadius:12,alignItems:"center",justifyContent:"center",backgroundColor:"#FFF0E9"},clearConversation:{height:36,width:36,borderRadius:12,alignItems:"center",justifyContent:"center",backgroundColor:"#FEE2E2"},shield:{height:36,width:36,borderRadius:12,backgroundColor:"#ECFDF3",alignItems:"center",justifyContent:"center"},list:{flex:1},listContent:{paddingHorizontal:16,paddingVertical:14,gap:9,flexGrow:1},messageRow:{flexDirection:"row"},messageStack:{maxWidth:"82%"},mineRow:{justifyContent:"flex-end"},theirRow:{justifyContent:"flex-start"},bubble:{borderRadius:18,paddingHorizontal:13,paddingVertical:9,overflow:"hidden"},mineBubble:{backgroundColor:"#2563EB",borderBottomRightRadius:5},theirBubble:{backgroundColor:"#E9EEF8",borderBottomLeftRadius:5},messageText:{color:"#1E293B",fontSize:15.5,lineHeight:21},mineText:{color:"#FFF"},messageTime:{color:"#718096",alignSelf:"flex-end",fontSize:10.5,marginTop:4},mineTime:{color:"#D9E5FF"},image:{width:220,height:190,borderRadius:12,marginBottom:3},videoFrame:{width:220,height:150,borderRadius:12,marginBottom:3,overflow:"hidden",backgroundColor:"#172554"},video:{width:"100%",height:"100%"},videoOverlay:{...StyleSheet.absoluteFillObject,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(0,0,0,.12)"},recalled:{flexDirection:"row",alignItems:"center",gap:6,paddingVertical:3},recalledText:{color:"#64748B",fontStyle:"italic",fontSize:14},mineRecalledText:{color:"#D9E5FF"},reactionRow:{flexDirection:"row",alignItems:"center",gap:5,marginTop:4},mineReactionRow:{justifyContent:"flex-end"},theirReactionRow:{justifyContent:"flex-start"},reactionBadge:{minHeight:26,paddingHorizontal:7,borderRadius:13,justifyContent:"center",backgroundColor:"#FFFFFF",borderWidth:1,borderColor:"#DDE4EF"},reactionBadgeMine:{backgroundColor:"#E8F0FF",borderColor:"#93B4F9"},reactionBadgeText:{fontSize:12},reactionAdd:{height:26,width:26,borderRadius:13,alignItems:"center",justifyContent:"center",backgroundColor:"#FFFFFF",borderWidth:1,borderColor:"#DDE4EF"},reactionPicker:{marginTop:5,padding:5,backgroundColor:"#FFFFFF",borderRadius:18,borderWidth:1,borderColor:"#DDE4EF",flexDirection:"row",alignSelf:"flex-start",shadowColor:"#0F172A",shadowOpacity:.08,shadowRadius:8,elevation:2},mineReactionPicker:{alignSelf:"flex-end"},theirReactionPicker:{alignSelf:"flex-start"},reactionOption:{height:32,width:32,alignItems:"center",justifyContent:"center",borderRadius:16},reactionOptionText:{fontSize:18},empty:{flex:1,alignItems:"center",justifyContent:"center",paddingBottom:45},emptyIcon:{height:55,width:55,borderRadius:19,alignItems:"center",justifyContent:"center",backgroundColor:"#E9EFFD"},emptyTitle:{color:"#475569",fontSize:16,fontWeight:"800",marginTop:12},emptyText:{color:"#8190A5",fontSize:13,marginTop:5},composer:{paddingHorizontal:12,paddingVertical:10,borderTopWidth:1,borderColor:"#E3E8F0",backgroundColor:"#FFF"},composerRow:{flexDirection:"row",alignItems:"flex-end",gap:8},uploadStatus:{paddingHorizontal:2,paddingBottom:9},uploadLabelRow:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginBottom:5},uploadLabel:{color:"#475569",fontSize:12.5,fontWeight:"700"},uploadPercent:{color:"#2563EB",fontSize:12.5,fontWeight:"800"},uploadTrack:{height:5,borderRadius:999,backgroundColor:"#E6ECF7",overflow:"hidden"},uploadFill:{height:"100%",borderRadius:999,backgroundColor:"#2563EB"},attach:{height:43,width:43,borderRadius:14,backgroundColor:"#E9EFFD",alignItems:"center",justifyContent:"center"},input:{flex:1,maxHeight:94,minHeight:43,borderRadius:16,paddingHorizontal:14,paddingVertical:10,backgroundColor:"#F0F3F8",color:"#172554",fontSize:15.5},send:{height:43,width:43,borderRadius:14,alignItems:"center",justifyContent:"center",backgroundColor:"#2563EB"},sendDisabled:{backgroundColor:"#AAB4C5"},pressed:{opacity:.75,transform:[{scale:.97}]},
 });

@@ -29,7 +29,7 @@ export default function InboxScreen() {
   return (
     <ScreenContainer edges={["top", "left", "right"]}>
       <View style={styles.header}>
-        <View><Text style={styles.kicker}>SWIFTCHAT</Text><Text style={styles.title}>Hộp thư</Text></View>
+        <View><Text style={styles.kicker}>CHATPHT</Text><Text style={styles.title}>Hộp thư</Text></View>
         <View style={styles.headerActions}>
           <Pressable onPress={() => router.push("/requests" as never)} style={({ pressed }) => [styles.circleButton, pressed && styles.pressed]}>
             <MaterialIcons name="person-add-alt-1" size={21} color="#1D4ED8" />

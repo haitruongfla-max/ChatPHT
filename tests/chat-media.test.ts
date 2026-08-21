@@ -7,6 +7,7 @@ vi.mock("../server/db", () => ({
   hideConversationForUser: vi.fn(),
   clearConversationContent: vi.fn(),
   recallMessage: vi.fn(),
+  toggleMessageReaction: vi.fn(),
   upsertPushDevice: vi.fn(),
   removePushDevice: vi.fn(),
   listConversationRecipientDevices: vi.fn().mockResolvedValue([]),
@@ -136,6 +137,18 @@ describe("chat media access controls", () => {
       mediaUrl: null,
     });
     expect(db.recallMessage).toHaveBeenCalledWith(55, 7);
+  });
+
+  it("toggles an allowed emoji using the authenticated user identity", async () => {
+    vi.mocked(db.toggleMessageReaction).mockResolvedValue({ conversationId: 18, active: true });
+
+    await expect(callerFor(7).messages.toggleReaction({ messageId: 55, emoji: "❤️" })).resolves.toEqual({ conversationId: 18, active: true });
+    expect(db.toggleMessageReaction).toHaveBeenCalledWith({ messageId: 55, emoji: "❤️", userId: 7 });
+  });
+
+  it("rejects unsupported reaction input before querying the database", async () => {
+    await expect(callerFor(7).messages.toggleReaction({ messageId: 55, emoji: "🚀" as any })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(db.toggleMessageReaction).not.toHaveBeenCalled();
   });
 
   it("only registers a valid device token against the signed-in account", async () => {

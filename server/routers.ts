@@ -24,6 +24,7 @@ const mediaMimeSchema = z.enum([
   "video/quicktime",
 ]);
 const videoMimeSchema = z.enum(["video/mp4", "video/quicktime"]);
+const reactionEmojiSchema = z.enum(["👍", "❤️", "😂", "😮", "😢", "🔥"]);
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -41,12 +42,13 @@ function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | A
     recalledBy: message.recalledBy,
     createdAt: message.createdAt,
     mediaUrl,
+    reactions: "reactions" in message ? message.reactions : [],
   };
 }
 
 async function signInResponse(ctx: { req: any; res: any }, user: Awaited<ReturnType<typeof db.getUserById>>) {
   if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Không thể tạo phiên đăng nhập." });
-  const token = await sdk.createSessionToken(user.openId, { name: user.name ?? user.username ?? "SwiftChat" });
+  const token = await sdk.createSessionToken(user.openId, { name: user.name ?? user.username ?? "ChatPHT" });
   ctx.res.cookie(COOKIE_NAME, token, {
     ...getSessionCookieOptions(ctx.req),
     maxAge: ONE_YEAR_MS,
@@ -232,6 +234,15 @@ export const appRouter = router({
           return publicMessage(message, null);
         } catch (error) {
           return appError(error, "Không thể gửi tin nhắn.");
+        }
+      }),
+    toggleReaction: protectedProcedure
+      .input(z.object({ messageId: z.number().int().positive(), emoji: reactionEmojiSchema }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await db.toggleMessageReaction({ ...input, userId: ctx.user.id });
+        } catch (error) {
+          return appError(error, "Không thể cập nhật cảm xúc.");
         }
       }),
     upload: protectedProcedure

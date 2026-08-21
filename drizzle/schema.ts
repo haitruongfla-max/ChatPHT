@@ -105,9 +105,25 @@ export const messages = mysqlTable(
   (table) => [index("message_conversation_created_idx").on(table.conversationId, table.createdAt)],
 );
 
+export const messageReactions = mysqlTable(
+  "message_reactions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    messageId: int("messageId").notNull(),
+    userId: int("userId").notNull(),
+    emoji: varchar("emoji", { length: 16 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("message_reaction_unique_idx").on(table.messageId, table.userId, table.emoji),
+    index("message_reaction_message_idx").on(table.messageId),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type FriendRequest = typeof friendRequests.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+export type MessageReaction = typeof messageReactions.$inferSelect;
 export type PushDevice = typeof pushDevices.$inferSelect;

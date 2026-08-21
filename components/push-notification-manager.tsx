@@ -7,7 +7,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { router } from "expo-router";
 import * as Notifications from "expo-notifications";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Platform } from "react-native";
 
 if (Platform.OS !== "web") {
@@ -31,13 +31,13 @@ export function PushNotificationManager() {
   const { mutateAsync: registerDevice } = trpc.notifications.registerDevice.useMutation();
   const registeredToken = useRef<string | null>(null);
 
-  const saveToken = async (token: string) => {
+  const saveToken = useCallback(async (token: string) => {
     if (registeredToken.current === token) return;
     const platform = Platform.OS === "ios" ? "ios" : "android";
     await registerDevice({ token, platform });
     registeredToken.current = token;
     await storePushToken(token);
-  };
+  }, [registerDevice]);
 
   useEffect(() => {
     if (Platform.OS === "web") return;
@@ -65,7 +65,7 @@ export function PushNotificationManager() {
     return () => {
       active = false;
     };
-  }, [registerDevice, user]);
+  }, [saveToken, user]);
 
   useEffect(() => {
     if (!user || Platform.OS === "web") return;
@@ -73,7 +73,7 @@ export function PushNotificationManager() {
       void saveToken(token.data).catch((error) => console.warn("[Push] Không thể cập nhật token thông báo.", error));
     });
     return () => subscription.remove();
-  }, [registerDevice, user]);
+  }, [saveToken, user]);
 
   return null;
 }

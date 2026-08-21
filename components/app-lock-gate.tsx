@@ -23,7 +23,7 @@ export function AppLockGate() {
       setChecking(false);
     });
     return () => { active = false; };
-  }, [user?.id]);
+  }, [user]);
 
   useEffect(() => {
     const unsubscribe = subscribeToAppLockChanges((change) => {
@@ -46,7 +46,7 @@ export function AppLockGate() {
       appState.current = nextState;
     });
     return () => subscription.remove();
-  }, [configured, user?.id]);
+  }, [configured, user]);
 
   const unlock = async () => {
     if (!(await verifyAppLockPin(pin))) {
@@ -66,7 +66,7 @@ export function AppLockGate() {
       <SafeAreaView style={styles.safe} edges={["top", "bottom", "left", "right"]}>
         <KeyboardAvoidingView style={styles.content} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={styles.icon}><MaterialIcons name="lock" size={30} color="#2563EB" /></View>
-          <Text style={styles.title}>SwiftChat đang bị khóa</Text>
+          <Text style={styles.title}>ChatPHT đang bị khóa</Text>
           <Text style={styles.subtitle}>Nhập mã khóa ứng dụng để tiếp tục xem các cuộc trò chuyện riêng tư.</Text>
           <TextInput
             autoFocus

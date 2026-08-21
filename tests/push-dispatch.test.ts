@@ -16,7 +16,7 @@ describe("private chat push dispatch", () => {
   it("builds a notification without exposing sender identity or message content", () => {
     expect(buildNewMessagePushPayload("ExponentPushToken[device-a]", 18)).toEqual({
       to: "ExponentPushToken[device-a]",
-      title: "SwiftChat",
+      title: "ChatPHT",
       body: "Bạn có tin nhắn mới",
       sound: "default",
       priority: "high",

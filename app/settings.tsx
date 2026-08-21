@@ -41,7 +41,7 @@ export default function SettingsScreen() {
     if (!/^\d{4,8}$/.test(newPin)) { Alert.alert("Mã chưa hợp lệ", "Mã khóa cần gồm 4 đến 8 chữ số."); return; }
     if (newPin !== confirmPin) { Alert.alert("Mã không khớp", "Hãy nhập lại mã mới giống nhau."); return; }
     setSavingPin(true);
-    try { await saveAppLockPin(newPin); setHasPin(true); resetPinForm(); Alert.alert("Đã bật khóa ứng dụng", "SwiftChat sẽ yêu cầu mã khi bạn quay lại ứng dụng."); }
+    try { await saveAppLockPin(newPin); setHasPin(true); resetPinForm(); Alert.alert("Đã bật khóa ứng dụng", "ChatPHT sẽ yêu cầu mã khi bạn quay lại ứng dụng."); }
     finally { setSavingPin(false); }
   };
 
@@ -88,7 +88,7 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.top}><Pressable onPress={() => router.back()} style={({ pressed }) => [styles.back, pressed && styles.pressed]}><MaterialIcons name="arrow-back" size={23} color="#1D4ED8" /></Pressable><View><Text style={styles.kicker}>CÀI ĐẶT</Text><Text style={styles.title}>Bảo mật & thông báo</Text></View></View>
 
-        <View style={styles.section}><Text style={styles.sectionTitle}>Khóa ứng dụng</Text><View style={styles.card}><View style={styles.row}><View style={styles.icon}><MaterialIcons name="lock-outline" size={21} color="#1D4ED8" /></View><View style={styles.rowBody}><Text style={styles.rowTitle}>{hasPin ? "Mã khóa đang bật" : "Đặt mã khóa"}</Text><Text style={styles.rowText}>{hasPin ? "Yêu cầu mã khi bạn quay lại SwiftChat." : "Bảo vệ tin nhắn bằng mã gồm 4–8 chữ số."}</Text></View><Pressable onPress={() => setEditingPin((value) => !value)} style={({ pressed }) => [styles.smallAction, pressed && styles.pressed]}><Text style={styles.smallActionText}>{hasPin ? "Đổi mã" : "Bật"}</Text></Pressable></View>
+        <View style={styles.section}><Text style={styles.sectionTitle}>Khóa ứng dụng</Text><View style={styles.card}><View style={styles.row}><View style={styles.icon}><MaterialIcons name="lock-outline" size={21} color="#1D4ED8" /></View><View style={styles.rowBody}><Text style={styles.rowTitle}>{hasPin ? "Mã khóa đang bật" : "Đặt mã khóa"}</Text><Text style={styles.rowText}>{hasPin ? "Yêu cầu mã khi bạn quay lại ChatPHT." : "Bảo vệ tin nhắn bằng mã gồm 4–8 chữ số."}</Text></View><Pressable onPress={() => setEditingPin((value) => !value)} style={({ pressed }) => [styles.smallAction, pressed && styles.pressed]}><Text style={styles.smallActionText}>{hasPin ? "Đổi mã" : "Bật"}</Text></Pressable></View>
           {editingPin && <View style={styles.form}>{hasPin && <><Text style={styles.formLabel}>Mã hiện tại</Text><TextInput value={currentPin} onChangeText={(value) => normalizePin(value, setCurrentPin)} keyboardType="number-pad" secureTextEntry maxLength={8} style={styles.input} placeholder="••••" placeholderTextColor="#94A3B8" /></>}
             <Text style={styles.formLabel}>Mã mới</Text><TextInput value={newPin} onChangeText={(value) => normalizePin(value, setNewPin)} keyboardType="number-pad" secureTextEntry maxLength={8} style={styles.input} placeholder="4–8 chữ số" placeholderTextColor="#94A3B8" />
             <Text style={styles.formLabel}>Nhập lại mã mới</Text><TextInput value={confirmPin} onChangeText={(value) => normalizePin(value, setConfirmPin)} keyboardType="number-pad" secureTextEntry maxLength={8} style={styles.input} placeholder="Nhập lại mã mới" placeholderTextColor="#94A3B8" />

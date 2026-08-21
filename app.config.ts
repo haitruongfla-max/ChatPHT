@@ -28,11 +28,11 @@ const schemeFromBundleId = `manus${timestamp}`;
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: "SwiftChat",
+  appName: "ChatPHT",
   appSlug: "swift-chat",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "/manus-storage/swiftchat-icon_227272ff.png",
+  logoUrl: "/manus-storage/chatpht-icon_c9ee6eac.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
@@ -52,8 +52,8 @@ const config: ExpoConfig = {
     bundleIdentifier: env.iosBundleId,
     "infoPlist": {
       "ITSAppUsesNonExemptEncryption": false,
-      "NSPhotoLibraryUsageDescription": "SwiftChat cần truy cập thư viện để bạn gửi ảnh và video trong cuộc trò chuyện riêng tư.",
-      "NSPhotoLibraryAddUsageDescription": "SwiftChat cần quyền thêm ảnh và video bạn chọn lưu vào thư viện điện thoại."
+      "NSPhotoLibraryUsageDescription": "ChatPHT cần truy cập thư viện để bạn gửi ảnh và video trong cuộc trò chuyện riêng tư.",
+      "NSPhotoLibraryAddUsageDescription": "ChatPHT cần quyền thêm ảnh và video bạn chọn lưu vào thư viện điện thoại."
     }
   },
   android: {
@@ -99,8 +99,8 @@ const config: ExpoConfig = {
     [
       "expo-media-library",
       {
-        photosPermission: "SwiftChat cần quyền truy cập thư viện để bạn chọn ảnh và video trong hội thoại riêng tư.",
-        savePhotosPermission: "SwiftChat cần quyền thêm ảnh và video bạn chọn lưu vào thư viện điện thoại.",
+        photosPermission: "ChatPHT cần quyền truy cập thư viện để bạn chọn ảnh và video trong hội thoại riêng tư.",
+        savePhotosPermission: "ChatPHT cần quyền thêm ảnh và video bạn chọn lưu vào thư viện điện thoại.",
         granularPermissions: ["photo", "video"],
       },
     ],
@@ -120,7 +120,7 @@ const config: ExpoConfig = {
     [
       "expo-image-picker",
       {
-        photosPermission: "SwiftChat cần truy cập thư viện để bạn gửi ảnh và video trong cuộc trò chuyện riêng tư.",
+        photosPermission: "ChatPHT cần truy cập thư viện để bạn gửi ảnh và video trong cuộc trò chuyện riêng tư.",
       },
     ],
     [

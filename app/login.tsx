@@ -62,9 +62,10 @@ export default function LoginScreen() {
       <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.hero}>
-            <View style={styles.mark}><Text style={styles.markText}>S</Text></View>
-            <Text style={styles.title}>SwiftChat</Text>
+            <View style={styles.mark}><Text style={styles.markText}>P</Text></View>
+            <Text style={styles.title}>ChatPHT</Text>
             <Text style={styles.subtitle}>Nhắn tin riêng tư, nhanh và tự nhiên.</Text>
+            <Text style={styles.creator}>Tạo bởi Phùng Hải Trường</Text>
           </View>
 
           <View style={styles.card}>
@@ -113,6 +114,7 @@ const styles = StyleSheet.create({
   markText: { color: "#FFFFFF", fontWeight: "800", fontSize: 30 },
   title: { marginTop: 14, color: "#172554", fontWeight: "800", fontSize: 31, letterSpacing: -0.5 },
   subtitle: { marginTop: 6, color: "#64748B", fontSize: 15, textAlign: "center" },
+  creator: { marginTop: 7, color: "#2563EB", fontSize: 12.5, fontWeight: "700" },
   card: { backgroundColor: "#FFFFFF", borderRadius: 24, padding: 20, borderWidth: 1, borderColor: "#E6EAF1", shadowColor: "#162D5A", shadowOpacity: 0.07, shadowRadius: 15, elevation: 2 },
   modeRow: { flexDirection: "row", borderRadius: 12, backgroundColor: "#EEF2F8", padding: 3, marginBottom: 22 },
   mode: { flex: 1, alignItems: "center", borderRadius: 9, paddingVertical: 10 },

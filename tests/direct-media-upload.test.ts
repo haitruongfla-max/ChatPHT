@@ -1,18 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { platform, createUploadTask, taskUploadAsync } = vi.hoisted(() => ({
+const { platform, createUploadTask, taskUploadAsync, copyAsync, getAssetInfoAsync } = vi.hoisted(() => ({
   platform: { OS: "web" },
   createUploadTask: vi.fn(),
   taskUploadAsync: vi.fn(),
+  copyAsync: vi.fn(),
+  getAssetInfoAsync: vi.fn(),
 }));
 
 vi.mock("react-native", () => ({ Platform: platform }));
 vi.mock("expo-file-system/legacy", () => ({
   createUploadTask,
+  copyAsync,
+  cacheDirectory: "file://cache/",
   FileSystemUploadType: { BINARY_CONTENT: "binary" },
 }));
+vi.mock("expo-media-library", () => ({ getAssetInfoAsync }));
 
-import { uploadMediaDirectly } from "../lib/direct-media-upload";
+import { resolveMediaUploadUri, uploadMediaDirectly } from "../lib/direct-media-upload";
 
 describe("direct private media upload", () => {
   beforeEach(() => {
@@ -51,6 +56,24 @@ describe("direct private media upload", () => {
     taskUploadAsync.mockResolvedValue({ status: 413 });
     createUploadTask.mockReturnValue({ uploadAsync: taskUploadAsync });
 
-    await expect(uploadMediaDirectly({ uri: "file://video.mp4", uploadUrl: "https://upload.example/video", mimeType: "video/mp4" })).rejects.toThrow("Không thể tải video");
+    await expect(uploadMediaDirectly({ uri: "file://video.mp4", uploadUrl: "https://upload.example/video", mimeType: "video/mp4" })).rejects.toThrow("Không thể tải tệp");
+  });
+
+  it("copies an Android content URI into app cache before upload", async () => {
+    platform.OS = "android";
+    copyAsync.mockResolvedValue(undefined);
+
+    const resolved = await resolveMediaUploadUri("content://gallery/clip.mp4");
+
+    expect(resolved).toMatch(/^file:\/\/cache\/chatpht-upload-/);
+    expect(copyAsync).toHaveBeenCalledWith(expect.objectContaining({ from: "content://gallery/clip.mp4", to: resolved }));
+  });
+
+  it("uses the iOS local library URI when the picker returns a ph URI", async () => {
+    platform.OS = "ios";
+    getAssetInfoAsync.mockResolvedValue({ localUri: "file://photo.jpg", uri: "ph://photo" });
+
+    await expect(resolveMediaUploadUri("ph://photo", "asset-1")).resolves.toBe("file://photo.jpg");
+    expect(getAssetInfoAsync).toHaveBeenCalledWith("asset-1");
   });
 });
