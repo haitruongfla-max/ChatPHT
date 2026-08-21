@@ -95,6 +95,19 @@ export default function ProfileScreen() {
           </View>
           <MaterialIcons name="chevron-right" size={22} color="#94A3B8" />
         </Pressable>
+        {user.role === "admin" ? (
+          <Pressable
+            onPress={() => router.push("/admin" as never)}
+            style={({ pressed }) => [styles.admin, pressed && styles.pressed]}
+          >
+            <MaterialIcons name="admin-panel-settings" size={21} color="#7C3AED" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.infoTitle}>Quản lý người dùng</Text>
+              <Text style={styles.infoText}>Đặt thời hạn sử dụng hoặc xóa tài khoản thử nghiệm.</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={22} color="#94A3B8" />
+          </Pressable>
+        ) : null}
         <View style={styles.info}>
           <MaterialIcons name="person-search" size={20} color="#2563EB" />
           <View style={{ flex: 1 }}>
@@ -206,6 +219,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#EEF4FF",
     borderWidth: 1,
     borderColor: "#D8E6FF",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  admin: {
+    marginTop: 13,
+    padding: 16,
+    borderRadius: 19,
+    backgroundColor: "#F5F3FF",
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
     flexDirection: "row",
     alignItems: "center",
     gap: 12,

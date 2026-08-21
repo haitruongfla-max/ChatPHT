@@ -6,6 +6,8 @@ export type User = {
   id: number;
   username: string;
   displayName: string;
+  role: "user" | "admin";
+  accessExpiresAt: string | Date | null;
 };
 
 export async function getSessionToken(): Promise<string | null> {

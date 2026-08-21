@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../server/db", () => ({
+  isUserAccessExpired: vi.fn(() => false),
   listCallSessionsByConversation: vi.fn(),
 }));
 
@@ -9,7 +10,7 @@ import { appRouter } from "../server/routers";
 
 function callerFor(userId = 7) {
   return appRouter.createCaller({
-    user: { id: userId },
+    user: { id: userId, role: "user", accessExpiresAt: null },
     req: {},
     res: { cookie: vi.fn(), clearCookie: vi.fn() },
   } as any);

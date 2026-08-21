@@ -99,3 +99,8 @@
 - [x] Rà soát và khắc phục chuỗi đăng ký thiết bị, gửi thông báo, hiển thị thông báo, chuông và nhạc chờ.
 - [x] Kiểm thử hồi quy cuộc gọi audio/video, thời lượng và thông báo trên ChatPHT; lưu checkpoint ổn định.
 - [x] Loại bỏ tệp chuông riêng dung lượng lớn, dùng chuông hệ thống và lưu phiên bản nhẹ.
+- [x] Rà soát bố cục cuộc gọi video và cải thiện chế độ toàn màn hình với điều khiển ẩn/hiện an toàn quanh bàn phím hệ thống.
+- [x] Mở rộng dữ liệu người dùng với vai trò quản trị và thời hạn sử dụng có kiểm soát.
+- [x] Tạo tài khoản quản trị riêng, API quản lý người dùng, xóa người dùng và thiết lập số ngày sử dụng.
+- [x] Bổ sung màn hình quản trị chỉ dành cho quản trị viên, không làm lộ dữ liệu nhạy cảm của người dùng thường.
+- [x] Kiểm thử hồi quy gọi video, quyền quản trị, hết hạn người dùng và lưu checkpoint ổn định.

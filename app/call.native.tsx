@@ -33,6 +33,7 @@ export default function CallScreen() {
   const [isFrontCamera, setIsFrontCamera] = useState(resumed?.isFrontCamera ?? true);
   const [seconds, setSeconds] = useState(resumed?.seconds ?? 0);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const call = useRef(resumed?.call ?? new LiveKitCall()).current;
   const ringingScale = useRef(new Animated.Value(1)).current;
   const ringbackTone = useRef<Awaited<ReturnType<typeof createCallTonePlayer>> | null>(null);
@@ -45,6 +46,8 @@ export default function CallScreen() {
   const end = trpc.calls.end.useMutation();
   const answeredAt = details.data?.answeredAt ? new Date(details.data.answeredAt).getTime() : null;
   const isAnswered = details.data?.status === "active";
+  const isFullVideo = connected && kind === "video";
+  const showCallChrome = !isFullVideo || controlsVisible;
 
   useEffect(() => () => {
     if (!activeCall.isMinimized(callId)) void call.disconnect();
@@ -256,16 +259,17 @@ export default function CallScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <View style={styles.top}>
+      <View style={[styles.container, isFullVideo && styles.videoContainer]}>
+        {isFullVideo ? <LiveKitRoom room={call.getRoom()} serverUrl={undefined} token={undefined} connect={false}><VideoStage /></LiveKitRoom> : null}
+        {isFullVideo ? <Pressable style={styles.videoTapArea} onPress={() => setControlsVisible((visible) => !visible)} accessibilityRole="button" accessibilityLabel="Ẩn hoặc hiện điều khiển cuộc gọi" /> : null}
+        {showCallChrome ? <View style={styles.top}>
           <Pressable onPress={minimize} style={({ pressed }) => [styles.dismiss, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={connected ? "Thu nhỏ cuộc gọi" : "Hủy cuộc gọi"}><MaterialIcons name={connected ? "keyboard-arrow-down" : "close"} size={28} color="#E9F0FF" /></Pressable>
           <View style={styles.secure}><MaterialIcons name="lock" size={13} color="#A9CBFF" /><Text style={styles.secureText}>Kết nối bảo mật</Text></View><View style={styles.dismissPlaceholder} />
-        </View>
-        {connected && kind === "video" ? <LiveKitRoom room={call.getRoom()} serverUrl={undefined} token={undefined} connect={false}><VideoStage /></LiveKitRoom> : null}
-        <View style={[styles.identity, connected && kind === "video" && styles.videoIdentity]}><View style={styles.avatar}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></View><Text style={styles.name}>{name}</Text><Text style={styles.mutedText}>{isConnecting ? "Đang kết nối…" : subtitle}</Text>{connected ? <Text style={styles.quality}>Kết nối qua Internet</Text> : null}</View>
-        <View style={styles.controls}>
+        </View> : null}
+        {showCallChrome ? <View style={[styles.identity, isFullVideo && styles.videoIdentity]}><View style={styles.avatar}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></View><Text style={styles.name}>{name}</Text><Text style={styles.mutedText}>{isConnecting ? "Đang kết nối…" : subtitle}</Text>{connected ? <Text style={styles.quality}>Kết nối qua Internet</Text> : null}</View> : null}
+        {showCallChrome ? <View style={[styles.controls, isFullVideo && styles.videoControls]}>
           {connected ? <><View style={styles.controlRow}><Control label={muted ? "Bật micro" : "Tắt micro"} icon={muted ? "mic-off" : "mic"} active={muted} onPress={() => void toggleMicrophone()} /><Control label={speaker ? "Loa ngoài" : "Tai nghe"} icon={speaker ? "volume-up" : "hearing"} active={speaker} onPress={() => void toggleSpeaker()} />{kind === "video" ? <Control label={cameraOn ? "Tắt camera" : "Bật camera"} icon={cameraOn ? "videocam" : "videocam-off"} active={!cameraOn} onPress={() => void toggleCamera()} /> : null}</View>{kind === "video" && cameraOn ? <View style={styles.secondaryControls}><Control label={isFrontCamera ? "Camera trước" : "Camera sau"} icon="flip-camera-android" active={false} onPress={() => void switchCamera()} /></View> : null}<RoundAction label="Kết thúc" icon="call-end" color="#EF5B65" onPress={() => void finish("ended")} /></> : <View style={styles.pending}><RoundAction label="Hủy cuộc gọi" icon="call-end" color="#EF5B65" onPress={() => void finish("ended")} /></View>}
-        </View>
+        </View> : null}
       </View>
     </SafeAreaView>
   );
@@ -303,7 +307,6 @@ const styles = StyleSheet.create({
   secure: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 16, backgroundColor: "#152846" },
   secureText: { color: "#B4D0FF", fontSize: 12, fontWeight: "700" },
   identity: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 38 },
-  videoIdentity: { flex: 0, paddingVertical: 18 },
   quality: { color: "#6EE8A4", marginTop: 12, fontSize: 13, fontWeight: "700" },
   controls: { alignItems: "center", gap: 18 },
   controlRow: { flexDirection: "row", gap: 24 },
@@ -316,8 +319,12 @@ const styles = StyleSheet.create({
   actionIcon: { width: 66, height: 66, borderRadius: 33, alignItems: "center", justifyContent: "center" },
   actionLabel: { color: "#E6EDF8", fontSize: 13, fontWeight: "700", marginTop: 8 },
   pending: { alignItems: "center" },
-  video: { height: 265, marginTop: 18, borderRadius: 22, overflow: "hidden", backgroundColor: "#101B30", alignItems: "center", justifyContent: "center" },
+  videoContainer: { padding: 0, overflow: "hidden" },
+  videoTapArea: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
+  video: { ...StyleSheet.absoluteFillObject, overflow: "hidden", backgroundColor: "#101B30", alignItems: "center", justifyContent: "center" },
   videoTrack: { flex: 1, width: "100%" },
-  localPreview: { position: "absolute", right: 12, top: 12, width: 96, height: 136, borderRadius: 14, overflow: "hidden", backgroundColor: "#182641", borderWidth: 2, borderColor: "#A9CBFF" },
+  localPreview: { position: "absolute", right: 18, top: 88, width: 112, height: 158, borderRadius: 16, overflow: "hidden", backgroundColor: "#182641", borderWidth: 2, borderColor: "#A9CBFF", zIndex: 1 },
+  videoIdentity: { position: "absolute", zIndex: 2, top: 62, alignSelf: "center", paddingVertical: 12 },
+  videoControls: { position: "absolute", zIndex: 2, left: 0, right: 0, bottom: 12, paddingBottom: 4, backgroundColor: "rgba(4, 10, 22, 0.62)", paddingTop: 14, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.12)" },
   pressed: { opacity: 0.72 },
 });

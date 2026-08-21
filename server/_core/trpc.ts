@@ -1,6 +1,7 @@
 import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from "../../shared/const.js";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
+import { isUserAccessExpired } from "../db";
 import type { TrpcContext } from "./context";
 
 const t = initTRPC.context<TrpcContext>().create({
@@ -15,6 +16,9 @@ const requireUser = t.middleware(async (opts) => {
 
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+  }
+  if (isUserAccessExpired(ctx.user)) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Thời hạn sử dụng tài khoản đã kết thúc. Vui lòng liên hệ quản trị viên." });
   }
 
   return next({

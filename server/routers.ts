@@ -10,7 +10,7 @@ import * as db from "./db";
 import { createLiveKitCallToken } from "./call-token";
 import { dispatchIncomingCallPushNotification, dispatchNewMessagePushNotifications } from "./push";
 import { storageCreateUploadUrl, storageDelete, storageGetSignedUrl, storagePut } from "./storage";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
 const credentialsSchema = z.object({
   username: z.string().trim().min(3).max(24),
@@ -71,6 +71,9 @@ function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | A
 
 async function signInResponse(ctx: { req: any; res: any }, user: Awaited<ReturnType<typeof db.getUserById>>) {
   if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Không thể tạo phiên đăng nhập." });
+  if (db.isUserAccessExpired(user)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Thời hạn sử dụng tài khoản đã kết thúc. Vui lòng liên hệ quản trị viên." });
+  }
   const token = await sdk.createSessionToken(user.openId, { name: user.name ?? user.username ?? "ChatPHT" });
   ctx.res.cookie(COOKIE_NAME, token, {
     ...getSessionCookieOptions(ctx.req),
@@ -137,6 +140,25 @@ export const appRouter = router({
   }),
   profile: router({
     me: protectedProcedure.query(({ ctx }) => db.toPublicProfile(ctx.user)),
+  }),
+  admin: router({
+    listUsers: adminProcedure.query(() => db.listManagedUsers()),
+    setAccessDays: adminProcedure
+      .input(z.object({ userId: z.number().int().positive(), days: z.number().int().min(1).max(3650) }))
+      .mutation(async ({ input }) => {
+        const accessExpiresAt = new Date(Date.now() + input.days * 24 * 60 * 60 * 1000);
+        return db.setUserAccessExpiry(input.userId, accessExpiresAt);
+      }),
+    clearAccessExpiry: adminProcedure
+      .input(z.object({ userId: z.number().int().positive() }))
+      .mutation(({ input }) => db.setUserAccessExpiry(input.userId, null)),
+    deleteUser: adminProcedure
+      .input(z.object({ userId: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        const removed = await db.deleteManagedUser(input.userId);
+        await Promise.allSettled(removed.mediaKeys.map((key) => storageDelete(key)));
+        return { success: true as const, username: removed.username };
+      }),
   }),
   assistant: router({
     ask: protectedProcedure

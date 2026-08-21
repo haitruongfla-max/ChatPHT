@@ -20,6 +20,8 @@ export type PublicProfile = {
   id: number;
   username: string;
   displayName: string;
+  role: "user" | "admin";
+  accessExpiresAt: Date | null;
 };
 
 export type CallKind = "audio" | "video";
@@ -37,7 +39,13 @@ export function toPublicProfile(user: User): PublicProfile {
     id: user.id,
     username: user.username ?? user.openId.replace(/^local:/, ""),
     displayName: user.name ?? user.username ?? "Người dùng ChatPHT",
+    role: user.role,
+    accessExpiresAt: user.accessExpiresAt,
   };
+}
+
+export function isUserAccessExpired(user: Pick<User, "role" | "accessExpiresAt">, now = new Date()) {
+  return user.role !== "admin" && Boolean(user.accessExpiresAt && user.accessExpiresAt.getTime() <= now.getTime());
 }
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -156,6 +164,77 @@ export async function createLocalUser(input: {
 export async function touchUser(id: number) {
   const db = requireDb(await getDb());
   await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, id));
+}
+
+export async function listManagedUsers() {
+  const db = requireDb(await getDb());
+  const result = await db.select().from(users).orderBy(desc(users.createdAt));
+  return result.map((user) => ({
+    ...toPublicProfile(user),
+    createdAt: user.createdAt,
+    lastSignedIn: user.lastSignedIn,
+    isExpired: isUserAccessExpired(user),
+  }));
+}
+
+export async function setUserAccessExpiry(userId: number, accessExpiresAt: Date | null) {
+  const db = requireDb(await getDb());
+  const user = await getUserById(userId);
+  if (!user) throw new Error("Tài khoản không còn tồn tại.");
+  if (user.role === "admin") throw new Error("Không thể thay đổi thời hạn của quản trị viên.");
+  await db.update(users).set({ accessExpiresAt }).where(eq(users.id, userId));
+  const updated = await getUserById(userId);
+  if (!updated) throw new Error("Không thể cập nhật thời hạn sử dụng.");
+  return {
+    ...toPublicProfile(updated),
+    createdAt: updated.createdAt,
+    lastSignedIn: updated.lastSignedIn,
+    isExpired: isUserAccessExpired(updated),
+  };
+}
+
+/**
+ * Removes a standard account and its owned messages, media references, sessions,
+ * device tokens and social links. Media bytes are returned for storage cleanup.
+ */
+export async function deleteManagedUser(userId: number) {
+  const db = requireDb(await getDb());
+  const user = await getUserById(userId);
+  if (!user) throw new Error("Tài khoản không còn tồn tại.");
+  if (user.role === "admin") throw new Error("Không thể xóa tài khoản quản trị viên.");
+
+  const sentMessages = await db
+    .select({ id: messages.id, mediaKey: messages.mediaKey })
+    .from(messages)
+    .where(eq(messages.senderId, userId));
+  const mediaKeys = Array.from(
+    new Set(sentMessages.map((message) => message.mediaKey).filter((key): key is string => Boolean(key))),
+  );
+  const messageIds = sentMessages.map((message) => message.id);
+  const memberRows = await db
+    .select({ conversationId: conversationMembers.conversationId })
+    .from(conversationMembers)
+    .where(eq(conversationMembers.userId, userId));
+  const conversationIds = memberRows.map((row) => row.conversationId);
+
+  if (messageIds.length) await db.delete(messageReactions).where(inArray(messageReactions.messageId, messageIds));
+  await db.delete(messages).where(eq(messages.senderId, userId));
+  await db.delete(callSessions).where(or(eq(callSessions.callerId, userId), eq(callSessions.recipientId, userId)));
+  await db.delete(pushDevices).where(eq(pushDevices.userId, userId));
+  await db.delete(friendRequests).where(or(eq(friendRequests.senderId, userId), eq(friendRequests.recipientId, userId)));
+  await db.delete(conversationMembers).where(eq(conversationMembers.userId, userId));
+  await db.delete(users).where(eq(users.id, userId));
+
+  for (const conversationId of conversationIds) {
+    const remainingMembers = await db
+      .select({ id: conversationMembers.id })
+      .from(conversationMembers)
+      .where(eq(conversationMembers.conversationId, conversationId))
+      .limit(1);
+    if (!remainingMembers.length) await db.delete(conversations).where(eq(conversations.id, conversationId));
+  }
+
+  return { username: user.username ?? user.openId, mediaKeys };
 }
 
 export async function searchProfiles(query: string, currentUserId: number) {
