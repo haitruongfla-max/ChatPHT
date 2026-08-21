@@ -1,11 +1,32 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq, like, ne, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import {
+  conversationMembers,
+  conversations,
+  friendRequests,
+  messages,
+  type InsertUser,
+  type User,
+  users,
+} from "../drizzle/schema";
 import { ENV } from "./_core/env";
+
+export type PublicProfile = {
+  id: number;
+  username: string;
+  displayName: string;
+};
+
+export function toPublicProfile(user: User): PublicProfile {
+  return {
+    id: user.id,
+    username: user.username ?? user.openId.replace(/^local:/, ""),
+    displayName: user.name ?? user.username ?? "Người dùng SwiftChat",
+  };
+}
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -18,75 +39,268 @@ export async function getDb() {
   return _db;
 }
 
+function requireDb(db: Awaited<ReturnType<typeof getDb>>) {
+  if (!db) throw new Error("Không thể kết nối cơ sở dữ liệu. Vui lòng thử lại sau.");
+  return db;
+}
+
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
+  if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
+  if (!db) return;
+
+  const values: InsertUser = { openId: user.openId, lastSignedIn: user.lastSignedIn ?? new Date() };
+  const updateSet: Record<string, unknown> = { lastSignedIn: values.lastSignedIn };
+  for (const field of ["username", "name", "email", "passwordHash", "loginMethod"] as const) {
+    if (user[field] !== undefined) {
+      values[field] = user[field];
+      updateSet[field] = user[field];
+    }
   }
-
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = "admin";
-      updateSet.role = "admin";
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
+  values.role = user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user");
+  updateSet.role = values.role;
+  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
 }
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
+  if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  return result[0];
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function getUserByUsername(username: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+  return result[0];
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createLocalUser(input: {
+  username: string;
+  displayName: string;
+  passwordHash: string;
+}) {
+  const db = requireDb(await getDb());
+  await db.insert(users).values({
+    openId: `local:${input.username}`,
+    username: input.username,
+    name: input.displayName,
+    passwordHash: input.passwordHash,
+    loginMethod: "username",
+    lastSignedIn: new Date(),
+  });
+  const user = await getUserByUsername(input.username);
+  if (!user) throw new Error("Không thể tạo tài khoản.");
+  return user;
+}
+
+export async function touchUser(id: number) {
+  const db = requireDb(await getDb());
+  await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, id));
+}
+
+export async function searchProfiles(query: string, currentUserId: number) {
+  const db = requireDb(await getDb());
+  const result = await db
+    .select()
+    .from(users)
+    .where(and(like(users.username, `%${query}%`), ne(users.id, currentUserId)))
+    .limit(20);
+  return result.filter((user) => user.username).map(toPublicProfile);
+}
+
+export async function getFriendship(firstUserId: number, secondUserId: number) {
+  const db = requireDb(await getDb());
+  const result = await db
+    .select()
+    .from(friendRequests)
+    .where(
+      or(
+        and(eq(friendRequests.senderId, firstUserId), eq(friendRequests.recipientId, secondUserId)),
+        and(eq(friendRequests.senderId, secondUserId), eq(friendRequests.recipientId, firstUserId)),
+      ),
+    )
+    .limit(1);
+  return result[0];
+}
+
+export async function sendFriendRequest(senderId: number, recipientId: number) {
+  const db = requireDb(await getDb());
+  await db.insert(friendRequests).values({ senderId, recipientId, status: "pending" });
+}
+
+async function hydrateFriendRequest(request: typeof friendRequests.$inferSelect, requesterIsSender: boolean) {
+  const counterpart = await getUserById(requesterIsSender ? request.recipientId : request.senderId);
+  if (!counterpart) throw new Error("Không tìm thấy người dùng trong lời mời kết bạn.");
+  return { ...request, user: toPublicProfile(counterpart) };
+}
+
+export async function listIncomingFriendRequests(userId: number) {
+  const db = requireDb(await getDb());
+  const requests = await db
+    .select()
+    .from(friendRequests)
+    .where(and(eq(friendRequests.recipientId, userId), eq(friendRequests.status, "pending")))
+    .orderBy(desc(friendRequests.createdAt));
+  return Promise.all(requests.map((request) => hydrateFriendRequest(request, false)));
+}
+
+export async function listContacts(userId: number) {
+  const db = requireDb(await getDb());
+  const requests = await db
+    .select()
+    .from(friendRequests)
+    .where(
+      and(
+        eq(friendRequests.status, "accepted"),
+        or(eq(friendRequests.senderId, userId), eq(friendRequests.recipientId, userId)),
+      ),
+    )
+    .orderBy(desc(friendRequests.updatedAt));
+  const contacts = await Promise.all(
+    requests.map(async (request) => {
+      const otherUserId = request.senderId === userId ? request.recipientId : request.senderId;
+      const user = await getUserById(otherUserId);
+      return user ? toPublicProfile(user) : null;
+    }),
+  );
+  return contacts.filter((contact): contact is PublicProfile => Boolean(contact));
+}
+
+export async function respondToFriendRequest(requestId: number, recipientId: number, accepted: boolean) {
+  const db = requireDb(await getDb());
+  const request = (
+    await db
+      .select()
+      .from(friendRequests)
+      .where(and(eq(friendRequests.id, requestId), eq(friendRequests.recipientId, recipientId)))
+      .limit(1)
+  )[0];
+  if (!request || request.status !== "pending") return undefined;
+  await db
+    .update(friendRequests)
+    .set({ status: accepted ? "accepted" : "declined" })
+    .where(eq(friendRequests.id, requestId));
+  return { ...request, status: accepted ? ("accepted" as const) : ("declined" as const) };
+}
+
+function directKey(firstUserId: number, secondUserId: number) {
+  return [firstUserId, secondUserId].sort((a, b) => a - b).join(":");
+}
+
+export async function getOrCreateDirectConversation(firstUserId: number, secondUserId: number) {
+  const db = requireDb(await getDb());
+  const key = directKey(firstUserId, secondUserId);
+  let conversation = (await db.select().from(conversations).where(eq(conversations.directKey, key)).limit(1))[0];
+  if (!conversation) {
+    await db.insert(conversations).values({ directKey: key });
+    conversation = (await db.select().from(conversations).where(eq(conversations.directKey, key)).limit(1))[0];
+    if (!conversation) throw new Error("Không thể tạo hội thoại.");
+    await db.insert(conversationMembers).values([
+      { conversationId: conversation.id, userId: firstUserId },
+      { conversationId: conversation.id, userId: secondUserId },
+    ]);
+  }
+  return conversation;
+}
+
+export async function isConversationMember(conversationId: number, userId: number) {
+  const db = requireDb(await getDb());
+  const membership = await db
+    .select({ id: conversationMembers.id })
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)))
+    .limit(1);
+  return membership.length > 0;
+}
+
+export async function getConversationPeer(conversationId: number, userId: number) {
+  const db = requireDb(await getDb());
+  const membership = await isConversationMember(conversationId, userId);
+  if (!membership) return undefined;
+  const peerMembership = await db
+    .select()
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, conversationId), ne(conversationMembers.userId, userId)))
+    .limit(1);
+  if (!peerMembership[0]) return undefined;
+  const peer = await getUserById(peerMembership[0].userId);
+  return peer ? toPublicProfile(peer) : undefined;
+}
+
+export async function listConversations(userId: number) {
+  const db = requireDb(await getDb());
+  const memberships = await db
+    .select()
+    .from(conversationMembers)
+    .where(eq(conversationMembers.userId, userId));
+  const items = await Promise.all(
+    memberships.map(async (membership) => {
+      const peer = await getConversationPeer(membership.conversationId, userId);
+      const latestMessage = (
+        await db
+          .select()
+          .from(messages)
+          .where(eq(messages.conversationId, membership.conversationId))
+          .orderBy(desc(messages.createdAt))
+          .limit(1)
+      )[0];
+      return peer
+        ? { id: membership.conversationId, peer, latestMessage: latestMessage ?? null }
+        : null;
+    }),
+  );
+  return items
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .sort(
+      (first, second) =>
+        (second.latestMessage?.createdAt?.getTime() ?? 0) - (first.latestMessage?.createdAt?.getTime() ?? 0),
+    );
+}
+
+export async function listMessages(conversationId: number, userId: number) {
+  const db = requireDb(await getDb());
+  if (!(await isConversationMember(conversationId, userId))) throw new Error("Bạn không có quyền xem hội thoại này.");
+  const result = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.conversationId, conversationId))
+    .orderBy(desc(messages.createdAt))
+    .limit(60);
+  return result.reverse();
+}
+
+export async function createMessage(input: {
+  conversationId: number;
+  senderId: number;
+  body?: string | null;
+  contentType: "text" | "image" | "video";
+  mediaKey?: string | null;
+  mediaMime?: string | null;
+  mediaName?: string | null;
+  mediaSize?: number | null;
+}) {
+  const db = requireDb(await getDb());
+  if (!(await isConversationMember(input.conversationId, input.senderId))) {
+    throw new Error("Bạn không có quyền gửi tin trong hội thoại này.");
+  }
+  await db.insert(messages).values(input);
+  const message = (
+    await db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.conversationId, input.conversationId), eq(messages.senderId, input.senderId)))
+      .orderBy(desc(messages.id))
+      .limit(1)
+  )[0];
+  if (!message) throw new Error("Không thể lưu tin nhắn.");
+  return message;
+}

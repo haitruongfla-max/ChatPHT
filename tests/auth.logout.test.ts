@@ -16,8 +16,10 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
   const user: AuthenticatedUser = {
     id: 1,
     openId: "sample-user",
+    username: "sample_user",
     email: "sample@example.com",
     name: "Sample User",
+    passwordHash: null,
     loginMethod: "manus",
     role: "user",
     createdAt: new Date(),
@@ -29,6 +31,7 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
     user,
     req: {
       protocol: "https",
+      hostname: "localhost",
       headers: {},
     } as TrpcContext["req"],
     res: {
@@ -41,8 +44,7 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
   return { ctx, clearedCookies };
 }
 
-// TODO: Remove `.skip` below once you implement user authentication
-describe.skip("auth.logout", () => {
+describe("auth.logout", () => {
   it("clears the session cookie and reports success", async () => {
     const { ctx, clearedCookies } = createAuthContext();
     const caller = appRouter.createCaller(ctx);

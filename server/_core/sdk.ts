@@ -260,6 +260,15 @@ class SDKServer {
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
 
+    // Local SwiftChat accounts are created by username/password and never call the OAuth service.
+    if (sessionUserId.startsWith("local:")) {
+      if (!user) {
+        throw ForbiddenError("Local account not found");
+      }
+      await db.touchUser(user.id);
+      return user;
+    }
+
     // If user not in DB, sync from OAuth server automatically
     if (!user) {
       try {

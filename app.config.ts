@@ -32,7 +32,7 @@ const env = {
   appSlug: "swift-chat",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "",
+  logoUrl: "/manus-storage/swiftchat-icon_227272ff.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
@@ -51,8 +51,9 @@ const config: ExpoConfig = {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
     "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
+      "ITSAppUsesNonExemptEncryption": false,
+      "NSPhotoLibraryUsageDescription": "SwiftChat cần truy cập thư viện để bạn gửi ảnh và video trong cuộc trò chuyện riêng tư."
+    }
   },
   android: {
     adaptiveIcon: {
@@ -64,7 +65,7 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS"],
+    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO"],
     intentFilters: [
       {
         action: "VIEW",
@@ -97,6 +98,12 @@ const config: ExpoConfig = {
       {
         supportsBackgroundPlayback: true,
         supportsPictureInPicture: true,
+      },
+    ],
+    [
+      "expo-image-picker",
+      {
+        photosPermission: "SwiftChat cần truy cập thư viện để bạn gửi ảnh và video trong cuộc trò chuyện riêng tư.",
       },
     ],
     [
