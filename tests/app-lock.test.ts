@@ -10,6 +10,7 @@ const { secureStore } = vi.hoisted(() => ({
 }));
 
 vi.mock("expo-secure-store", () => secureStore);
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 import { clearAppLockPin, hasAppLockPin, saveAppLockPin, subscribeToAppLockChanges, verifyAppLockPin } from "../lib/app-lock";
 

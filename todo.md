@@ -33,3 +33,4 @@
 - [x] Đánh giá khả năng cắt video trên thiết bị và tích hợp giải pháp tương thích với Expo nếu không ảnh hưởng ổn định ứng dụng.
 - [x] Kiểm thử khóa ứng dụng, quyền thông báo, trạng thái hộp thư và xác thực giới hạn video.
 - [x] Hoàn tất kiểm tra, cập nhật TODO, tạo checkpoint nâng cấp bảo mật/media và bàn giao.
+- [x] Khắc phục tương thích bản xem trước web cho khóa ứng dụng, vẫn giữ kho bảo mật hệ điều hành trên iOS/Android.
