@@ -2,6 +2,10 @@ import { AudioSession } from "@livekit/react-native";
 import { LocalVideoTrack, Room, Track } from "livekit-client";
 import { Platform } from "react-native";
 
+import { ensureLiveKitGlobals } from "@/lib/livekit-bootstrap";
+
+ensureLiveKitGlobals();
+
 export type LiveKitSession = {
   serverUrl: string;
   token: string;
@@ -12,6 +16,7 @@ export class LiveKitCall {
   private isFrontCamera = true;
 
   async connect(session: LiveKitSession, kind: "audio" | "video") {
+    ensureLiveKitGlobals();
     await AudioSession.startAudioSession();
     await this.room.connect(session.serverUrl, session.token);
     await this.room.localParticipant.setMicrophoneEnabled(true);

@@ -32,7 +32,7 @@ export function buildIncomingCallPushPayload(token: string, input: { conversatio
     sound: "default",
     priority: "high",
     channelId: "calls",
-    data: { conversationId: input.conversationId, callId: input.callId, kind: input.kind },
+    data: { type: "incoming_call", conversationId: input.conversationId, callId: input.callId, kind: input.kind },
   };
 }
 

@@ -52,10 +52,19 @@ export function PushNotificationManager() {
     if (Platform.OS === "web") return;
     const initial = Notifications.getLastNotificationResponse();
     if (initial?.notification) openNotification(initial.notification.request.content.data);
+    const receivedListener = Notifications.addNotificationReceivedListener((notification) => {
+      const payload = notification.request.content.data;
+      if (payload && typeof payload === "object" && (payload as Record<string, unknown>).type === "incoming_call") {
+        openNotification(payload);
+      }
+    });
     const responseListener = Notifications.addNotificationResponseReceivedListener((response) => {
       openNotification(response.notification.request.content.data);
     });
-    return () => responseListener.remove();
+    return () => {
+      receivedListener.remove();
+      responseListener.remove();
+    };
   }, []);
 
   useEffect(() => {

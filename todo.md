@@ -90,3 +90,7 @@
 - [x] Thêm thao tác thu nhỏ cuộc gọi và chuyển camera trước/sau trong màn hình gọi.
 - [x] Hiển thị lịch sử gọi cùng trạng thái cuộc gọi nhỡ trong đoạn chat mà không ảnh hưởng tin nhắn hiện có.
 - [x] Kiểm thử hồi quy toàn bộ ChatPHT, cập nhật TODO và lưu checkpoint bàn giao.
+- [x] Chẩn đoán và khắc phục lỗi WebRTC chưa khởi tạo trên thiết bị khi thực hiện hoặc nhận cuộc gọi.
+- [x] Đồng bộ hủy, nhận và hết hạn cuộc gọi giữa hai thiết bị để không còn màn hình gọi cũ.
+- [x] Thêm chuông báo trong ứng dụng và thông báo cuộc gọi đến khi ứng dụng ở nền.
+- [x] Kiểm thử hai chiều luồng gọi, thông báo và toàn bộ ChatPHT; lưu checkpoint ổn định.

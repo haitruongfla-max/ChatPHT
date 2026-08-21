@@ -31,10 +31,12 @@ export default function CallScreen() {
   const [cameraOn, setCameraOn] = useState(resumed?.cameraOn ?? kind === "video");
   const [isFrontCamera, setIsFrontCamera] = useState(resumed?.isFrontCamera ?? true);
   const [seconds, setSeconds] = useState(resumed?.seconds ?? 0);
+  const [isConnecting, setIsConnecting] = useState(false);
   const call = useRef(resumed?.call ?? new LiveKitCall()).current;
   const ringingScale = useRef(new Animated.Value(1)).current;
   const started = useRef(Boolean(resumed?.connected));
-  const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: connected ? false : 900 });
+  const finalized = useRef(false);
+  const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: 900 });
   const answer = trpc.calls.answer.useMutation();
   const join = trpc.calls.join.useMutation();
   const decline = trpc.calls.decline.useMutation();
@@ -43,6 +45,16 @@ export default function CallScreen() {
   useEffect(() => () => {
     if (!activeCall.isMinimized(callId)) void call.disconnect();
   }, [call, callId]);
+
+  useEffect(() => {
+    const status = details.data?.status;
+    if (!status || !["ended", "declined", "missed"].includes(status) || finalized.current) return;
+    finalized.current = true;
+    activeCall.clear(callId);
+    void call.disconnect().catch(() => undefined);
+    if (router.canGoBack()) router.back();
+    else router.replace("/");
+  }, [call, callId, details.data?.status]);
 
   useEffect(() => {
     if (connected) {
@@ -104,7 +116,8 @@ export default function CallScreen() {
   }
 
   async function enterCall(isAnswer: boolean) {
-    if (!callId || !(await requestPermissions())) return;
+    if (!callId || isConnecting || !(await requestPermissions())) return;
+    setIsConnecting(true);
     try {
       if (isAnswer) {
         const result = await answer.mutateAsync({ callId });
@@ -116,11 +129,18 @@ export default function CallScreen() {
       setConnected(true);
       publishActiveState();
     } catch (error) {
+      if (isAnswer) {
+        void end.mutateAsync({ callId }).catch(() => undefined);
+      }
+      await call.disconnect().catch(() => undefined);
       Alert.alert("Chưa thể kết nối", error instanceof Error ? error.message : "Hãy thử lại khi mạng ổn định hơn.");
+    } finally {
+      setIsConnecting(false);
     }
   }
 
   async function finish(status: "ended" | "declined") {
+    finalized.current = true;
     try {
       if (status === "declined") await decline.mutateAsync({ callId });
       else await end.mutateAsync({ callId });
@@ -129,7 +149,8 @@ export default function CallScreen() {
     } finally {
       activeCall.clear(callId);
       await call.disconnect().catch(() => undefined);
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace("/");
     }
   }
 
@@ -200,8 +221,8 @@ export default function CallScreen() {
         <View style={styles.incoming}>
           <Text style={styles.eyebrow}>{kind === "video" ? "CUỘC GỌI VIDEO ĐẾN" : "CUỘC GỌI THOẠI ĐẾN"}</Text>
           <Animated.View style={[styles.avatar, { transform: [{ scale: ringingScale }] }]}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></Animated.View>
-          <Text style={styles.name}>{name}</Text><Text style={styles.mutedText}>{subtitle}</Text>
-          <View style={styles.incomingActions}><RoundAction label="Từ chối" icon="call-end" color="#EF5B65" onPress={() => void finish("declined")} /><RoundAction label="Nhận" icon={kind === "video" ? "videocam" : "phone"} color="#2FC978" onPress={() => void enterCall(true)} /></View>
+          <Text style={styles.name}>{name}</Text><Text style={styles.mutedText}>{isConnecting ? "Đang kết nối…" : subtitle}</Text>
+          <View style={styles.incomingActions}><RoundAction label="Từ chối" icon="call-end" color="#EF5B65" onPress={() => void finish("declined")} /><RoundAction label={isConnecting ? "Đang kết nối" : "Nhận"} icon={kind === "video" ? "videocam" : "phone"} color="#2FC978" onPress={() => void enterCall(true)} /></View>
         </View>
       </SafeAreaView>
     );
@@ -215,7 +236,7 @@ export default function CallScreen() {
           <View style={styles.secure}><MaterialIcons name="lock" size={13} color="#A9CBFF" /><Text style={styles.secureText}>Kết nối bảo mật</Text></View><View style={styles.dismissPlaceholder} />
         </View>
         {connected && kind === "video" ? <LiveKitRoom room={call.getRoom()} serverUrl={undefined} token={undefined} connect={false}><VideoStage /></LiveKitRoom> : null}
-        <View style={[styles.identity, connected && kind === "video" && styles.videoIdentity]}><View style={styles.avatar}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></View><Text style={styles.name}>{name}</Text><Text style={styles.mutedText}>{subtitle}</Text>{connected ? <Text style={styles.quality}>Kết nối qua Internet</Text> : null}</View>
+        <View style={[styles.identity, connected && kind === "video" && styles.videoIdentity]}><View style={styles.avatar}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></View><Text style={styles.name}>{name}</Text><Text style={styles.mutedText}>{isConnecting ? "Đang kết nối…" : subtitle}</Text>{connected ? <Text style={styles.quality}>Kết nối qua Internet</Text> : null}</View>
         <View style={styles.controls}>
           {connected ? <><View style={styles.controlRow}><Control label={muted ? "Bật micro" : "Tắt micro"} icon={muted ? "mic-off" : "mic"} active={muted} onPress={() => void toggleMicrophone()} /><Control label={speaker ? "Loa ngoài" : "Tai nghe"} icon={speaker ? "volume-up" : "hearing"} active={speaker} onPress={() => void toggleSpeaker()} />{kind === "video" ? <Control label={cameraOn ? "Tắt camera" : "Bật camera"} icon={cameraOn ? "videocam" : "videocam-off"} active={!cameraOn} onPress={() => void toggleCamera()} /> : null}</View>{kind === "video" && cameraOn ? <View style={styles.secondaryControls}><Control label={isFrontCamera ? "Camera trước" : "Camera sau"} icon="flip-camera-android" active={false} onPress={() => void switchCamera()} /></View> : null}<RoundAction label="Kết thúc" icon="call-end" color="#EF5B65" onPress={() => void finish("ended")} /></> : <View style={styles.pending}><RoundAction label="Hủy cuộc gọi" icon="call-end" color="#EF5B65" onPress={() => void finish("ended")} /></View>}
         </View>
