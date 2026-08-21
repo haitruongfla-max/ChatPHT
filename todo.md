@@ -13,3 +13,9 @@
 - [x] Kiểm thử đơn vị backend và các luồng xác thực, tìm bạn, nhắn tin, gửi media.
 - [x] Tạo icon SwiftChat và cập nhật cấu hình thương hiệu ứng dụng.
 - [x] Hoàn tất kiểm tra TypeScript, cập nhật TODO, tạo checkpoint và bàn giao.
+- [x] Thiết kế trải nghiệm xem ảnh/video toàn màn hình và lưu media an toàn trên iOS/Android.
+- [x] Mở rộng backend để thu hồi tin nhắn của người gửi và xóa hội thoại theo từng tài khoản, giữ nguyên quyền riêng tư.
+- [x] Xây dựng trình xem ảnh/video toàn màn hình có nút đóng, phát video và lưu về thư viện điện thoại.
+- [x] Bổ sung thao tác xóa hội thoại và thu hồi tin nhắn với xác nhận rõ ràng trên giao diện chat.
+- [x] Kiểm thử quyền thu hồi/xóa, tính toàn vẹn hội thoại và thao tác lưu ảnh/video.
+- [x] Hoàn tất kiểm tra, cập nhật TODO, tạo checkpoint nâng cấp và bàn giao.

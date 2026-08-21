@@ -50,3 +50,11 @@ Hệ thống cần các thực thể `Profile`, `FriendRequest`, `Conversation`,
 ## Giới hạn phiên bản đầu
 
 Phiên bản đầu tập trung chat 1–1, ảnh và video; chưa bao gồm gọi thoại/video, nhóm, mã hóa đầu-cuối độc lập hay thông báo đẩy. Các tính năng đó cần thiết kế bảo mật và hạ tầng bổ sung ở giai đoạn sau.
+
+## Nâng cấp media và quản lý hội thoại
+
+Chạm vào ảnh hoặc video trong bong bóng tin nhắn sẽ mở một **modal toàn màn hình** trên nền tối. Ảnh được hiển thị theo tỷ lệ nguyên bản bằng chế độ `contain`; video phát với điều khiển hệ thống, có nút mở toàn màn hình riêng của trình phát. Thanh điều khiển nổi có nút đóng ở góc trên trái và nút lưu ở góc trên phải; các nút luôn nằm trong vùng an toàn màn hình.
+
+Khi lưu, ứng dụng chỉ xin quyền thư viện tại thời điểm người dùng chủ động bấm nút. Tệp được tải từ URL có chữ ký vào cache tạm thời, rồi lưu vào thư viện ảnh/video của điện thoại. Web hiển thị thông báo rằng việc lưu trực tiếp dành cho ứng dụng điện thoại.
+
+Xóa hội thoại là thao tác **theo từng tài khoản**: hội thoại biến khỏi hộp thư của người thực hiện nhưng không xóa tin nhắn hay ảnh/video của người còn lại. Gửi một tin nhắn mới hoặc chủ động mở lại từ danh bạ sẽ làm hội thoại xuất hiện trở lại cho người dùng đó. Thu hồi là thao tác **toàn cuộc hội thoại**, chỉ người gửi tin được thu hồi; nội dung và tham chiếu tệp bị gỡ khỏi bản ghi, thay bằng thông báo thu hồi cho cả hai thành viên.

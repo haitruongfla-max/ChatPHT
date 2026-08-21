@@ -212,6 +212,25 @@ export async function getOrCreateDirectConversation(firstUserId: number, secondU
   return conversation;
 }
 
+export async function restoreConversationForUser(conversationId: number, userId: number) {
+  const db = requireDb(await getDb());
+  await db
+    .update(conversationMembers)
+    .set({ hiddenAt: null })
+    .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
+}
+
+export async function hideConversationForUser(conversationId: number, userId: number) {
+  const db = requireDb(await getDb());
+  if (!(await isConversationMember(conversationId, userId))) {
+    throw new Error("Bạn không có quyền xóa hội thoại này.");
+  }
+  await db
+    .update(conversationMembers)
+    .set({ hiddenAt: new Date() })
+    .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
+}
+
 export async function isConversationMember(conversationId: number, userId: number) {
   const db = requireDb(await getDb());
   const membership = await db
@@ -243,7 +262,7 @@ export async function listConversations(userId: number) {
     .from(conversationMembers)
     .where(eq(conversationMembers.userId, userId));
   const items = await Promise.all(
-    memberships.map(async (membership) => {
+    memberships.filter((membership) => !membership.hiddenAt).map(async (membership) => {
       const peer = await getConversationPeer(membership.conversationId, userId);
       const latestMessage = (
         await db
@@ -292,6 +311,10 @@ export async function createMessage(input: {
   if (!(await isConversationMember(input.conversationId, input.senderId))) {
     throw new Error("Bạn không có quyền gửi tin trong hội thoại này.");
   }
+  await db
+    .update(conversationMembers)
+    .set({ hiddenAt: null })
+    .where(eq(conversationMembers.conversationId, input.conversationId));
   await db.insert(messages).values(input);
   const message = (
     await db
@@ -303,4 +326,32 @@ export async function createMessage(input: {
   )[0];
   if (!message) throw new Error("Không thể lưu tin nhắn.");
   return message;
+}
+
+export async function recallMessage(messageId: number, senderId: number) {
+  const db = requireDb(await getDb());
+  const message = (
+    await db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.id, messageId), eq(messages.senderId, senderId)))
+      .limit(1)
+  )[0];
+  if (!message) throw new Error("Bạn chỉ có thể thu hồi tin nhắn do mình gửi.");
+  if (message.recalledAt) return message;
+  await db
+    .update(messages)
+    .set({
+      body: null,
+      mediaKey: null,
+      mediaMime: null,
+      mediaName: null,
+      mediaSize: null,
+      recalledAt: new Date(),
+      recalledBy: senderId,
+    })
+    .where(eq(messages.id, messageId));
+  const recalled = (await db.select().from(messages).where(eq(messages.id, messageId)).limit(1))[0];
+  if (!recalled) throw new Error("Không thể thu hồi tin nhắn.");
+  return recalled;
 }

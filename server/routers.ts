@@ -33,6 +33,8 @@ function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | A
     mediaMime: message.mediaMime,
     mediaName: message.mediaName,
     mediaSize: message.mediaSize,
+    recalledAt: message.recalledAt,
+    recalledBy: message.recalledBy,
     createdAt: message.createdAt,
     mediaUrl,
   };
@@ -150,8 +152,19 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN", message: "Bạn cần kết bạn trước khi bắt đầu trò chuyện." });
         }
         const conversation = await db.getOrCreateDirectConversation(ctx.user.id, input.peerId);
+        await db.restoreConversationForUser(conversation.id, ctx.user.id);
         const peer = await db.getConversationPeer(conversation.id, ctx.user.id);
         return { id: conversation.id, peer };
+      }),
+    remove: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await db.hideConversationForUser(input.conversationId, ctx.user.id);
+          return { success: true };
+        } catch (error) {
+          return appError(error, "Không thể xóa hội thoại.");
+        }
       }),
   }),
   messages: router({
@@ -222,6 +235,16 @@ export const appRouter = router({
           mediaSize: data.length,
         });
         return publicMessage(message, await storageGetSignedUrl(stored.key));
+      }),
+    recall: protectedProcedure
+      .input(z.object({ messageId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const message = await db.recallMessage(input.messageId, ctx.user.id);
+          return publicMessage(message, null);
+        } catch (error) {
+          return appError(error, "Không thể thu hồi tin nhắn.");
+        }
       }),
   }),
 });

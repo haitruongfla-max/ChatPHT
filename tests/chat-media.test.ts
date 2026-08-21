@@ -4,6 +4,8 @@ vi.mock("../server/db", () => ({
   isConversationMember: vi.fn(),
   createMessage: vi.fn(),
   listMessages: vi.fn(),
+  hideConversationForUser: vi.fn(),
+  recallMessage: vi.fn(),
   toPublicProfile: vi.fn(),
 }));
 
@@ -72,5 +74,36 @@ describe("chat media access controls", () => {
       mediaUrl: "https://temporary.example/media.jpg",
     });
     expect(storage.storagePut).toHaveBeenCalledWith(expect.stringContaining("summer_photo.jpg"), expect.any(Buffer), "image/jpeg");
+  });
+
+  it("hides a conversation only for the requesting account", async () => {
+    vi.mocked(db.hideConversationForUser).mockResolvedValue(undefined);
+
+    await expect(callerFor(7).conversations.remove({ conversationId: 18 })).resolves.toEqual({ success: true });
+    expect(db.hideConversationForUser).toHaveBeenCalledWith(18, 7);
+  });
+
+  it("returns a recalled marker without issuing a new media URL", async () => {
+    vi.mocked(db.recallMessage).mockResolvedValue({
+      id: 55,
+      conversationId: 18,
+      senderId: 7,
+      body: null,
+      contentType: "image",
+      mediaKey: null,
+      mediaMime: null,
+      mediaName: null,
+      mediaSize: null,
+      recalledAt: new Date("2026-08-21T00:05:00.000Z"),
+      recalledBy: 7,
+      createdAt: new Date("2026-08-21T00:00:00.000Z"),
+    } as any);
+
+    await expect(callerFor(7).messages.recall({ messageId: 55 })).resolves.toMatchObject({
+      id: 55,
+      recalledBy: 7,
+      mediaUrl: null,
+    });
+    expect(db.recallMessage).toHaveBeenCalledWith(55, 7);
   });
 });

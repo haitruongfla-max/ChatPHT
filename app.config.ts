@@ -52,7 +52,8 @@ const config: ExpoConfig = {
     bundleIdentifier: env.iosBundleId,
     "infoPlist": {
       "ITSAppUsesNonExemptEncryption": false,
-      "NSPhotoLibraryUsageDescription": "SwiftChat cần truy cập thư viện để bạn gửi ảnh và video trong cuộc trò chuyện riêng tư."
+      "NSPhotoLibraryUsageDescription": "SwiftChat cần truy cập thư viện để bạn gửi ảnh và video trong cuộc trò chuyện riêng tư.",
+      "NSPhotoLibraryAddUsageDescription": "SwiftChat cần quyền thêm ảnh và video bạn chọn lưu vào thư viện điện thoại."
     }
   },
   android: {
@@ -87,6 +88,14 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    [
+      "expo-media-library",
+      {
+        photosPermission: "SwiftChat cần quyền truy cập thư viện để bạn chọn ảnh và video trong hội thoại riêng tư.",
+        savePhotosPermission: "SwiftChat cần quyền thêm ảnh và video bạn chọn lưu vào thư viện điện thoại.",
+        granularPermissions: ["photo", "video"],
+      },
+    ],
     [
       "expo-audio",
       {

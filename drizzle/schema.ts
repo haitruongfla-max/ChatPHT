@@ -59,6 +59,7 @@ export const conversationMembers = mysqlTable(
     id: int("id").autoincrement().primaryKey(),
     conversationId: int("conversationId").notNull(),
     userId: int("userId").notNull(),
+    hiddenAt: timestamp("hiddenAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => [
@@ -79,6 +80,8 @@ export const messages = mysqlTable(
     mediaMime: varchar("mediaMime", { length: 96 }),
     mediaName: varchar("mediaName", { length: 255 }),
     mediaSize: int("mediaSize"),
+    recalledAt: timestamp("recalledAt"),
+    recalledBy: int("recalledBy"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => [index("message_conversation_created_idx").on(table.conversationId, table.createdAt)],
