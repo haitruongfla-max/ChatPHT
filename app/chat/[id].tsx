@@ -140,6 +140,7 @@ export default function ChatScreen() {
   const recall = trpc.messages.recall.useMutation();
   const removeConversation = trpc.conversations.remove.useMutation();
   const clearConversation = trpc.conversations.clearContent.useMutation();
+  const startCall = trpc.calls.start.useMutation();
   const header = useMemo(
     () => ({
       title: "Hội thoại riêng tư",
@@ -174,6 +175,20 @@ export default function ChatScreen() {
   const refresh = () => {
     void utils.messages.list.invalidate({ conversationId });
     void utils.conversations.list.invalidate();
+  };
+  const beginCall = async (kind: "audio" | "video") => {
+    try {
+      const call = await startCall.mutateAsync({ conversationId, kind });
+      router.push({
+        pathname: "/call",
+        params: { callId: call.id, kind, direction: "outgoing", name: header.title },
+      });
+    } catch (error) {
+      Alert.alert(
+        "Không thể bắt đầu cuộc gọi",
+        error instanceof Error ? error.message : "Vui lòng thử lại.",
+      );
+    }
   };
   const send = async () => {
     const body = draft.trim();
@@ -410,6 +425,24 @@ export default function ChatScreen() {
             <Text style={styles.headerTitle}>{header.title}</Text>
             <Text style={styles.headerSubtitle}>{header.subtitle}</Text>
           </View>
+          <Pressable
+            onPress={() => void beginCall("audio")}
+            disabled={startCall.isPending}
+            style={({ pressed }) => [styles.callButton, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Gọi thoại"
+          >
+            <MaterialIcons name="phone" size={20} color="#2563EB" />
+          </Pressable>
+          <Pressable
+            onPress={() => void beginCall("video")}
+            disabled={startCall.isPending}
+            style={({ pressed }) => [styles.callButton, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Gọi video"
+          >
+            <MaterialIcons name="videocam" size={21} color="#2563EB" />
+          </Pressable>
           <Pressable
             onPress={confirmRemove}
             disabled={
@@ -753,6 +786,15 @@ const styles = StyleSheet.create({
   headerText: { flex: 1 },
   headerTitle: { color: "#172554", fontSize: 16, fontWeight: "800" },
   headerSubtitle: { marginTop: 3, color: "#718096", fontSize: 11.5 },
+  callButton: {
+    height: 36,
+    width: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EAF2FF",
+    marginRight: 6,
+  },
   deleteConversation: {
     height: 36,
     width: 36,

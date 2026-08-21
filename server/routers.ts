@@ -7,7 +7,8 @@ import { sdk } from "./_core/sdk";
 import { systemRouter } from "./_core/systemRouter";
 import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
-import { dispatchNewMessagePushNotifications } from "./push";
+import { createLiveKitCallToken } from "./call-token";
+import { dispatchIncomingCallPushNotification, dispatchNewMessagePushNotifications } from "./push";
 import { storageCreateUploadUrl, storageDelete, storageGetSignedUrl, storagePut } from "./storage";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
@@ -196,6 +197,63 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         await db.removePushDevice(ctx.user.id, input.token);
         return { success: true } as const;
+      }),
+  }),
+  calls: router({
+    start: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), kind: z.enum(["audio", "video"]) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const call = await db.createCallSession(input.conversationId, ctx.user.id, input.kind);
+          void dispatchIncomingCallPushNotification({ conversationId: input.conversationId, senderId: ctx.user.id, callId: call.id, kind: input.kind });
+          return call;
+        } catch (error) {
+          return appError(error, "Không thể bắt đầu cuộc gọi.");
+        }
+      }),
+    incoming: protectedProcedure.query(async ({ ctx }) => db.getIncomingCallSession(ctx.user.id)),
+    get: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .query(async ({ ctx, input }) => db.getCallSession(input.callId, ctx.user.id)),
+    answer: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const call = await db.answerCallSession(input.callId, ctx.user.id);
+          return { call, session: await createLiveKitCallToken({ room: call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" }) };
+        } catch (error) {
+          return appError(error, "Không thể nhận cuộc gọi.");
+        }
+      }),
+    join: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const call = await db.getJoinableCallSession(input.callId, ctx.user.id);
+          return createLiveKitCallToken({ room: call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" });
+        } catch (error) {
+          return appError(error, "Không thể kết nối cuộc gọi.");
+        }
+      }),
+    decline: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await db.finishCallSession(input.callId, ctx.user.id, "declined");
+          return { success: true };
+        } catch (error) {
+          return appError(error, "Không thể từ chối cuộc gọi.");
+        }
+      }),
+    end: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await db.finishCallSession(input.callId, ctx.user.id, "ended");
+          return { success: true };
+        } catch (error) {
+          return appError(error, "Không thể kết thúc cuộc gọi.");
+        }
       }),
   }),
   friends: router({

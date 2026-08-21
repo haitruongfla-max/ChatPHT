@@ -53,7 +53,9 @@ const config: ExpoConfig = {
     "infoPlist": {
       "ITSAppUsesNonExemptEncryption": false,
       "NSPhotoLibraryUsageDescription": "ChatPHT cần truy cập thư viện để bạn gửi ảnh và video trong cuộc trò chuyện riêng tư.",
-      "NSPhotoLibraryAddUsageDescription": "ChatPHT cần quyền thêm ảnh và video bạn chọn lưu vào thư viện điện thoại."
+      "NSPhotoLibraryAddUsageDescription": "ChatPHT cần quyền thêm ảnh và video bạn chọn lưu vào thư viện điện thoại.",
+      "NSMicrophoneUsageDescription": "ChatPHT cần micro để bạn thực hiện cuộc gọi thoại và video riêng tư.",
+      "NSCameraUsageDescription": "ChatPHT cần camera để bạn thực hiện cuộc gọi video riêng tư."
     }
   },
   android: {
@@ -66,7 +68,7 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO"],
+    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT"],
     intentFilters: [
       {
         action: "VIEW",
@@ -88,6 +90,14 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "@livekit/react-native-expo-plugin",
+    [
+      "expo-camera",
+      {
+        cameraPermission: "ChatPHT cần camera để bạn thực hiện cuộc gọi video riêng tư.",
+        microphonePermission: "ChatPHT cần micro để bạn thực hiện cuộc gọi thoại và video riêng tư.",
+      },
+    ],
     [
       "expo-notifications",
       {

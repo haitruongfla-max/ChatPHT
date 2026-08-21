@@ -50,6 +50,13 @@
       "when": 1787297156910,
       "tag": "0006_clean_chameleon",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1787307426587,
+      "tag": "0007_call_sessions",
+      "breakpoints": true
     }
   ]
 }

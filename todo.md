@@ -81,3 +81,7 @@
 - [x] Đánh giá phương án WebRTC, máy chủ tín hiệu, NAT traversal, quyền riêng tư và chi phí dữ liệu.
 - [x] Xác định lộ trình tích hợp cuộc gọi an toàn mà không thay đổi tính năng đang hoạt động.
 - [x] Hướng dẫn người dùng phương án và các bước bổ sung gọi thoại, gọi video vào ChatPHT.
+- [x] Rà soát màn hình hội thoại, xác thực thành viên và cấu hình native trước khi tích hợp gọi 1:1.
+- [x] Thêm API cấp token cuộc gọi an toàn chỉ cho hai thành viên của hội thoại.
+- [x] Bổ sung nút gọi thoại/video, màn hình cuộc gọi đến và màn hình cuộc gọi đang diễn ra vào ChatPHT.
+- [x] Kết nối WebRTC/LiveKit, kiểm thử hồi quy và hướng dẫn cấu hình gọi Internet thực tế.

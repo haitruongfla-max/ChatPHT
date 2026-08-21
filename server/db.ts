@@ -1,12 +1,15 @@
 import { and, desc, eq, inArray, like, ne, or } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
+  callSessions,
   conversationMembers,
   conversations,
   friendRequests,
   messageReactions,
   messages,
   pushDevices,
+  type CallSession,
   type InsertUser,
   type User,
   users,
@@ -17,6 +20,16 @@ export type PublicProfile = {
   id: number;
   username: string;
   displayName: string;
+};
+
+export type CallKind = "audio" | "video";
+export type CallStatus = "ringing" | "active" | "declined" | "ended" | "missed";
+export type CallSessionSummary = Pick<
+  CallSession,
+  "id" | "conversationId" | "room" | "kind" | "status" | "expiresAt" | "answeredAt" | "endedAt" | "createdAt"
+> & {
+  direction: "incoming" | "outgoing";
+  peer: PublicProfile;
 };
 
 export function toPublicProfile(user: User): PublicProfile {
@@ -344,6 +357,112 @@ export async function getConversationPeer(conversationId: number, userId: number
   if (!peerMembership[0]) return undefined;
   const peer = await getUserById(peerMembership[0].userId);
   return peer ? toPublicProfile(peer) : undefined;
+}
+
+function toCallSessionSummary(call: CallSession, userId: number, peer: PublicProfile): CallSessionSummary {
+  return {
+    id: call.id,
+    conversationId: call.conversationId,
+    room: call.room,
+    kind: call.kind,
+    status: call.status,
+    expiresAt: call.expiresAt,
+    answeredAt: call.answeredAt,
+    endedAt: call.endedAt,
+    createdAt: call.createdAt,
+    direction: call.callerId === userId ? "outgoing" : "incoming",
+    peer,
+  };
+}
+
+async function hydrateCallSession(call: CallSession, userId: number) {
+  const peerUser = await getUserById(call.callerId === userId ? call.recipientId : call.callerId);
+  if (!peerUser) throw new Error("Không tìm thấy người dùng của cuộc gọi.");
+  return toCallSessionSummary(call, userId, toPublicProfile(peerUser));
+}
+
+export async function createCallSession(conversationId: number, callerId: number, kind: CallKind) {
+  const peer = await getConversationPeer(conversationId, callerId);
+  if (!peer) throw new Error("Bạn không có quyền gọi trong hội thoại này.");
+
+  const db = requireDb(await getDb());
+  const now = new Date();
+  await db
+    .update(callSessions)
+    .set({ status: "missed", endedAt: now })
+    .where(and(eq(callSessions.recipientId, peer.id), eq(callSessions.status, "ringing")));
+
+  const id = randomUUID();
+  await db.insert(callSessions).values({
+    id,
+    conversationId,
+    callerId,
+    recipientId: peer.id,
+    room: `chatpht-call-${id}`,
+    kind,
+    status: "ringing",
+    expiresAt: new Date(now.getTime() + 60_000),
+  });
+  const created = (await db.select().from(callSessions).where(eq(callSessions.id, id)).limit(1))[0];
+  if (!created) throw new Error("Không thể tạo phiên gọi.");
+  return toCallSessionSummary(created, callerId, peer);
+}
+
+export async function getCallSession(sessionId: string, userId: number) {
+  const db = requireDb(await getDb());
+  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
+  if (!call || (call.callerId !== userId && call.recipientId !== userId)) return undefined;
+  return hydrateCallSession(call, userId);
+}
+
+export async function getIncomingCallSession(userId: number) {
+  const db = requireDb(await getDb());
+  const call = (
+    await db
+      .select()
+      .from(callSessions)
+      .where(and(eq(callSessions.recipientId, userId), eq(callSessions.status, "ringing")))
+      .orderBy(desc(callSessions.createdAt))
+      .limit(1)
+  )[0];
+  if (!call) return undefined;
+  if (call.expiresAt.getTime() <= Date.now()) {
+    await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, call.id));
+    return undefined;
+  }
+  return hydrateCallSession(call, userId);
+}
+
+export async function answerCallSession(sessionId: string, userId: number) {
+  const db = requireDb(await getDb());
+  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
+  if (!call || call.recipientId !== userId || call.status !== "ringing") throw new Error("Cuộc gọi này không còn chờ phản hồi.");
+  if (call.expiresAt.getTime() <= Date.now()) {
+    await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, sessionId));
+    throw new Error("Cuộc gọi đã hết thời gian chờ.");
+  }
+  const answeredAt = new Date();
+  await db.update(callSessions).set({ status: "active", answeredAt }).where(eq(callSessions.id, sessionId));
+  const updated = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
+  if (!updated) throw new Error("Không thể nhận cuộc gọi.");
+  return hydrateCallSession(updated, userId);
+}
+
+export async function finishCallSession(sessionId: string, userId: number, status: Extract<CallStatus, "declined" | "ended">) {
+  const db = requireDb(await getDb());
+  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
+  if (!call || (call.callerId !== userId && call.recipientId !== userId)) throw new Error("Bạn không có quyền cập nhật cuộc gọi này.");
+  await db.update(callSessions).set({ status, endedAt: new Date() }).where(eq(callSessions.id, sessionId));
+}
+
+export async function getJoinableCallSession(sessionId: string, userId: number) {
+  const db = requireDb(await getDb());
+  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
+  if (!call || (call.callerId !== userId && call.recipientId !== userId)) throw new Error("Bạn không có quyền tham gia cuộc gọi này.");
+  if (call.status === "ringing" && call.callerId !== userId) throw new Error("Hãy nhận cuộc gọi trước khi tham gia.");
+  if (call.status !== "ringing" && call.status !== "active") throw new Error("Cuộc gọi đã kết thúc.");
+  if (call.status === "ringing" && call.expiresAt.getTime() <= Date.now()) throw new Error("Cuộc gọi đã hết thời gian chờ.");
+  return call;
 }
 
 export async function listConversations(userId: number) {

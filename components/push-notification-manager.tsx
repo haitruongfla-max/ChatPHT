@@ -21,7 +21,16 @@ if (Platform.OS !== "web") {
   });
 }
 
-function openConversation(data: unknown) {
+function openNotification(data: unknown) {
+  if (data && typeof data === "object") {
+    const payload = data as Record<string, unknown>;
+    const callId = typeof payload.callId === "string" ? payload.callId : null;
+    const kind = payload.kind === "video" ? "video" : "audio";
+    if (payload.type === "incoming_call" && callId) {
+      router.push({ pathname: "/call", params: { callId, kind, direction: "incoming" } });
+      return;
+    }
+  }
   const conversationId = conversationIdFromPushData(data);
   if (conversationId) router.push(`/chat/${conversationId}` as never);
 }
@@ -42,9 +51,9 @@ export function PushNotificationManager() {
   useEffect(() => {
     if (Platform.OS === "web") return;
     const initial = Notifications.getLastNotificationResponse();
-    if (initial?.notification) openConversation(initial.notification.request.content.data);
+    if (initial?.notification) openNotification(initial.notification.request.content.data);
     const responseListener = Notifications.addNotificationResponseReceivedListener((response) => {
-      openConversation(response.notification.request.content.data);
+      openNotification(response.notification.request.content.data);
     });
     return () => responseListener.remove();
   }, []);

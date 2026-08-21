@@ -110,6 +110,27 @@ export const messages = mysqlTable(
   ],
 );
 
+export const callSessions = mysqlTable(
+  "call_sessions",
+  {
+    id: varchar("id", { length: 40 }).primaryKey(),
+    conversationId: int("conversationId").notNull(),
+    callerId: int("callerId").notNull(),
+    recipientId: int("recipientId").notNull(),
+    room: varchar("room", { length: 96 }).notNull().unique(),
+    kind: mysqlEnum("kind", ["audio", "video"]).notNull(),
+    status: mysqlEnum("status", ["ringing", "active", "declined", "ended", "missed"]).default("ringing").notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+    answeredAt: timestamp("answeredAt"),
+    endedAt: timestamp("endedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [
+    index("call_session_recipient_status_idx").on(table.recipientId, table.status, table.expiresAt),
+    index("call_session_conversation_created_idx").on(table.conversationId, table.createdAt),
+  ],
+);
+
 export const messageReactions = mysqlTable(
   "message_reactions",
   {
@@ -130,5 +151,6 @@ export type InsertUser = typeof users.$inferInsert;
 export type FriendRequest = typeof friendRequests.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+export type CallSession = typeof callSessions.$inferSelect;
 export type MessageReaction = typeof messageReactions.$inferSelect;
 export type PushDevice = typeof pushDevices.$inferSelect;
