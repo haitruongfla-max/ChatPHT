@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
 const PUSH_TOKEN_STORAGE_KEY = "swiftchat.push-token";
+const PUSH_ENABLED_STORAGE_KEY = "swiftchat.push-enabled";
 
 export function conversationIdFromPushData(data: unknown): number | null {
   if (!data || typeof data !== "object") return null;
@@ -14,6 +15,7 @@ export function conversationIdFromPushData(data: unknown): number | null {
 
 export async function registerForChatPushNotifications() {
   if (Platform.OS === "web") return null;
+  if (!(await areChatPushNotificationsEnabled())) return null;
 
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("messages", {
@@ -47,4 +49,12 @@ export async function storePushToken(token: string) {
 
 export async function clearStoredPushToken() {
   await AsyncStorage.removeItem(PUSH_TOKEN_STORAGE_KEY);
+}
+
+export async function areChatPushNotificationsEnabled() {
+  return (await AsyncStorage.getItem(PUSH_ENABLED_STORAGE_KEY)) !== "false";
+}
+
+export async function setChatPushNotificationsEnabled(enabled: boolean) {
+  await AsyncStorage.setItem(PUSH_ENABLED_STORAGE_KEY, enabled ? "true" : "false");
 }

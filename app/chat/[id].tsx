@@ -1,6 +1,7 @@
 import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
 import { ChatMediaPreview, ChatMediaViewer } from "@/components/chat-media-viewer";
+import { uploadMediaDirectly } from "@/lib/direct-media-upload";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
@@ -70,6 +71,8 @@ export default function ChatScreen() {
   const messages = trpc.messages.list.useQuery({ conversationId }, { enabled: Boolean(user) && Number.isInteger(conversationId), refetchInterval: 1800 });
   const sendText = trpc.messages.sendText.useMutation();
   const sendMedia = trpc.messages.upload.useMutation();
+  const requestVideoUpload = trpc.messages.requestVideoUpload.useMutation();
+  const completeVideoUpload = trpc.messages.completeVideoUpload.useMutation();
   const recall = trpc.messages.recall.useMutation();
   const removeConversation = trpc.conversations.remove.useMutation();
   const header = useMemo(() => ({ title: "Hội thoại riêng tư", subtitle: "Chỉ thành viên có thể xem tin nhắn" }), []);
@@ -92,17 +95,26 @@ export default function ChatScreen() {
   };
   const chooseMedia = async () => {
     if (uploading) return;
-    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.All, allowsEditing: false, quality: 0.85, videoExportPreset: ImagePicker.VideoExportPreset.MediumQuality });
+    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.All, allowsEditing: false, quality: 0.85 });
     if (picked.canceled || !picked.assets[0]) return;
     const asset = picked.assets[0];
     const isVideo = asset.type === "video";
-    const maxBytes = isVideo ? 24 * 1024 * 1024 : 8 * 1024 * 1024;
-    if (asset.fileSize && asset.fileSize > maxBytes) { Alert.alert("Tệp quá lớn", isVideo ? "Video tối đa 24 MB." : "Ảnh tối đa 8 MB."); return; }
+    const maxBytes = isVideo ? 100 * 1024 * 1024 : 8 * 1024 * 1024;
+    const fileSize = asset.fileSize;
+    if (!fileSize) { Alert.alert("Không đọc được dung lượng", "Hãy chọn lại tệp từ thư viện để SwiftChat kiểm tra giới hạn an toàn."); return; }
+    if (fileSize > maxBytes) { Alert.alert("Tệp quá lớn", isVideo ? "Video tối đa 100 MB." : "Ảnh tối đa 8 MB."); return; }
     const mimeType = asset.mimeType ?? (isVideo ? "video/mp4" : "image/jpeg");
     const filename = asset.fileName ?? `swiftchat-${Date.now()}.${isVideo ? "mp4" : "jpg"}`;
     if (!(mimeType.startsWith("image/") || mimeType === "video/mp4" || mimeType === "video/quicktime")) { Alert.alert("Định dạng chưa hỗ trợ", "Hãy chọn ảnh JPEG/PNG/WEBP/GIF hoặc video MP4/MOV."); return; }
     setUploading(true);
     try {
+      if (isVideo && fileSize > 24 * 1024 * 1024) {
+        const prepared = await requestVideoUpload.mutateAsync({ conversationId, filename, mimeType: mimeType as "video/mp4" | "video/quicktime", size: fileSize });
+        await uploadMediaDirectly({ uri: asset.uri, uploadUrl: prepared.uploadUrl, mimeType });
+        await completeVideoUpload.mutateAsync({ conversationId, key: prepared.key, filename: prepared.filename, mimeType: mimeType as "video/mp4" | "video/quicktime", size: fileSize });
+        refresh();
+        return;
+      }
       const base64 = await readBase64(asset.uri);
       await sendMedia.mutateAsync({ conversationId, filename, mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "video/mp4" | "video/quicktime", base64 });
       refresh();

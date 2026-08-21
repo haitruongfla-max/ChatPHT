@@ -7,7 +7,7 @@ import { sdk } from "./_core/sdk";
 import { systemRouter } from "./_core/systemRouter";
 import * as db from "./db";
 import { dispatchNewMessagePushNotifications } from "./push";
-import { storageGetSignedUrl, storagePut } from "./storage";
+import { storageCreateUploadUrl, storageGetSignedUrl, storagePut } from "./storage";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
 const credentialsSchema = z.object({
@@ -23,6 +23,8 @@ const mediaMimeSchema = z.enum([
   "video/mp4",
   "video/quicktime",
 ]);
+const videoMimeSchema = z.enum(["video/mp4", "video/quicktime"]);
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
 function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | Awaited<ReturnType<typeof db.listMessages>>[number], mediaUrl: string | null) {
   return {
@@ -257,6 +259,49 @@ export const appRouter = router({
           });
           void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
           return publicMessage(message, await storageGetSignedUrl(stored.key));
+      }),
+    requestVideoUpload: protectedProcedure
+      .input(z.object({
+        conversationId: z.number().int().positive(),
+        filename: z.string().trim().min(1).max(120),
+        mimeType: videoMimeSchema,
+        size: z.number().int().positive().max(MAX_VIDEO_BYTES),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền gửi tệp vào hội thoại này." });
+        }
+        const filename = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "video.mp4";
+        const storage = await storageCreateUploadUrl(`swiftchat/${input.conversationId}/${ctx.user.id}/${Date.now()}-${filename}`);
+        return { ...storage, filename, maximumSize: MAX_VIDEO_BYTES };
+      }),
+    completeVideoUpload: protectedProcedure
+      .input(z.object({
+        conversationId: z.number().int().positive(),
+        key: z.string().trim().min(10).max(320),
+        filename: z.string().trim().min(1).max(120),
+        mimeType: videoMimeSchema,
+        size: z.number().int().positive().max(MAX_VIDEO_BYTES),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền gửi tệp vào hội thoại này." });
+        }
+        const ownedPrefix = `swiftchat/${input.conversationId}/${ctx.user.id}/`;
+        if (!input.key.startsWith(ownedPrefix)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Tệp tải lên không hợp lệ." });
+        }
+        const message = await db.createMessage({
+          conversationId: input.conversationId,
+          senderId: ctx.user.id,
+          contentType: "video",
+          mediaKey: input.key,
+          mediaMime: input.mimeType,
+          mediaName: input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100),
+          mediaSize: input.size,
+        });
+        void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
+        return publicMessage(message, await storageGetSignedUrl(input.key));
       }),
     recall: protectedProcedure
       .input(z.object({ messageId: z.number().int().positive() }))

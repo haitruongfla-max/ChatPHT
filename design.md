@@ -64,3 +64,11 @@ Chạm vào ảnh hoặc video trong bong bóng tin nhắn sẽ mở một **mod
 Khi lưu, ứng dụng chỉ xin quyền thư viện tại thời điểm người dùng chủ động bấm nút. Tệp được tải từ URL có chữ ký vào cache tạm thời, rồi lưu vào thư viện ảnh/video của điện thoại. Web hiển thị thông báo rằng việc lưu trực tiếp dành cho ứng dụng điện thoại.
 
 Xóa hội thoại là thao tác **theo từng tài khoản**: hội thoại biến khỏi hộp thư của người thực hiện nhưng không xóa tin nhắn hay ảnh/video của người còn lại. Gửi một tin nhắn mới hoặc chủ động mở lại từ danh bạ sẽ làm hội thoại xuất hiện trở lại cho người dùng đó. Thu hồi là thao tác **toàn cuộc hội thoại**, chỉ người gửi tin được thu hồi; nội dung và tham chiếu tệp bị gỡ khỏi bản ghi, thay bằng thông báo thu hồi cho cả hai thành viên.
+
+## Khóa ứng dụng, thông báo và video dung lượng lớn
+
+Khóa ứng dụng là mã PIN 4–8 chữ số do người dùng đặt trong màn hình **Bạn & riêng tư**. Mã được lưu trong kho bảo mật của hệ điều hành, không được gửi lên máy chủ. Khi bật lại SwiftChat từ trạng thái nền hoặc mở ứng dụng sau khi đã đặt mã, một lớp khóa toàn màn hình che mọi nội dung chat cho đến khi mã chính xác được nhập. Người dùng có thể đổi hoặc tắt mã từ cùng màn hình cài đặt.
+
+Thông báo tin nhắn có công tắc **Hiển thị thông báo**. Khi tắt, ứng dụng hủy đăng ký token trên máy chủ để không nhận push ở thiết bị đó; khi bật, ứng dụng xin quyền hệ thống, đăng ký lại token và tạo kênh Android mức ưu tiên cao. Nội dung push vẫn giữ riêng tư: chỉ ghi “Bạn có tin nhắn mới”.
+
+Video tối đa **100 MB** được tải trực tiếp từ tệp thiết bị đến kho riêng tư qua URL tạm có chữ ký, thay vì mã hóa toàn bộ thành Base64 trong bộ nhớ. Ảnh và video nhỏ giữ nguyên luồng nhanh hiện hữu. Ứng dụng hiển thị rõ dung lượng giới hạn trước khi tải; việc cắt video chuyên sâu không được thêm trong phiên bản này vì Expo không có trình cắt video đa nền tảng tích hợp sẵn mà không cần native module/bản dựng tùy chỉnh.

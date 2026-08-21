@@ -2,6 +2,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Redirect, router } from "expo-router";
+import { useCallback, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 
@@ -16,6 +17,11 @@ export default function InboxScreen() {
   const { user, loading } = useAuth();
   const conversations = trpc.conversations.list.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 2500 });
   const requests = trpc.friends.incoming.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 5000 });
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshInbox = useCallback(async () => {
+    setRefreshing(true);
+    try { await conversations.refetch(); } finally { setRefreshing(false); }
+  }, [conversations]);
 
   if (loading) return <ScreenContainer className="items-center justify-center"><ActivityIndicator color="#2563EB" /></ScreenContainer>;
   if (!user) return <Redirect href={"/login" as never} />;
@@ -40,7 +46,7 @@ export default function InboxScreen() {
         keyExtractor={(item) => String(item.id)}
         style={styles.list}
         contentContainerStyle={(conversations.data?.length ?? 0) === 0 ? styles.emptyList : styles.listContent}
-        refreshControl={<RefreshControl refreshing={conversations.isRefetching} onRefresh={() => void conversations.refetch()} tintColor="#2563EB" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refreshInbox()} tintColor="#2563EB" />}
         renderItem={({ item }) => (
           <Pressable onPress={() => router.push(`/chat/${item.id}` as never)} style={({ pressed }) => [styles.thread, pressed && styles.threadPressed]}>
             <View style={styles.avatar}><Text style={styles.avatarText}>{item.peer.displayName.slice(0, 1).toUpperCase()}</Text></View>

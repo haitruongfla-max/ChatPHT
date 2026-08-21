@@ -31,6 +31,14 @@ export function PushNotificationManager() {
   const { mutateAsync: registerDevice } = trpc.notifications.registerDevice.useMutation();
   const registeredToken = useRef<string | null>(null);
 
+  const saveToken = async (token: string) => {
+    if (registeredToken.current === token) return;
+    const platform = Platform.OS === "ios" ? "ios" : "android";
+    await registerDevice({ token, platform });
+    registeredToken.current = token;
+    await storePushToken(token);
+  };
+
   useEffect(() => {
     if (Platform.OS === "web") return;
     const initial = Notifications.getLastNotificationResponse();
@@ -47,12 +55,9 @@ export function PushNotificationManager() {
     void (async () => {
       try {
         const token = await registerForChatPushNotifications();
-        if (!token || !active || registeredToken.current === token) return;
-        const platform = Platform.OS === "ios" ? "ios" : "android";
-        await registerDevice({ token, platform });
+        if (!token || !active) return;
+        await saveToken(token);
         if (!active) return;
-        registeredToken.current = token;
-        await storePushToken(token);
       } catch (error) {
         console.warn("[Push] Không thể đăng ký thông báo trên thiết bị này.", error);
       }
@@ -60,6 +65,14 @@ export function PushNotificationManager() {
     return () => {
       active = false;
     };
+  }, [registerDevice, user]);
+
+  useEffect(() => {
+    if (!user || Platform.OS === "web") return;
+    const subscription = Notifications.addPushTokenListener((token) => {
+      void saveToken(token.data).catch((error) => console.warn("[Push] Không thể cập nhật token thông báo.", error));
+    });
+    return () => subscription.remove();
   }, [registerDevice, user]);
 
   return null;

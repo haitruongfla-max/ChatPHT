@@ -25,3 +25,11 @@
 - [x] Tích hợp xin quyền, đăng ký token và điều hướng khi chạm thông báo trên iOS/Android.
 - [x] Kiểm thử đăng ký token, phân quyền nhận thông báo và điều hướng vào hội thoại.
 - [x] Hoàn tất kiểm tra, cập nhật TODO, tạo checkpoint push notification và bàn giao.
+- [x] Thiết kế trải nghiệm khóa ứng dụng bằng mã PIN, quản lý quyền thông báo và giới hạn video tối đa 100 MB.
+- [x] Xây dựng lưu mã PIN an toàn, xác minh mã khi mở/làm nền ứng dụng và thay đổi/tắt khóa trong cài đặt.
+- [x] Hoàn thiện tùy chọn thông báo riêng tư/tắt thông báo và cải thiện độ tin cậy đăng ký token thiết bị.
+- [x] Nâng cấp API upload video riêng tư lên giới hạn 100 MB mà không chuyển toàn bộ video sang Base64 trong bộ nhớ.
+- [x] Bổ sung giao diện cài đặt khóa/thông báo, loại bỏ vòng tải trong dòng xem trước hộp thư và hướng dẫn chọn video 100 MB.
+- [x] Đánh giá khả năng cắt video trên thiết bị và tích hợp giải pháp tương thích với Expo nếu không ảnh hưởng ổn định ứng dụng.
+- [x] Kiểm thử khóa ứng dụng, quyền thông báo, trạng thái hộp thư và xác thực giới hạn video.
+- [x] Hoàn tất kiểm tra, cập nhật TODO, tạo checkpoint nâng cấp bảo mật/media và bàn giao.
