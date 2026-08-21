@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   int,
   mysqlEnum,
@@ -68,6 +69,23 @@ export const conversationMembers = mysqlTable(
   ],
 );
 
+export const pushDevices = mysqlTable(
+  "push_devices",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    token: varchar("token", { length: 255 }).notNull(),
+    platform: mysqlEnum("platform", ["ios", "android"]).notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    lastSeenAt: timestamp("lastSeenAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("push_device_token_unique_idx").on(table.token),
+    index("push_device_user_enabled_idx").on(table.userId, table.enabled),
+  ],
+);
+
 export const messages = mysqlTable(
   "messages",
   {
@@ -92,3 +110,4 @@ export type InsertUser = typeof users.$inferInsert;
 export type FriendRequest = typeof friendRequests.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+export type PushDevice = typeof pushDevices.$inferSelect;

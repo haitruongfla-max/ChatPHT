@@ -5,6 +5,7 @@ import {
   conversations,
   friendRequests,
   messages,
+  pushDevices,
   type InsertUser,
   type User,
   users,
@@ -81,6 +82,42 @@ export async function getUserById(id: number) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return result[0];
+}
+
+export async function upsertPushDevice(input: {
+  userId: number;
+  token: string;
+  platform: "ios" | "android";
+}) {
+  const db = requireDb(await getDb());
+  const now = new Date();
+  await db.insert(pushDevices).values({ ...input, enabled: true, lastSeenAt: now }).onDuplicateKeyUpdate({
+    set: { userId: input.userId, platform: input.platform, enabled: true, lastSeenAt: now },
+  });
+}
+
+export async function removePushDevice(userId: number, token: string) {
+  const db = requireDb(await getDb());
+  await db.delete(pushDevices).where(and(eq(pushDevices.userId, userId), eq(pushDevices.token, token)));
+}
+
+export async function listConversationRecipientDevices(conversationId: number, senderId: number) {
+  const db = requireDb(await getDb());
+  const recipients = await db
+    .select({ userId: conversationMembers.userId })
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, conversationId), ne(conversationMembers.userId, senderId)));
+  if (!recipients.length) return [];
+
+  const devices = await Promise.all(
+    recipients.map(({ userId }) =>
+      db
+        .select({ token: pushDevices.token, platform: pushDevices.platform })
+        .from(pushDevices)
+        .where(and(eq(pushDevices.userId, userId), eq(pushDevices.enabled, true))),
+    ),
+  );
+  return devices.flat();
 }
 
 export async function createLocalUser(input: {

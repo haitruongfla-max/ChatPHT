@@ -47,9 +47,15 @@ Màn hình hội thoại dùng `KeyboardAvoidingView` và vùng an toàn đáy c
 
 Hệ thống cần các thực thể `Profile`, `FriendRequest`, `Conversation`, `ConversationMember`, `Message` và `MediaAttachment`. Mật khẩu không lưu ở dạng rõ; máy chủ chỉ giữ giá trị băm có muối. Mọi API kiểm tra người dùng đang đăng nhập là thành viên của hội thoại trước khi đọc, tạo hoặc tải nội dung; tệp đa phương tiện chỉ được phát hành URL tạm thời sau khi kiểm tra quyền. Token phiên ở thiết bị được lưu bằng kho bảo mật hệ điều hành.
 
+## Thông báo đẩy cho tin nhắn mới
+
+SwiftChat sẽ xin quyền nhận thông báo **sau khi người dùng đã đăng nhập**, chỉ trên thiết bị thật iOS/Android. Mỗi thiết bị đăng ký một token riêng với máy chủ; token được gắn với tài khoản đã đăng nhập và có thể được thay thế an toàn khi hệ điều hành làm mới token. Trên Android, ứng dụng tạo kênh “Tin nhắn mới” để người dùng tự điều chỉnh âm thanh và mức ưu tiên trong cài đặt hệ thống.
+
+Khi có tin nhắn mới, máy chủ chỉ gửi thông báo cho **thành viên còn lại** trong hội thoại, không gửi lại cho người vừa gửi. Nội dung tiêu chuẩn là “Bạn có tin nhắn mới trong SwiftChat”; tên người gửi và nội dung tin nhắn không xuất hiện trên màn hình khóa nhằm hạn chế tiết lộ dữ liệu riêng tư. Chạm vào thông báo sẽ mở đúng hội thoại sau khi URL điều hướng được kiểm tra hợp lệ.
+
 ## Giới hạn phiên bản đầu
 
-Phiên bản đầu tập trung chat 1–1, ảnh và video; chưa bao gồm gọi thoại/video, nhóm, mã hóa đầu-cuối độc lập hay thông báo đẩy. Các tính năng đó cần thiết kế bảo mật và hạ tầng bổ sung ở giai đoạn sau.
+Phiên bản đầu tập trung chat 1–1, ảnh và video; chưa bao gồm gọi thoại/video, nhóm và mã hóa đầu-cuối độc lập. Thông báo đẩy được gửi qua dịch vụ thông báo của Expo và cần một bản dựng phát triển hoặc phát hành cài trên thiết bị thật để kiểm thử đầy đủ.
 
 ## Nâng cấp media và quản lý hội thoại
 

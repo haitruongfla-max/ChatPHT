@@ -6,6 +6,9 @@ vi.mock("../server/db", () => ({
   listMessages: vi.fn(),
   hideConversationForUser: vi.fn(),
   recallMessage: vi.fn(),
+  upsertPushDevice: vi.fn(),
+  removePushDevice: vi.fn(),
+  listConversationRecipientDevices: vi.fn().mockResolvedValue([]),
   toPublicProfile: vi.fn(),
 }));
 
@@ -105,5 +108,21 @@ describe("chat media access controls", () => {
       mediaUrl: null,
     });
     expect(db.recallMessage).toHaveBeenCalledWith(55, 7);
+  });
+
+  it("only registers a valid device token against the signed-in account", async () => {
+    vi.mocked(db.upsertPushDevice).mockResolvedValue(undefined);
+
+    await expect(
+      callerFor(7).notifications.registerDevice({
+        token: "ExponentPushToken[private-device-token]",
+        platform: "android",
+      }),
+    ).resolves.toEqual({ success: true });
+    expect(db.upsertPushDevice).toHaveBeenCalledWith({
+      userId: 7,
+      token: "ExponentPushToken[private-device-token]",
+      platform: "android",
+    });
   });
 });

@@ -89,6 +89,14 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     [
+      "expo-notifications",
+      {
+        icon: "./assets/images/icon.png",
+        color: "#2563EB",
+        defaultChannel: "messages",
+      },
+    ],
+    [
       "expo-media-library",
       {
         photosPermission: "SwiftChat cần quyền truy cập thư viện để bạn chọn ảnh và video trong hội thoại riêng tư.",

@@ -19,3 +19,9 @@
 - [x] Bổ sung thao tác xóa hội thoại và thu hồi tin nhắn với xác nhận rõ ràng trên giao diện chat.
 - [x] Kiểm thử quyền thu hồi/xóa, tính toàn vẹn hội thoại và thao tác lưu ảnh/video.
 - [x] Hoàn tất kiểm tra, cập nhật TODO, tạo checkpoint nâng cấp và bàn giao.
+- [x] Thiết kế quyền nhận thông báo, nội dung thông báo và điều hướng an toàn đến hội thoại liên quan.
+- [x] Tạo schema và API đăng ký/hủy đăng ký token push theo người dùng và thiết bị.
+- [x] Gửi thông báo đẩy cho thành viên nhận khi có tin nhắn mới, không tiết lộ nội dung tin nhắn nhạy cảm.
+- [x] Tích hợp xin quyền, đăng ký token và điều hướng khi chạm thông báo trên iOS/Android.
+- [x] Kiểm thử đăng ký token, phân quyền nhận thông báo và điều hướng vào hội thoại.
+- [x] Hoàn tất kiểm tra, cập nhật TODO, tạo checkpoint push notification và bàn giao.

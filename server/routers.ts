@@ -6,6 +6,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { sdk } from "./_core/sdk";
 import { systemRouter } from "./_core/systemRouter";
 import * as db from "./db";
+import { dispatchNewMessagePushNotifications } from "./push";
 import { storageGetSignedUrl, storagePut } from "./storage";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
@@ -109,6 +110,25 @@ export const appRouter = router({
   profile: router({
     me: protectedProcedure.query(({ ctx }) => db.toPublicProfile(ctx.user)),
   }),
+  notifications: router({
+    registerDevice: protectedProcedure
+      .input(
+        z.object({
+          token: z.string().trim().min(16).max(255).regex(/^(?:Expo|Exponent)PushToken\[[^\]]+\]$/),
+          platform: z.enum(["ios", "android"]),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        await db.upsertPushDevice({ userId: ctx.user.id, ...input });
+        return { success: true } as const;
+      }),
+    unregisterDevice: protectedProcedure
+      .input(z.object({ token: z.string().trim().min(16).max(255) }))
+      .mutation(async ({ ctx, input }) => {
+        await db.removePushDevice(ctx.user.id, input.token);
+        return { success: true } as const;
+      }),
+  }),
   friends: router({
     search: protectedProcedure
       .input(z.object({ query: z.string().trim().min(1).max(24) }))
@@ -190,6 +210,7 @@ export const appRouter = router({
             body: input.body,
             contentType: "text",
           });
+          void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
           return publicMessage(message, null);
         } catch (error) {
           return appError(error, "Không thể gửi tin nhắn.");
@@ -225,16 +246,17 @@ export const appRouter = router({
           data,
           input.mimeType,
         );
-        const message = await db.createMessage({
+          const message = await db.createMessage({
           conversationId: input.conversationId,
           senderId: ctx.user.id,
           contentType: input.mimeType.startsWith("image/") ? "image" : "video",
           mediaKey: stored.key,
           mediaMime: input.mimeType,
           mediaName: safeFilename,
-          mediaSize: data.length,
-        });
-        return publicMessage(message, await storageGetSignedUrl(stored.key));
+            mediaSize: data.length,
+          });
+          void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
+          return publicMessage(message, await storageGetSignedUrl(stored.key));
       }),
     recall: protectedProcedure
       .input(z.object({ messageId: z.number().int().positive() }))
