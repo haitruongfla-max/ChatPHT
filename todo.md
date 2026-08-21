@@ -77,3 +77,7 @@
 - [x] Chuẩn hóa phản hồi AI để nguồn được biểu diễn bằng nhãn liên kết ngắn, dễ đọc.
 - [x] Hiển thị liên kết có thể chạm mở an toàn trong giao diện Trợ lý AI mà không làm vỡ bố cục.
 - [x] Kiểm thử hồi quy định dạng liên kết AI, cập nhật TODO và lưu checkpoint bàn giao.
+- [x] Rà soát kiến trúc ChatPHT và các yêu cầu kỹ thuật để gọi thoại, gọi video qua Internet.
+- [x] Đánh giá phương án WebRTC, máy chủ tín hiệu, NAT traversal, quyền riêng tư và chi phí dữ liệu.
+- [x] Xác định lộ trình tích hợp cuộc gọi an toàn mà không thay đổi tính năng đang hoạt động.
+- [x] Hướng dẫn người dùng phương án và các bước bổ sung gọi thoại, gọi video vào ChatPHT.
