@@ -8,6 +8,8 @@ vi.mock("../server/db", () => ({
   clearConversationContent: vi.fn(),
   recallMessage: vi.fn(),
   toggleMessageReaction: vi.fn(),
+  markAllConversationsDelivered: vi.fn(),
+  markConversationRead: vi.fn(),
   upsertPushDevice: vi.fn(),
   removePushDevice: vi.fn(),
   listConversationRecipientDevices: vi.fn().mockResolvedValue([]),
@@ -150,6 +152,20 @@ describe("chat media access controls", () => {
   it("rejects unsupported reaction input before querying the database", async () => {
     await expect(callerFor(7).messages.toggleReaction({ messageId: 55, emoji: "🚀" as any })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(db.toggleMessageReaction).not.toHaveBeenCalled();
+  });
+
+  it("marks incoming conversations as delivered only for the active signed-in account", async () => {
+    vi.mocked(db.markAllConversationsDelivered).mockResolvedValue(undefined);
+
+    await expect(callerFor(7).conversations.markAllDelivered()).resolves.toEqual({ success: true });
+    expect(db.markAllConversationsDelivered).toHaveBeenCalledWith(7);
+  });
+
+  it("marks a conversation read only for its active member", async () => {
+    vi.mocked(db.markConversationRead).mockResolvedValue(undefined);
+
+    await expect(callerFor(9).messages.markRead({ conversationId: 18 })).resolves.toEqual({ success: true });
+    expect(db.markConversationRead).toHaveBeenCalledWith(18, 9);
   });
 
   it("only registers a valid device token against the signed-in account", async () => {

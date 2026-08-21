@@ -269,6 +269,28 @@ export async function hideConversationForUser(conversationId: number, userId: nu
     .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
 }
 
+/** Marks all conversations as delivered after the authenticated user opens ChatPHT. */
+export async function markAllConversationsDelivered(userId: number) {
+  const db = requireDb(await getDb());
+  await db
+    .update(conversationMembers)
+    .set({ lastDeliveredAt: new Date() })
+    .where(eq(conversationMembers.userId, userId));
+}
+
+/** Marks incoming messages as delivered and read only after their conversation becomes visible. */
+export async function markConversationRead(conversationId: number, userId: number) {
+  const db = requireDb(await getDb());
+  if (!(await isConversationMember(conversationId, userId))) {
+    throw new Error("Bạn không có quyền cập nhật trạng thái hội thoại này.");
+  }
+  const now = new Date();
+  await db
+    .update(conversationMembers)
+    .set({ lastDeliveredAt: now, lastReadAt: now })
+    .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
+}
+
 export async function isConversationMember(conversationId: number, userId: number) {
   const db = requireDb(await getDb());
   const membership = await db
@@ -336,6 +358,15 @@ export async function listMessages(conversationId: number, userId: number) {
   const reactionRows = messageIds.length
     ? await db.select().from(messageReactions).where(inArray(messageReactions.messageId, messageIds))
     : [];
+  const members = await db
+    .select({
+      userId: conversationMembers.userId,
+      lastDeliveredAt: conversationMembers.lastDeliveredAt,
+      lastReadAt: conversationMembers.lastReadAt,
+    })
+    .from(conversationMembers)
+    .where(eq(conversationMembers.conversationId, conversationId));
+  const recipient = members.find((member) => member.userId !== userId);
   const reactionsByMessage = new Map<number, Array<{ emoji: string; userId: number }>>();
   for (const reaction of reactionRows) {
     const existing = reactionsByMessage.get(reaction.messageId) ?? [];
@@ -345,6 +376,8 @@ export async function listMessages(conversationId: number, userId: number) {
   return result.reverse().map((message) => ({
     ...message,
     reactions: reactionsByMessage.get(message.id) ?? [],
+    recipientDeliveredAt: message.senderId === userId ? recipient?.lastDeliveredAt ?? null : null,
+    recipientReadAt: message.senderId === userId ? recipient?.lastReadAt ?? null : null,
   }));
 }
 

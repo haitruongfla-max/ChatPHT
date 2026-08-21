@@ -94,3 +94,9 @@ Danh sách hội thoại chỉ hiển thị ảnh bằng bộ nhớ đệm đĩa
 ## Hỏi đáp AI riêng tư
 
 ChatPHT có một tab **Hỏi đáp AI** độc lập với hội thoại bạn bè. Chỉ câu hỏi do người dùng nhập trong tab này được gửi đến máy chủ để tạo câu trả lời; ứng dụng không tự chuyển nội dung của bất kỳ hội thoại riêng tư nào cho AI. Màn hình dùng nền chuyển sắc nhẹ, vùng hỏi lớn ở đáy, các thẻ gợi ý ngắn và lịch sử cục bộ trong phiên để thao tác một tay. Máy chủ giới hạn độ dài câu hỏi, chỉ dùng mô hình tích hợp phía máy chủ và trả về văn bản thuần, giúp không đưa khóa truy cập hay nội dung chat cá nhân ra ứng dụng khách.
+
+## Trạng thái gửi, nhận và đã đọc
+
+Mỗi thành viên hội thoại lưu hai mốc thời gian riêng: `lastDeliveredAt` khi ứng dụng của họ tải được các tin nhắn mới, và `lastReadAt` khi họ mở đúng hội thoại để xem. Với tin nhắn do người dùng gửi, giao diện hiển thị **Đã gửi** ngay sau khi máy chủ lưu thành công; chuyển thành **Đã nhận** khi mốc nhận của thành viên còn lại đi qua thời điểm tạo tin; và chuyển thành **Đã đọc** khi mốc đọc của người đó đi qua thời điểm tạo tin. Chỉ người gửi được xem trạng thái của tin do mình gửi; người nhận không thấy hoạt động đọc của đối phương trên các tin họ đã gửi.
+
+Khi người dùng vào ChatPHT, hộp thư đánh dấu các tin mới là đã nhận. Khi họ mở một hội thoại, ứng dụng đánh dấu các tin của thành viên còn lại là đã đọc. Các mốc được cập nhật trên máy chủ sau khi xác minh thành viên và được làm mới định kỳ nhẹ trên màn hội thoại, để không tạo một yêu cầu cho từng tin nhắn và không làm lộ nội dung tin nhắn qua trạng thái giao nhận.

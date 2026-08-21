@@ -49,6 +49,8 @@ function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | A
     mediaUrl,
     mediaCacheKey: message.mediaKey ?? null,
     reactions: "reactions" in message ? message.reactions : [],
+    recipientDeliveredAt: "recipientDeliveredAt" in message ? message.recipientDeliveredAt : null,
+    recipientReadAt: "recipientReadAt" in message ? message.recipientReadAt : null,
   };
 }
 
@@ -208,6 +210,10 @@ export const appRouter = router({
   }),
   conversations: router({
     list: protectedProcedure.query(({ ctx }) => db.listConversations(ctx.user.id)),
+    markAllDelivered: protectedProcedure.mutation(async ({ ctx }) => {
+      await db.markAllConversationsDelivered(ctx.user.id);
+      return { success: true as const };
+    }),
     open: protectedProcedure
       .input(z.object({ peerId: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => {
@@ -257,6 +263,16 @@ export const appRouter = router({
           );
         } catch (error) {
           return appError(error, "Không thể tải tin nhắn.");
+        }
+      }),
+    markRead: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await db.markConversationRead(input.conversationId, ctx.user.id);
+          return { success: true as const };
+        } catch (error) {
+          return appError(error, "Không thể cập nhật trạng thái đã đọc.");
         }
       }),
     sendText: protectedProcedure

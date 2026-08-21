@@ -57,3 +57,7 @@
 - [x] Không kiểm thử cơ chế tự xóa vì tính năng này đã được bỏ qua theo yêu cầu người dùng.
 - [x] Không triển khai tự động xóa lịch sử sau ba ngày theo yêu cầu người dùng; giữ thao tác xóa sạch thủ công hiện có.
 - [x] Kiểm thử hồi quy hiệu năng media, giao diện và hỏi đáp AI; lưu checkpoint bàn giao.
+- [x] Thiết kế trạng thái Đã gửi, Đã nhận và Đã đọc theo từng hội thoại với quy tắc hiển thị riêng tư.
+- [x] Mở rộng schema, truy vấn và API để lưu thời điểm nhận/đọc tin nhắn cho đúng thành viên.
+- [x] Hiển thị trạng thái gửi nhận đọc tức thì dưới tin nhắn của người gửi và làm mới khi người nhận mở chat.
+- [x] Kiểm thử hồi quy trạng thái gửi nhận đọc, cập nhật TODO và lưu checkpoint bàn giao.

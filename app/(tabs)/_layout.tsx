@@ -4,14 +4,32 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { PushNotificationManager } from "@/components/push-notification-manager";
-import { Platform } from "react-native";
+import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/hooks/use-auth";
+import { useEffect } from "react";
+import { AppState, Platform } from "react-native";
 import { useColors } from "@/hooks/use-colors";
 
 export default function TabLayout() {
+  const { user } = useAuth();
+  const userId = user?.id;
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { mutateAsync: markAllDelivered } = trpc.conversations.markAllDelivered.useMutation();
   const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 8);
   const tabBarHeight = 56 + bottomPadding;
+
+  useEffect(() => {
+    if (!userId) return;
+    const updateDelivered = () => {
+      void markAllDelivered().catch(() => undefined);
+    };
+    updateDelivered();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") updateDelivered();
+    });
+    return () => subscription.remove();
+  }, [markAllDelivered, userId]);
 
   return (
     <>

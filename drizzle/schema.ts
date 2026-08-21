@@ -61,6 +61,8 @@ export const conversationMembers = mysqlTable(
     conversationId: int("conversationId").notNull(),
     userId: int("userId").notNull(),
     hiddenAt: timestamp("hiddenAt"),
+    lastDeliveredAt: timestamp("lastDeliveredAt"),
+    lastReadAt: timestamp("lastReadAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => [
