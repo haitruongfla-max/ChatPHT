@@ -1,11 +1,14 @@
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
+import { formatAssistantAnswer } from "@/lib/assistant-links";
 import { trpc } from "@/lib/trpc";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import * as Linking from "expo-linking";
 import { Redirect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -23,6 +26,18 @@ type AssistantTurn = {
 };
 
 const SUGGESTIONS = ["Viết lời chúc sinh nhật ngắn", "Gợi ý kế hoạch cuối tuần", "Tóm tắt một ý tưởng kinh doanh"];
+
+async function openSource(url: string) {
+  try {
+    if (!(await Linking.canOpenURL(url))) {
+      Alert.alert("Không thể mở liên kết", "Thiết bị chưa có ứng dụng phù hợp để mở nguồn này.");
+      return;
+    }
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert("Không thể mở liên kết", "Hãy kiểm tra kết nối mạng rồi thử lại.");
+  }
+}
 
 export default function AssistantScreen() {
   const { user, loading } = useAuth();
@@ -85,20 +100,44 @@ export default function AssistantScreen() {
     scrollToLatest();
   };
 
-  const renderTurn = ({ item }: { item: AssistantTurn }) => (
-    <View style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.aiBubble]}>
-      <Text style={[styles.bubbleLabel, item.role === "user" ? styles.userLabel : styles.aiLabel]}>
-        {item.role === "user" ? "Bạn" : "Trợ lý AI"}
-      </Text>
-      <Text
-        selectable
-        accessibilityHint="Nhấn giữ nội dung để chọn hoặc sao chép văn bản"
-        style={[styles.bubbleText, item.role === "user" ? styles.userText : styles.aiText]}
-      >
-        {item.content}
-      </Text>
-    </View>
-  );
+  const renderTurn = ({ item }: { item: AssistantTurn }) => {
+    const formattedAnswer = item.role === "assistant" ? formatAssistantAnswer(item.content) : { body: item.content, sources: [] };
+
+    return (
+      <View style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.aiBubble]}>
+        <Text style={[styles.bubbleLabel, item.role === "user" ? styles.userLabel : styles.aiLabel]}>
+          {item.role === "user" ? "Bạn" : "Trợ lý AI"}
+        </Text>
+        {formattedAnswer.body ? (
+          <Text
+            selectable
+            accessibilityHint="Nhấn giữ nội dung để chọn hoặc sao chép văn bản"
+            style={[styles.bubbleText, item.role === "user" ? styles.userText : styles.aiText]}
+          >
+            {formattedAnswer.body}
+          </Text>
+        ) : null}
+        {formattedAnswer.sources.length ? (
+          <View style={styles.sourceWrap}>
+            <Text style={styles.sourceHeading}>Nguồn tham khảo</Text>
+            {formattedAnswer.sources.map((source, index) => (
+              <Pressable
+                key={`${source.url}-${index}`}
+                accessibilityRole="link"
+                accessibilityLabel={`Mở nguồn ${source.label}`}
+                accessibilityHint="Mở liên kết trong trình duyệt hoặc ứng dụng phù hợp"
+                onPress={() => void openSource(source.url)}
+                style={({ pressed }) => [styles.sourceLink, pressed && styles.sourceLinkPressed]}
+              >
+                <MaterialIcons name="open-in-new" size={15} color="#1D4ED8" />
+                <Text numberOfLines={1} style={styles.sourceLinkText}>{`${index + 1}. ${source.label}`}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
 
   return (
     <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background">
@@ -250,6 +289,11 @@ const styles = StyleSheet.create({
   bubbleText: { fontSize: 14.5, lineHeight: 21 },
   userText: { color: "#FFFFFF" },
   aiText: { color: "#263653" },
+  sourceWrap: { marginTop: 10, gap: 6 },
+  sourceHeading: { color: "#70809A", fontSize: 10.5, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
+  sourceLink: { alignSelf: "flex-start", maxWidth: "100%", minHeight: 32, paddingHorizontal: 9, borderRadius: 10, backgroundColor: "#EFF6FF", flexDirection: "row", alignItems: "center", gap: 6 },
+  sourceLinkPressed: { opacity: 0.72, transform: [{ scale: 0.98 }] },
+  sourceLinkText: { flexShrink: 1, color: "#1D4ED8", fontSize: 12, fontWeight: "700" },
   typingBubble: { flexDirection: "row", gap: 9, alignItems: "center" },
   typingText: { color: "#526985", fontSize: 13, fontStyle: "italic" },
   errorCard: { marginHorizontal: 16, marginTop: 4, padding: 11, borderRadius: 16, borderWidth: 1, borderColor: "#FED7AA", backgroundColor: "#FFF7ED", flexDirection: "row", alignItems: "center", gap: 9 },

@@ -73,3 +73,7 @@
 - [x] Bổ sung menu nhấn giữ để sao chép nội dung tin nhắn và hỗ trợ chọn, dán, cắt trong ô nhập chat.
 - [x] Áp dụng thao tác sao chép/chọn và chỉnh sửa văn bản an toàn cho nội dung Trợ lý AI.
 - [x] Kiểm thử hồi quy thao tác văn bản, cập nhật TODO và lưu checkpoint bàn giao.
+- [x] Rà soát định dạng nguồn và liên kết dài trong câu trả lời Trợ lý AI trên thiết bị.
+- [x] Chuẩn hóa phản hồi AI để nguồn được biểu diễn bằng nhãn liên kết ngắn, dễ đọc.
+- [x] Hiển thị liên kết có thể chạm mở an toàn trong giao diện Trợ lý AI mà không làm vỡ bố cục.
+- [x] Kiểm thử hồi quy định dạng liên kết AI, cập nhật TODO và lưu checkpoint bàn giao.
