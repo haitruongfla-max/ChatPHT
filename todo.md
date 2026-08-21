@@ -85,3 +85,8 @@
 - [x] Thêm API cấp token cuộc gọi an toàn chỉ cho hai thành viên của hội thoại.
 - [x] Bổ sung nút gọi thoại/video, màn hình cuộc gọi đến và màn hình cuộc gọi đang diễn ra vào ChatPHT.
 - [x] Kết nối WebRTC/LiveKit, kiểm thử hồi quy và hướng dẫn cấu hình gọi Internet thực tế.
+- [x] Chẩn đoán và khắc phục lỗi không tải được bản xem trước ChatPHT trên thiết bị.
+- [x] Mở rộng phiên gọi để lưu thời lượng, kết quả và trạng thái cuộc gọi nhỡ an toàn.
+- [x] Thêm thao tác thu nhỏ cuộc gọi và chuyển camera trước/sau trong màn hình gọi.
+- [x] Hiển thị lịch sử gọi cùng trạng thái cuộc gọi nhỡ trong đoạn chat mà không ảnh hưởng tin nhắn hiện có.
+- [x] Kiểm thử hồi quy toàn bộ ChatPHT, cập nhật TODO và lưu checkpoint bàn giao.

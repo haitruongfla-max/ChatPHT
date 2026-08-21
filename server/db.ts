@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, like, ne, or } from "drizzle-orm";
+import { and, desc, eq, inArray, like, lt, ne, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
@@ -415,6 +415,23 @@ export async function getCallSession(sessionId: string, userId: number) {
   return hydrateCallSession(call, userId);
 }
 
+export async function listCallSessionsByConversation(conversationId: number, userId: number, limit = 60) {
+  if (!(await isConversationMember(conversationId, userId))) throw new Error("Bạn không có quyền xem lịch sử cuộc gọi này.");
+  const db = requireDb(await getDb());
+  const now = new Date();
+  await db
+    .update(callSessions)
+    .set({ status: "missed", endedAt: now })
+    .where(and(eq(callSessions.conversationId, conversationId), eq(callSessions.status, "ringing"), lt(callSessions.expiresAt, now)));
+  const calls = await db
+    .select()
+    .from(callSessions)
+    .where(eq(callSessions.conversationId, conversationId))
+    .orderBy(desc(callSessions.createdAt))
+    .limit(Math.min(Math.max(limit, 1), 100));
+  return Promise.all(calls.reverse().map((call) => hydrateCallSession(call, userId)));
+}
+
 export async function getIncomingCallSession(userId: number) {
   const db = requireDb(await getDb());
   const call = (
@@ -452,7 +469,8 @@ export async function finishCallSession(sessionId: string, userId: number, statu
   const db = requireDb(await getDb());
   const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
   if (!call || (call.callerId !== userId && call.recipientId !== userId)) throw new Error("Bạn không có quyền cập nhật cuộc gọi này.");
-  await db.update(callSessions).set({ status, endedAt: new Date() }).where(eq(callSessions.id, sessionId));
+  const finalStatus: CallStatus = status === "ended" && call.status === "ringing" ? "missed" : status;
+  await db.update(callSessions).set({ status: finalStatus, endedAt: new Date() }).where(eq(callSessions.id, sessionId));
 }
 
 export async function getJoinableCallSession(sessionId: string, userId: number) {

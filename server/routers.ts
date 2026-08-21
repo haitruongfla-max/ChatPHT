@@ -211,6 +211,15 @@ export const appRouter = router({
           return appError(error, "Không thể bắt đầu cuộc gọi.");
         }
       }),
+    listByConversation: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), limit: z.number().int().min(1).max(100).default(60) }))
+      .query(async ({ ctx, input }) => {
+        try {
+          return await db.listCallSessionsByConversation(input.conversationId, ctx.user.id, input.limit);
+        } catch (error) {
+          return appError(error, "Không thể tải lịch sử cuộc gọi.");
+        }
+      }),
     incoming: protectedProcedure.query(async ({ ctx }) => db.getIncomingCallSession(ctx.user.id)),
     get: protectedProcedure
       .input(z.object({ callId: z.string().uuid() }))

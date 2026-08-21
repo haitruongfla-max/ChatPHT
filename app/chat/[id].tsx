@@ -43,6 +43,20 @@ type ChatMessage = {
   recipientReadAt: Date | null;
 };
 
+type CallHistory = {
+  id: string;
+  kind: "audio" | "video";
+  status: "ringing" | "active" | "declined" | "ended" | "missed";
+  createdAt: Date;
+  answeredAt: Date | null;
+  endedAt: Date | null;
+  direction: "incoming" | "outgoing";
+};
+
+type TimelineItem =
+  | (ChatMessage & { entryType: "message" })
+  | (CallHistory & { entryType: "call" });
+
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
 
 function VideoBubble({ uri, onOpen }: { uri: string; onOpen: () => void }) {
@@ -100,12 +114,64 @@ function MessageTime({ item, mine }: { item: ChatMessage; mine: boolean }) {
   );
 }
 
+function callDurationSummary(startedAt: Date | null, endedAt: Date | null) {
+  if (!startedAt || !endedAt) return null;
+  const totalSeconds = Math.max(0, Math.floor((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000));
+  if (totalSeconds < 60) return `${totalSeconds} giây`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds ? `${minutes} phút ${seconds} giây` : `${minutes} phút`;
+}
+
+function CallHistoryItem({ call }: { call: CallHistory }) {
+  const isMissed = call.status === "missed";
+  const duration = callDurationSummary(call.answeredAt, call.endedAt);
+  const title =
+    call.status === "missed"
+      ? call.direction === "incoming"
+        ? "Cuộc gọi nhỡ"
+        : "Cuộc gọi không được trả lời"
+      : call.status === "declined"
+        ? call.direction === "incoming"
+          ? "Bạn đã từ chối cuộc gọi"
+          : "Cuộc gọi bị từ chối"
+        : call.status === "active"
+          ? "Cuộc gọi đang diễn ra"
+          : call.status === "ringing"
+            ? call.direction === "incoming"
+              ? "Cuộc gọi đến"
+              : "Đang gọi"
+            : `Cuộc gọi ${call.kind === "video" ? "video" : "thoại"} đã kết thúc`;
+  const icon: React.ComponentProps<typeof MaterialIcons>["name"] = isMissed
+    ? "call-missed"
+    : call.kind === "video"
+      ? "videocam"
+      : call.direction === "outgoing"
+        ? "call-made"
+        : "call-received";
+  const detail = [relativeTime(call.createdAt), duration].filter(Boolean).join(" · ");
+
+  return (
+    <View style={styles.callHistoryRow} accessibilityLabel={`${title}. ${detail}`}>
+      <View style={[styles.callHistoryCard, isMissed && styles.callHistoryMissed]}>
+        <View style={[styles.callHistoryIcon, isMissed && styles.callHistoryIconMissed]}>
+          <MaterialIcons name={icon} size={19} color={isMissed ? "#DC2626" : "#2563EB"} />
+        </View>
+        <View style={styles.callHistoryContent}>
+          <Text style={[styles.callHistoryTitle, isMissed && styles.callHistoryTitleMissed]}>{title}</Text>
+          <Text style={styles.callHistoryDetail}>{detail}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export default function ChatScreen() {
   const { user, loading } = useAuth();
   const userId = user?.id;
   const rawId = useLocalSearchParams<{ id: string }>().id;
   const conversationId = Number(rawId);
-  const listRef = useRef<FlatList<ChatMessage>>(null);
+  const listRef = useRef<FlatList<TimelineItem>>(null);
   const lastTypingHeartbeatAt = useRef(0);
   const [draft, setDraft] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -118,6 +184,13 @@ export default function ChatScreen() {
   const utils = trpc.useUtils();
   const messages = trpc.messages.list.useQuery(
     { conversationId },
+    {
+      enabled: Boolean(user) && Number.isInteger(conversationId),
+      refetchInterval: 1000,
+    },
+  );
+  const callHistory = trpc.calls.listByConversation.useQuery(
+    { conversationId, limit: 60 },
     {
       enabled: Boolean(user) && Number.isInteger(conversationId),
       refetchInterval: 1000,
@@ -148,11 +221,16 @@ export default function ChatScreen() {
     }),
     [],
   );
+  const timeline = useMemo<TimelineItem[]>(() => {
+    const messageItems = ((messages.data ?? []) as ChatMessage[]).map((message) => ({ ...message, entryType: "message" as const }));
+    const callItems = ((callHistory.data ?? []) as CallHistory[]).map((call) => ({ ...call, entryType: "call" as const }));
+    return [...messageItems, ...callItems].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+  }, [callHistory.data, messages.data]);
 
   useEffect(() => {
-    if (messages.data?.length)
+    if (timeline.length)
       setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 20);
-  }, [messages.data?.length]);
+  }, [timeline.length]);
 
   useEffect(() => {
     if (!userId || messageCount === 0 || !Number.isInteger(conversationId))
@@ -174,6 +252,7 @@ export default function ChatScreen() {
 
   const refresh = () => {
     void utils.messages.list.invalidate({ conversationId });
+    void utils.calls.listByConversation.invalidate({ conversationId, limit: 60 });
     void utils.conversations.list.invalidate();
   };
   const beginCall = async (kind: "audio" | "video") => {
@@ -477,8 +556,8 @@ export default function ChatScreen() {
         </View>
         <FlatList
           ref={listRef}
-          data={(messages.data ?? []) as ChatMessage[]}
-          keyExtractor={(item) => String(item.id)}
+          data={timeline}
+          keyExtractor={(item) => `${item.entryType}-${item.id}`}
           style={styles.list}
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
@@ -486,6 +565,7 @@ export default function ChatScreen() {
             listRef.current?.scrollToEnd({ animated: false })
           }
           renderItem={({ item }) => {
+            if (item.entryType === "call") return <CallHistoryItem call={item} />;
             const mine = item.senderId === user.id;
             const groupedReactions = item.reactions.reduce<
               Record<string, { count: number; mine: boolean }>
@@ -827,6 +907,34 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   messageRow: { flexDirection: "row" },
+  callHistoryRow: { alignItems: "center", marginVertical: 4 },
+  callHistoryCard: {
+    minWidth: 205,
+    maxWidth: "88%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 15,
+    backgroundColor: "#EEF4FF",
+    borderWidth: 1,
+    borderColor: "#D7E5FF",
+  },
+  callHistoryMissed: { backgroundColor: "#FFF2F2", borderColor: "#FECACA" },
+  callHistoryIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#DCEAFF",
+  },
+  callHistoryIconMissed: { backgroundColor: "#FEE2E2" },
+  callHistoryContent: { flexShrink: 1 },
+  callHistoryTitle: { color: "#1E3A8A", fontSize: 13, fontWeight: "800" },
+  callHistoryTitleMissed: { color: "#B91C1C" },
+  callHistoryDetail: { color: "#64748B", fontSize: 11.5, marginTop: 3 },
   messageStack: { maxWidth: "82%" },
   mineRow: { justifyContent: "flex-end" },
   theirRow: { justifyContent: "flex-start" },
