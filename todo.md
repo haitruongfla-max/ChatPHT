@@ -34,3 +34,9 @@
 - [x] Kiểm thử khóa ứng dụng, quyền thông báo, trạng thái hộp thư và xác thực giới hạn video.
 - [x] Hoàn tất kiểm tra, cập nhật TODO, tạo checkpoint nâng cấp bảo mật/media và bàn giao.
 - [x] Khắc phục tương thích bản xem trước web cho khóa ứng dụng, vẫn giữ kho bảo mật hệ điều hành trên iOS/Android.
+- [x] Thiết kế tiến trình tải theo phần trăm và chính sách xóa sạch lịch sử chat, ảnh và video.
+- [x] Mở rộng backend để xóa toàn bộ tin nhắn và tham chiếu media trong hội thoại sau khi xác nhận quyền thành viên.
+- [x] Thêm tiến trình tải phần trăm cho ảnh/video và trạng thái đang gửi trong giao diện hội thoại.
+- [x] Thêm thao tác xóa sạch hội thoại có xác nhận, làm mới danh sách chat ngay sau khi hoàn thành.
+- [x] Kiểm thử bảo toàn quyền, tiến trình tải và khả năng bắt đầu lại hội thoại trống.
+- [x] Hoàn tất kiểm tra, cập nhật TODO, tạo checkpoint xóa sạch/tiến trình tải và bàn giao.

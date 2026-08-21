@@ -5,6 +5,7 @@ vi.mock("../server/db", () => ({
   createMessage: vi.fn(),
   listMessages: vi.fn(),
   hideConversationForUser: vi.fn(),
+  clearConversationContent: vi.fn(),
   recallMessage: vi.fn(),
   upsertPushDevice: vi.fn(),
   removePushDevice: vi.fn(),
@@ -14,6 +15,8 @@ vi.mock("../server/db", () => ({
 
 vi.mock("../server/storage", () => ({
   storagePut: vi.fn(),
+  storageCreateUploadUrl: vi.fn(),
+  storageDelete: vi.fn(),
   storageGetSignedUrl: vi.fn(),
 }));
 
@@ -84,6 +87,31 @@ describe("chat media access controls", () => {
 
     await expect(callerFor(7).conversations.remove({ conversationId: 18 })).resolves.toEqual({ success: true });
     expect(db.hideConversationForUser).toHaveBeenCalledWith(18, 7);
+  });
+
+  it("clears every message and media payload for both members through the authorized account", async () => {
+    vi.mocked(db.clearConversationContent).mockResolvedValue({
+      messagesDeleted: 3,
+      mediaKeys: ["swiftchat/18/7/photo.jpg", "swiftchat/18/9/video.mp4"],
+    });
+    vi.mocked(storage.storageDelete).mockResolvedValue(undefined);
+
+    await expect(callerFor(7).conversations.clearContent({ conversationId: 18 })).resolves.toEqual({
+      success: true,
+      clearedMessages: 3,
+      clearedMedia: 2,
+    });
+    expect(db.clearConversationContent).toHaveBeenCalledWith(18, 7);
+    expect(storage.storageDelete).toHaveBeenCalledTimes(2);
+    expect(storage.storageDelete).toHaveBeenCalledWith("swiftchat/18/7/photo.jpg");
+    expect(storage.storageDelete).toHaveBeenCalledWith("swiftchat/18/9/video.mp4");
+  });
+
+  it("does not expose clear-content to a caller that fails the membership check", async () => {
+    vi.mocked(db.clearConversationContent).mockRejectedValue(new Error("Bạn không có quyền xóa sạch hội thoại này."));
+
+    await expect(callerFor(11).conversations.clearContent({ conversationId: 18 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(storage.storageDelete).not.toHaveBeenCalled();
   });
 
   it("returns a recalled marker without issuing a new media URL", async () => {

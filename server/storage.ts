@@ -104,3 +104,24 @@ export async function storageGetSignedUrl(relKey: string): Promise<string> {
   const { url } = (await resp.json()) as { url: string };
   return url;
 }
+
+/**
+ * Removes private media payload bytes after a destructive conversation clear.
+ *
+ * The managed storage service provides presigned PUT/GET URLs but no credentialed
+ * object-delete endpoint. Replacing the existing object with a zero-byte payload
+ * removes the media itself and releases its payload storage while preserving no
+ * readable media content at the original key.
+ */
+export async function storageDelete(relKey: string): Promise<void> {
+  const key = normalizeKey(relKey);
+  const s3Url = await createPresignedPutUrl(key);
+  const response = await fetch(s3Url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: new Blob([], { type: "application/octet-stream" }),
+  });
+  if (!response.ok) {
+    throw new Error(`Storage media cleanup failed (${response.status})`);
+  }
+}

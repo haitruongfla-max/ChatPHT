@@ -334,6 +334,37 @@ export async function listMessages(conversationId: number, userId: number) {
   return result.reverse();
 }
 
+/**
+ * Removes every message visible to both members and returns the associated media keys
+ * so the caller can also clear the private object-store payloads.
+ */
+export async function clearConversationContent(conversationId: number, requesterId: number) {
+  const db = requireDb(await getDb());
+  if (!(await isConversationMember(conversationId, requesterId))) {
+    throw new Error("Bạn không có quyền xóa sạch hội thoại này.");
+  }
+
+  const messageRows = await db
+    .select({ id: messages.id, mediaKey: messages.mediaKey })
+    .from(messages)
+    .where(eq(messages.conversationId, conversationId));
+  const mediaKeys = Array.from(
+    new Set(
+      messageRows
+        .map(({ mediaKey }) => mediaKey)
+        .filter((mediaKey): mediaKey is string => Boolean(mediaKey)),
+    ),
+  );
+
+  await db.delete(messages).where(eq(messages.conversationId, conversationId));
+  await db
+    .update(conversationMembers)
+    .set({ hiddenAt: null })
+    .where(eq(conversationMembers.conversationId, conversationId));
+
+  return { mediaKeys, messagesDeleted: messageRows.length };
+}
+
 export async function createMessage(input: {
   conversationId: number;
   senderId: number;

@@ -7,7 +7,7 @@ import { sdk } from "./_core/sdk";
 import { systemRouter } from "./_core/systemRouter";
 import * as db from "./db";
 import { dispatchNewMessagePushNotifications } from "./push";
-import { storageCreateUploadUrl, storageGetSignedUrl, storagePut } from "./storage";
+import { storageCreateUploadUrl, storageDelete, storageGetSignedUrl, storagePut } from "./storage";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
 const credentialsSchema = z.object({
@@ -25,6 +25,7 @@ const mediaMimeSchema = z.enum([
 ]);
 const videoMimeSchema = z.enum(["video/mp4", "video/quicktime"]);
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | Awaited<ReturnType<typeof db.listMessages>>[number], mediaUrl: string | null) {
   return {
@@ -188,6 +189,21 @@ export const appRouter = router({
           return appError(error, "Không thể xóa hội thoại.");
         }
       }),
+    clearContent: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const cleared = await db.clearConversationContent(input.conversationId, ctx.user.id);
+          await Promise.all(cleared.mediaKeys.map((mediaKey) => storageDelete(mediaKey)));
+          return {
+            success: true as const,
+            clearedMessages: cleared.messagesDeleted,
+            clearedMedia: cleared.mediaKeys.length,
+          };
+        } catch (error) {
+          return appError(error, "Không thể xóa sạch nội dung hội thoại.");
+        }
+      }),
   }),
   messages: router({
     list: protectedProcedure
@@ -275,6 +291,28 @@ export const appRouter = router({
         const storage = await storageCreateUploadUrl(`swiftchat/${input.conversationId}/${ctx.user.id}/${Date.now()}-${filename}`);
         return { ...storage, filename, maximumSize: MAX_VIDEO_BYTES };
       }),
+    requestMediaUpload: protectedProcedure
+      .input(z.object({
+        conversationId: z.number().int().positive(),
+        filename: z.string().trim().min(1).max(120),
+        mimeType: mediaMimeSchema,
+        size: z.number().int().positive().max(MAX_VIDEO_BYTES),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền gửi tệp vào hội thoại này." });
+        }
+        const maximumSize = input.mimeType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+        if (input.size > maximumSize) {
+          throw new TRPCError({
+            code: "PAYLOAD_TOO_LARGE",
+            message: input.mimeType.startsWith("video/") ? "Video tối đa 100 MB." : "Ảnh tối đa 8 MB.",
+          });
+        }
+        const filename = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "attachment";
+        const storage = await storageCreateUploadUrl(`swiftchat/${input.conversationId}/${ctx.user.id}/${Date.now()}-${filename}`);
+        return { ...storage, filename, maximumSize };
+      }),
     completeVideoUpload: protectedProcedure
       .input(z.object({
         conversationId: z.number().int().positive(),
@@ -295,6 +333,41 @@ export const appRouter = router({
           conversationId: input.conversationId,
           senderId: ctx.user.id,
           contentType: "video",
+          mediaKey: input.key,
+          mediaMime: input.mimeType,
+          mediaName: input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100),
+          mediaSize: input.size,
+        });
+        void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
+        return publicMessage(message, await storageGetSignedUrl(input.key));
+      }),
+    completeMediaUpload: protectedProcedure
+      .input(z.object({
+        conversationId: z.number().int().positive(),
+        key: z.string().trim().min(10).max(320),
+        filename: z.string().trim().min(1).max(120),
+        mimeType: mediaMimeSchema,
+        size: z.number().int().positive().max(MAX_VIDEO_BYTES),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền gửi tệp vào hội thoại này." });
+        }
+        const maximumSize = input.mimeType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+        if (input.size > maximumSize) {
+          throw new TRPCError({
+            code: "PAYLOAD_TOO_LARGE",
+            message: input.mimeType.startsWith("video/") ? "Video tối đa 100 MB." : "Ảnh tối đa 8 MB.",
+          });
+        }
+        const ownedPrefix = `swiftchat/${input.conversationId}/${ctx.user.id}/`;
+        if (!input.key.startsWith(ownedPrefix)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Tệp tải lên không hợp lệ." });
+        }
+        const message = await db.createMessage({
+          conversationId: input.conversationId,
+          senderId: ctx.user.id,
+          contentType: input.mimeType.startsWith("image/") ? "image" : "video",
           mediaKey: input.key,
           mediaMime: input.mimeType,
           mediaName: input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100),

@@ -72,3 +72,9 @@ Khóa ứng dụng là mã PIN 4–8 chữ số do người dùng đặt trong m
 Thông báo tin nhắn có công tắc **Hiển thị thông báo**. Khi tắt, ứng dụng hủy đăng ký token trên máy chủ để không nhận push ở thiết bị đó; khi bật, ứng dụng xin quyền hệ thống, đăng ký lại token và tạo kênh Android mức ưu tiên cao. Nội dung push vẫn giữ riêng tư: chỉ ghi “Bạn có tin nhắn mới”.
 
 Video tối đa **100 MB** được tải trực tiếp từ tệp thiết bị đến kho riêng tư qua URL tạm có chữ ký, thay vì mã hóa toàn bộ thành Base64 trong bộ nhớ. Ảnh và video nhỏ giữ nguyên luồng nhanh hiện hữu. Ứng dụng hiển thị rõ dung lượng giới hạn trước khi tải; việc cắt video chuyên sâu không được thêm trong phiên bản này vì Expo không có trình cắt video đa nền tảng tích hợp sẵn mà không cần native module/bản dựng tùy chỉnh.
+
+## Tiến trình tải và xóa sạch nội dung hội thoại
+
+Khi người dùng chọn ảnh hoặc video, thanh soạn thảo chuyển sang trạng thái **Đang tải lên — n%**. Phần trăm được tính từ số byte đã gửi trên tổng số byte cần gửi; một thanh chỉ báo mảnh màu Xanh Swift xuất hiện ngay phía trên thanh soạn thảo, không che danh sách tin nhắn hoặc bàn phím. Trong thời gian tải, nút gửi và nút đính kèm bị vô hiệu hóa để tránh tạo hai lần cùng một yêu cầu; người dùng vẫn có thể đọc hội thoại. Trạng thái bị xóa ngay khi tải hoàn tất hoặc thất bại, đồng thời lỗi hiển thị rõ ràng mà không làm mất văn bản đang soạn.
+
+Mục **Xóa sạch toàn bộ nội dung** là thao tác vĩnh viễn, khác với xóa hội thoại theo từng tài khoản. Sau một hộp thoại xác nhận nêu rõ phạm vi, máy chủ xác minh người yêu cầu là thành viên rồi xóa mọi tin nhắn, mọi bản ghi tệp đính kèm và các tệp ảnh/video tương ứng trong kho riêng tư. Việc này áp dụng đồng thời cho cả hai thành viên; bản ghi hội thoại và quan hệ thành viên được giữ để hai người có thể bắt đầu một luồng trò chuyện trống ngay sau đó. Khi hoàn tất, giao diện làm mới hộp thư và danh sách tin nhắn tức thì.

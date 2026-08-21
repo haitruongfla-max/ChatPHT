@@ -3,7 +3,6 @@ import { trpc } from "@/lib/trpc";
 import { ChatMediaPreview, ChatMediaViewer } from "@/components/chat-media-viewer";
 import { uploadMediaDirectly } from "@/lib/direct-media-upload";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -40,21 +39,6 @@ function VideoBubble({ uri, onOpen }: { uri: string; onOpen: () => void }) {
   return <Pressable onPress={onOpen} style={styles.videoFrame} accessibilityRole="button" accessibilityLabel="Mở video toàn màn hình"><VideoView pointerEvents="none" style={styles.video} player={player} allowsFullscreen allowsPictureInPicture contentFit="cover" surfaceType="textureView" /><View pointerEvents="none" style={styles.videoOverlay}><MaterialIcons name="play-circle-filled" size={43} color="#FFFFFF" /></View></Pressable>;
 }
 
-async function webBase64(uri: string) {
-  const blob = await (await fetch(uri)).blob();
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Không thể đọc tệp đã chọn."));
-    reader.onloadend = () => resolve(String(reader.result).split(",")[1] ?? "");
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function readBase64(uri: string) {
-  if (Platform.OS === "web") return webBase64(uri);
-  return FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-}
-
 function relativeTime(value: Date) {
   return new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
@@ -66,15 +50,16 @@ export default function ChatScreen() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const [draft, setDraft] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [preview, setPreview] = useState<ChatMediaPreview | null>(null);
   const utils = trpc.useUtils();
   const messages = trpc.messages.list.useQuery({ conversationId }, { enabled: Boolean(user) && Number.isInteger(conversationId), refetchInterval: 1800 });
   const sendText = trpc.messages.sendText.useMutation();
-  const sendMedia = trpc.messages.upload.useMutation();
-  const requestVideoUpload = trpc.messages.requestVideoUpload.useMutation();
-  const completeVideoUpload = trpc.messages.completeVideoUpload.useMutation();
+  const requestMediaUpload = trpc.messages.requestMediaUpload.useMutation();
+  const completeMediaUpload = trpc.messages.completeMediaUpload.useMutation();
   const recall = trpc.messages.recall.useMutation();
   const removeConversation = trpc.conversations.remove.useMutation();
+  const clearConversation = trpc.conversations.clearContent.useMutation();
   const header = useMemo(() => ({ title: "Hội thoại riêng tư", subtitle: "Chỉ thành viên có thể xem tin nhắn" }), []);
 
   useEffect(() => {
@@ -88,7 +73,7 @@ export default function ChatScreen() {
   const refresh = () => { void utils.messages.list.invalidate({ conversationId }); void utils.conversations.list.invalidate(); };
   const send = async () => {
     const body = draft.trim();
-    if (!body || sendText.isPending) return;
+    if (!body || sendText.isPending || uploading) return;
     setDraft("");
     try { await sendText.mutateAsync({ conversationId, body }); refresh(); }
     catch (error) { setDraft(body); Alert.alert("Không gửi được tin", error instanceof Error ? error.message : "Vui lòng thử lại."); }
@@ -107,19 +92,30 @@ export default function ChatScreen() {
     const filename = asset.fileName ?? `swiftchat-${Date.now()}.${isVideo ? "mp4" : "jpg"}`;
     if (!(mimeType.startsWith("image/") || mimeType === "video/mp4" || mimeType === "video/quicktime")) { Alert.alert("Định dạng chưa hỗ trợ", "Hãy chọn ảnh JPEG/PNG/WEBP/GIF hoặc video MP4/MOV."); return; }
     setUploading(true);
+    setUploadProgress(0);
     try {
-      if (isVideo && fileSize > 24 * 1024 * 1024) {
-        const prepared = await requestVideoUpload.mutateAsync({ conversationId, filename, mimeType: mimeType as "video/mp4" | "video/quicktime", size: fileSize });
-        await uploadMediaDirectly({ uri: asset.uri, uploadUrl: prepared.uploadUrl, mimeType });
-        await completeVideoUpload.mutateAsync({ conversationId, key: prepared.key, filename: prepared.filename, mimeType: mimeType as "video/mp4" | "video/quicktime", size: fileSize });
-        refresh();
-        return;
-      }
-      const base64 = await readBase64(asset.uri);
-      await sendMedia.mutateAsync({ conversationId, filename, mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "video/mp4" | "video/quicktime", base64 });
+      const prepared = await requestMediaUpload.mutateAsync({
+        conversationId,
+        filename,
+        mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "video/mp4" | "video/quicktime",
+        size: fileSize,
+      });
+      await uploadMediaDirectly({
+        uri: asset.uri,
+        uploadUrl: prepared.uploadUrl,
+        mimeType,
+        onProgress: setUploadProgress,
+      });
+      await completeMediaUpload.mutateAsync({
+        conversationId,
+        key: prepared.key,
+        filename: prepared.filename,
+        mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "video/mp4" | "video/quicktime",
+        size: fileSize,
+      });
       refresh();
     } catch (error) { Alert.alert("Không tải được tệp", error instanceof Error ? error.message : "Vui lòng thử lại bằng tệp nhỏ hơn."); }
-    finally { setUploading(false); }
+    finally { setUploading(false); setUploadProgress(null); }
   };
 
   const remove = async () => {
@@ -137,6 +133,24 @@ export default function ChatScreen() {
     { text: "Xóa", style: "destructive", onPress: () => void remove() },
   ]);
 
+  const clearContent = async () => {
+    try {
+      await clearConversation.mutateAsync({ conversationId });
+      refresh();
+    } catch (error) {
+      Alert.alert("Không thể xóa sạch", error instanceof Error ? error.message : "Vui lòng thử lại.");
+    }
+  };
+
+  const confirmClearContent = () => Alert.alert(
+    "Xóa sạch toàn bộ nội dung?",
+    "Tin nhắn, ảnh và video sẽ bị xóa vĩnh viễn cho cả hai người. Thao tác này không thể hoàn tác.",
+    [
+      { text: "Hủy", style: "cancel" },
+      { text: "Xóa sạch", style: "destructive", onPress: () => void clearContent() },
+    ],
+  );
+
   const confirmRecall = (item: ChatMessage) => Alert.alert("Thu hồi tin nhắn?", "Nội dung sẽ bị gỡ cho tất cả thành viên trong hội thoại.", [
     { text: "Hủy", style: "cancel" },
     { text: "Thu hồi", style: "destructive", onPress: () => void recall.mutateAsync({ messageId: item.id }).then(refresh).catch((error) => Alert.alert("Không thể thu hồi", error instanceof Error ? error.message : "Vui lòng thử lại.")) },
@@ -144,17 +158,17 @@ export default function ChatScreen() {
 
   return <SafeAreaView style={styles.safe} edges={["top", "bottom", "left", "right"]}>
     <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0}>
-      <View style={styles.header}><Pressable onPress={() => router.back()} style={({pressed}) => [styles.back, pressed && styles.pressed]}><MaterialIcons name="arrow-back" size={22} color="#172554" /></Pressable><View style={styles.headerText}><Text style={styles.headerTitle}>{header.title}</Text><Text style={styles.headerSubtitle}>{header.subtitle}</Text></View><Pressable onPress={confirmRemove} disabled={removeConversation.isPending} style={({pressed}) => [styles.deleteConversation, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Xóa hội thoại"><MaterialIcons name="delete-outline" size={21} color="#C2410C" /></Pressable><View style={styles.shield}><MaterialIcons name="shield" size={19} color="#16713B" /></View></View>
+      <View style={styles.header}><Pressable onPress={() => router.back()} style={({pressed}) => [styles.back, pressed && styles.pressed]}><MaterialIcons name="arrow-back" size={22} color="#172554" /></Pressable><View style={styles.headerText}><Text style={styles.headerTitle}>{header.title}</Text><Text style={styles.headerSubtitle}>{header.subtitle}</Text></View><Pressable onPress={confirmRemove} disabled={removeConversation.isPending || clearConversation.isPending} style={({pressed}) => [styles.deleteConversation, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Xóa hội thoại khỏi hộp thư"><MaterialIcons name="delete-outline" size={21} color="#C2410C" /></Pressable><Pressable onPress={confirmClearContent} disabled={removeConversation.isPending || clearConversation.isPending} style={({pressed}) => [styles.clearConversation, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Xóa sạch toàn bộ tin nhắn, ảnh và video"><MaterialIcons name="delete-forever" size={21} color="#B91C1C" /></Pressable><View style={styles.shield}><MaterialIcons name="shield" size={19} color="#16713B" /></View></View>
       <FlatList ref={listRef} data={(messages.data ?? []) as ChatMessage[]} keyExtractor={(item) => String(item.id)} style={styles.list} contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })} renderItem={({ item }) => {
         const mine = item.senderId === user.id;
         return <View style={[styles.messageRow, mine ? styles.mineRow : styles.theirRow]}><Pressable onLongPress={mine && !item.recalledAt ? () => confirmRecall(item) : undefined} delayLongPress={350} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble]}>{item.recalledAt ? <View style={styles.recalled}><MaterialIcons name="undo" size={15} color={mine ? "#D9E5FF" : "#64748B"}/><Text style={[styles.recalledText, mine && styles.mineRecalledText]}>Bạn đã thu hồi tin nhắn</Text></View> : <>{item.contentType === "image" && item.mediaUrl ? <Pressable onPress={() => setPreview({ uri: item.mediaUrl as string, type: "image", name: item.mediaName })} accessibilityRole="button" accessibilityLabel="Mở ảnh toàn màn hình"><Image source={item.mediaUrl} style={styles.image} contentFit="cover" transition={180} /></Pressable> : null}{item.contentType === "video" && item.mediaUrl ? <VideoBubble uri={item.mediaUrl} onOpen={() => setPreview({ uri: item.mediaUrl as string, type: "video", name: item.mediaName })} /> : null}{item.body ? <Text style={[styles.messageText, mine && styles.mineText]}>{item.body}</Text> : null}</>}<Text style={[styles.messageTime, mine && styles.mineTime]}>{relativeTime(item.createdAt)}</Text></Pressable></View>;
       }} ListEmptyComponent={<View style={styles.empty}><View style={styles.emptyIcon}><MaterialIcons name="lock" size={26} color="#2563EB"/></View><Text style={styles.emptyTitle}>Không có tin nhắn nào</Text><Text style={styles.emptyText}>Bắt đầu cuộc trò chuyện riêng tư của bạn.</Text></View>} />
-      <View style={styles.composer}><Pressable disabled={uploading} onPress={() => void chooseMedia()} style={({pressed}) => [styles.attach, (pressed || uploading) && styles.pressed]}>{uploading ? <ActivityIndicator color="#2563EB" size="small"/> : <MaterialIcons name="attach-file" size={23} color="#2563EB"/>}</Pressable><TextInput value={draft} onChangeText={setDraft} placeholder="Viết tin nhắn..." placeholderTextColor="#8A96A8" style={styles.input} multiline maxLength={2000} returnKeyType="send" onSubmitEditing={() => void send()} blurOnSubmit={false}/><Pressable disabled={!draft.trim() || sendText.isPending} onPress={() => void send()} style={({pressed}) => [styles.send, (!draft.trim() || sendText.isPending) && styles.sendDisabled, pressed && styles.pressed]}>{sendText.isPending ? <ActivityIndicator color="#FFF" size="small"/> : <MaterialIcons name="send" size={20} color="#FFF"/>}</Pressable></View>
+      <View style={styles.composer}>{uploading && uploadProgress !== null ? <View style={styles.uploadStatus} accessibilityLiveRegion="polite"><View style={styles.uploadLabelRow}><Text style={styles.uploadLabel}>Đang tải lên</Text><Text style={styles.uploadPercent}>{uploadProgress}%</Text></View><View style={styles.uploadTrack}><View style={[styles.uploadFill, { width: `${uploadProgress}%` }]} /></View></View> : null}<View style={styles.composerRow}><Pressable disabled={uploading} onPress={() => void chooseMedia()} style={({pressed}) => [styles.attach, (pressed || uploading) && styles.pressed]}>{uploading ? <ActivityIndicator color="#2563EB" size="small"/> : <MaterialIcons name="attach-file" size={23} color="#2563EB"/>}</Pressable><TextInput value={draft} onChangeText={setDraft} placeholder="Viết tin nhắn..." placeholderTextColor="#8A96A8" style={styles.input} multiline maxLength={2000} returnKeyType="send" onSubmitEditing={() => void send()} blurOnSubmit={false}/><Pressable disabled={uploading || !draft.trim() || sendText.isPending} onPress={() => void send()} style={({pressed}) => [styles.send, (uploading || !draft.trim() || sendText.isPending) && styles.sendDisabled, pressed && styles.pressed]}>{sendText.isPending ? <ActivityIndicator color="#FFF" size="small"/> : <MaterialIcons name="send" size={20} color="#FFF"/>}</Pressable></View></View>
       <ChatMediaViewer item={preview} onClose={() => setPreview(null)} />
     </KeyboardAvoidingView>
   </SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
-  safe:{flex:1,backgroundColor:"#F6F8FC"}, loading:{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:"#F6F8FC"},keyboard:{flex:1},header:{height:68,paddingHorizontal:16,borderBottomWidth:1,borderBottomColor:"#E6EAF1",backgroundColor:"#F6F8FC",flexDirection:"row",alignItems:"center",gap:8},back:{height:42,width:42,borderRadius:14,alignItems:"center",justifyContent:"center",backgroundColor:"#E9EFFD"},headerText:{flex:1},headerTitle:{color:"#172554",fontSize:16,fontWeight:"800"},headerSubtitle:{marginTop:3,color:"#718096",fontSize:11.5},deleteConversation:{height:36,width:36,borderRadius:12,alignItems:"center",justifyContent:"center",backgroundColor:"#FFF0E9"},shield:{height:36,width:36,borderRadius:12,backgroundColor:"#ECFDF3",alignItems:"center",justifyContent:"center"},list:{flex:1},listContent:{paddingHorizontal:16,paddingVertical:14,gap:9,flexGrow:1},messageRow:{flexDirection:"row"},mineRow:{justifyContent:"flex-end"},theirRow:{justifyContent:"flex-start"},bubble:{maxWidth:"82%",borderRadius:18,paddingHorizontal:13,paddingVertical:9,overflow:"hidden"},mineBubble:{backgroundColor:"#2563EB",borderBottomRightRadius:5},theirBubble:{backgroundColor:"#E9EEF8",borderBottomLeftRadius:5},messageText:{color:"#1E293B",fontSize:15.5,lineHeight:21},mineText:{color:"#FFF"},messageTime:{color:"#718096",alignSelf:"flex-end",fontSize:10.5,marginTop:4},mineTime:{color:"#D9E5FF"},image:{width:220,height:190,borderRadius:12,marginBottom:3},videoFrame:{width:220,height:150,borderRadius:12,marginBottom:3,overflow:"hidden",backgroundColor:"#172554"},video:{width:"100%",height:"100%"},videoOverlay:{...StyleSheet.absoluteFillObject,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(0,0,0,.12)"},recalled:{flexDirection:"row",alignItems:"center",gap:6,paddingVertical:3},recalledText:{color:"#64748B",fontStyle:"italic",fontSize:14},mineRecalledText:{color:"#D9E5FF"},empty:{flex:1,alignItems:"center",justifyContent:"center",paddingBottom:45},emptyIcon:{height:55,width:55,borderRadius:19,alignItems:"center",justifyContent:"center",backgroundColor:"#E9EFFD"},emptyTitle:{color:"#475569",fontSize:16,fontWeight:"800",marginTop:12},emptyText:{color:"#8190A5",fontSize:13,marginTop:5},composer:{paddingHorizontal:12,paddingVertical:10,borderTopWidth:1,borderColor:"#E3E8F0",backgroundColor:"#FFF",flexDirection:"row",alignItems:"flex-end",gap:8},attach:{height:43,width:43,borderRadius:14,backgroundColor:"#E9EFFD",alignItems:"center",justifyContent:"center"},input:{flex:1,maxHeight:94,minHeight:43,borderRadius:16,paddingHorizontal:14,paddingVertical:10,backgroundColor:"#F0F3F8",color:"#172554",fontSize:15.5},send:{height:43,width:43,borderRadius:14,alignItems:"center",justifyContent:"center",backgroundColor:"#2563EB"},sendDisabled:{backgroundColor:"#AAB4C5"},pressed:{opacity:.75,transform:[{scale:.97}]},
+  safe:{flex:1,backgroundColor:"#F6F8FC"}, loading:{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:"#F6F8FC"},keyboard:{flex:1},header:{height:68,paddingHorizontal:16,borderBottomWidth:1,borderBottomColor:"#E6EAF1",backgroundColor:"#F6F8FC",flexDirection:"row",alignItems:"center",gap:8},back:{height:42,width:42,borderRadius:14,alignItems:"center",justifyContent:"center",backgroundColor:"#E9EFFD"},headerText:{flex:1},headerTitle:{color:"#172554",fontSize:16,fontWeight:"800"},headerSubtitle:{marginTop:3,color:"#718096",fontSize:11.5},deleteConversation:{height:36,width:36,borderRadius:12,alignItems:"center",justifyContent:"center",backgroundColor:"#FFF0E9"},clearConversation:{height:36,width:36,borderRadius:12,alignItems:"center",justifyContent:"center",backgroundColor:"#FEE2E2"},shield:{height:36,width:36,borderRadius:12,backgroundColor:"#ECFDF3",alignItems:"center",justifyContent:"center"},list:{flex:1},listContent:{paddingHorizontal:16,paddingVertical:14,gap:9,flexGrow:1},messageRow:{flexDirection:"row"},mineRow:{justifyContent:"flex-end"},theirRow:{justifyContent:"flex-start"},bubble:{maxWidth:"82%",borderRadius:18,paddingHorizontal:13,paddingVertical:9,overflow:"hidden"},mineBubble:{backgroundColor:"#2563EB",borderBottomRightRadius:5},theirBubble:{backgroundColor:"#E9EEF8",borderBottomLeftRadius:5},messageText:{color:"#1E293B",fontSize:15.5,lineHeight:21},mineText:{color:"#FFF"},messageTime:{color:"#718096",alignSelf:"flex-end",fontSize:10.5,marginTop:4},mineTime:{color:"#D9E5FF"},image:{width:220,height:190,borderRadius:12,marginBottom:3},videoFrame:{width:220,height:150,borderRadius:12,marginBottom:3,overflow:"hidden",backgroundColor:"#172554"},video:{width:"100%",height:"100%"},videoOverlay:{...StyleSheet.absoluteFillObject,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(0,0,0,.12)"},recalled:{flexDirection:"row",alignItems:"center",gap:6,paddingVertical:3},recalledText:{color:"#64748B",fontStyle:"italic",fontSize:14},mineRecalledText:{color:"#D9E5FF"},empty:{flex:1,alignItems:"center",justifyContent:"center",paddingBottom:45},emptyIcon:{height:55,width:55,borderRadius:19,alignItems:"center",justifyContent:"center",backgroundColor:"#E9EFFD"},emptyTitle:{color:"#475569",fontSize:16,fontWeight:"800",marginTop:12},emptyText:{color:"#8190A5",fontSize:13,marginTop:5},composer:{paddingHorizontal:12,paddingVertical:10,borderTopWidth:1,borderColor:"#E3E8F0",backgroundColor:"#FFF"},composerRow:{flexDirection:"row",alignItems:"flex-end",gap:8},uploadStatus:{paddingHorizontal:2,paddingBottom:9},uploadLabelRow:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginBottom:5},uploadLabel:{color:"#475569",fontSize:12.5,fontWeight:"700"},uploadPercent:{color:"#2563EB",fontSize:12.5,fontWeight:"800"},uploadTrack:{height:5,borderRadius:999,backgroundColor:"#E6ECF7",overflow:"hidden"},uploadFill:{height:"100%",borderRadius:999,backgroundColor:"#2563EB"},attach:{height:43,width:43,borderRadius:14,backgroundColor:"#E9EFFD",alignItems:"center",justifyContent:"center"},input:{flex:1,maxHeight:94,minHeight:43,borderRadius:16,paddingHorizontal:14,paddingVertical:10,backgroundColor:"#F0F3F8",color:"#172554",fontSize:15.5},send:{height:43,width:43,borderRadius:14,alignItems:"center",justifyContent:"center",backgroundColor:"#2563EB"},sendDisabled:{backgroundColor:"#AAB4C5"},pressed:{opacity:.75,transform:[{scale:.97}]},
 });
