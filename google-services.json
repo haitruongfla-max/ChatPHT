@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "173169156932",
+    "project_id": "chatpht-3d01f",
+    "storage_bucket": "chatpht-3d01f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:173169156932:android:5a8f72e2ce3e60f99aed11",
+        "android_client_info": {
+          "package_name": "com.app.swiftchat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBIPbciaUbocJ9FqpXvXJBUOmZObuTAf5k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

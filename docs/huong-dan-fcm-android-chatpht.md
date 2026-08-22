@@ -12,7 +12,7 @@ Tài liệu này hướng dẫn cấu hình **Firebase Cloud Messaging (FCM) V1*
 
 ## 1. Kiểm tra điều kiện đã có trong ChatPHT
 
-Mã nguồn ChatPHT đã có `expo-notifications`, plugin `expo-notifications`, quyền `POST_NOTIFICATIONS`, và kênh `messages`. Vì vậy, **không cần tạo lại luồng đăng ký token trong ứng dụng**. Việc còn thiếu là liên kết APK Android với Firebase qua `google-services.json`, đồng thời cung cấp khóa FCM V1 cho dự án Expo.
+Mã nguồn ChatPHT đã có `expo-notifications`, plugin `expo-notifications`, quyền `POST_NOTIFICATIONS`, các kênh `messages`/`calls`, đăng ký `ExpoPushToken`, và payload ưu tiên cao tương ứng. Tệp `google-services.json` của Firebase project `chatpht-3d01f` đã được xác minh đúng package `com.app.swiftchat`, đặt tại gốc dự án và đã khai báo `android.googleServicesFile`. Vì vậy, **không cần tạo lại luồng đăng ký token trong ứng dụng**. Phần còn lại để FCM V1 có thể gửi thông báo là tạo/kiểm tra Service Account và tải khóa riêng tư lên vùng Credentials an toàn của Expo, sau đó tạo Android build mới.
 
 Trước khi thao tác, hãy chắc chắn dùng một tài khoản Google/Firebase mà bạn quản lý lâu dài. Đừng tạo nhiều dự án Firebase cho cùng một package, vì một APK chỉ nên trỏ đến một cấu hình Firebase nhất quán.
 
@@ -75,7 +75,11 @@ Nếu sử dụng dòng lệnh trên máy cá nhân thay vì giao diện Expo, c
 
 FCM không thể được thêm vào APK đã cài sẵn chỉ bằng cách khởi động lại ứng dụng. Sau khi đã có `google-services.json`, khai báo `googleServicesFile`, và FCM V1 key trên Expo, cần tạo **một Android build mới** rồi cài lại lên điện thoại. Remote push Android không hoạt động trong Expo Go từ SDK 53; phải dùng development build hoặc release APK/AAB đã đóng gói native. [1] [3]
 
-Trong giao diện dự án, hãy tạo checkpoint sau khi đã thêm tệp cấu hình, sau đó bấm **Publish** để tạo Android build. Cài APK mới lên **cả hai điện thoại** cần thử nghiệm; nếu dùng AAB, hãy phát hành qua Google Play Internal testing hoặc chuyển AAB thành bản cài đặt phù hợp trước khi cài lên máy.
+ChatPHT đã có `eas.json` với hai profile Android: `apk` dành cho cài trực tiếp và thử FCM nội bộ, `aab` dành cho luồng Google Play. Khi hệ thống Expo hỏi keystore ở lần build Android đầu tiên, chọn **Generate new keystore**; Expo giữ thông tin ký trong Credentials để những build sau nhất quán. Dùng profile `apk` cho hai điện thoại thử nghiệm; AAB không thể cài trực tiếp mà cần đi qua Google Play Internal testing hoặc một kênh phân phối phù hợp. [6]
+
+### Khi cửa sổ điều khiển từ xa bị kẹt
+
+Màn hình đen có vòng tròn tải trong công cụ điều khiển điện thoại từ xa không phải lỗi FCM và cũng không phải trang Expo. Hãy đóng cửa sổ đó, rồi dùng Chrome hoặc trình duyệt thông thường trên điện thoại/máy tính để đăng nhập `expo.dev`. Tại dự án ChatPHT, vào **Project settings → Credentials → Android** và thực hiện tuần tự: tạo keystore mới nếu chưa có, tải Service Account JSON vào đúng mục **FCM V1 service account key**, rồi quay lại giao diện dự án để tạo Android build profile `apk`. Không tải Service Account JSON lên chat, mã nguồn hoặc thư mục `assets/`.
 
 Khi mở ChatPHT lần đầu sau khi cài build mới, chọn **Cho phép** ở hộp thoại thông báo. Trên Android 13 trở lên, khai báo permission trong manifest là chưa đủ; người dùng còn phải cấp quyền `POST_NOTIFICATIONS` khi chạy ứng dụng. [3]
 
@@ -101,9 +105,10 @@ Nếu việc gửi tin nhắn giữa hai máy vẫn không tạo thông báo dù
 
 ## Checklist trước khi báo “FCM đã hoàn tất”
 
-- [ ] Firebase Android app đã được tạo đúng với `com.app.swiftchat`.
-- [ ] `google-services.json` đúng dự án đã nằm tại gốc ChatPHT và `googleServicesFile` đã được khai báo.
+- [x] Firebase Android app đã được tạo đúng với `com.app.swiftchat` (đã xác minh bằng `google-services.json` của project `chatpht-3d01f`).
+- [x] `google-services.json` đúng dự án đã nằm tại gốc ChatPHT và `googleServicesFile` đã được khai báo.
 - [ ] Service Account JSON FCM V1 đã upload vào **Expo → Credentials → Android**, không lưu trong Git hoặc chat.
+- [x] `eas.json` đã có profile `apk` (cài trực tiếp) và `aab` (Google Play); keystore được tạo trong Expo Credentials ở lần Android build đầu tiên.
 - [ ] Đã tạo và cài **APK build mới** lên cả hai máy, không dùng Expo Go.
 - [ ] Cả hai máy đã mở ChatPHT, đăng nhập, và cấp quyền thông báo.
 - [ ] Máy nhận được thử sau khi **vuốt đóng** ChatPHT, với tin nhắn và cuộc gọi riêng biệt.
@@ -116,3 +121,4 @@ Nếu việc gửi tin nhắn giữa hai máy vẫn không tạo thông báo dù
 [3]: https://firebase.google.com/docs/cloud-messaging/android/get-started "Firebase — Get started with Firebase Cloud Messaging in Android apps"
 [4]: https://firebase.google.com/support/troubleshooter/fcm/delivery/diagnose/android/received/sent/notification/forcestop-true "Firebase — Android notification message handling on force-stopped app"
 [5]: https://firebase.google.com/docs/cloud-messaging/customize-messages/setting-message-lifespan "Firebase — Set the lifespan of a message"
+[6]: https://docs.expo.dev/build/eas-json/ "Expo — Configure EAS Build with eas.json"

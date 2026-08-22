@@ -136,3 +136,9 @@
 - [x] Bổ sung mục Danh bạ chỉ hiển thị người đã kết bạn, hỗ trợ tìm kiếm và mở cuộc trò chuyện.
 - [x] Bổ sung thao tác nhấn giữ cuộc trò chuyện để mở xác nhận xóa sạch nội dung và media với xác nhận rõ ràng.
 - [x] Kiểm thử hồi quy danh bạ, xóa hội thoại và toàn bộ luồng chat; lưu checkpoint bàn giao (TypeScript và 50/50 kiểm thử đạt).
+- [x] Rà soát cấu hình Expo/Firebase hiện có và xác định thông tin FCM còn thiếu để nhận push khi ChatPHT bị đóng trên Android (đã xác minh Firebase project `chatpht-3d01f`, package `com.app.swiftchat`, Expo project và kênh payload).
+- [x] Tích hợp an toàn tệp `google-services.json` Firebase Android và khai báo `android.googleServicesFile`, không triển khai lại backend đang chạy.
+- [ ] Tải Service Account FCM V1 vào Expo Credentials và tạo keystore Android theo quy trình Expo, sau đó tạo Android build mới có chứa cấu hình FCM.
+- [x] Chuẩn bị profile EAS Android `apk` (cài trực tiếp) và `aab` (Google Play) trong `eas.json`.
+- [x] Xử lý phương án thay thế khi phiên điều khiển trình duyệt bị kẹt, để người dùng cấu hình Expo/Firebase từ trình duyệt thông thường.
+- [ ] Lưu checkpoint bàn giao sau khi xác minh cấu hình build; TypeScript và 50/50 kiểm thử hồi quy đã đạt.

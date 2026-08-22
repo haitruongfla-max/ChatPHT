@@ -1,0 +1,18 @@
+{
+  "cli": {
+    "version": ">= 22.2.0"
+  },
+  "build": {
+    "apk": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "aab": {
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  }
+}
