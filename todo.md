@@ -138,7 +138,11 @@
 - [x] Kiểm thử hồi quy danh bạ, xóa hội thoại và toàn bộ luồng chat; lưu checkpoint bàn giao (TypeScript và 50/50 kiểm thử đạt).
 - [x] Rà soát cấu hình Expo/Firebase hiện có và xác định thông tin FCM còn thiếu để nhận push khi ChatPHT bị đóng trên Android (đã xác minh Firebase project `chatpht-3d01f`, package `com.app.swiftchat`, Expo project và kênh payload).
 - [x] Tích hợp an toàn tệp `google-services.json` Firebase Android và khai báo `android.googleServicesFile`, không triển khai lại backend đang chạy.
-- [ ] Tải Service Account FCM V1 vào Expo Credentials và tạo keystore Android theo quy trình Expo, sau đó tạo Android build mới có chứa cấu hình FCM.
+- [x] Tải Service Account FCM V1 vào Expo Credentials và tạo keystore Android theo quy trình Expo; Android build mới có chứa cấu hình FCM cần tạo sau khi checkpoint được lưu.
+- [x] Kiểm tra phiên EAS CLI và thực hiện tạo keystore/tải FCM V1 qua terminal khi có đăng nhập Expo và tệp Service Account hợp lệ.
+- [x] Căn chỉnh slug ứng dụng với Expo project đã liên kết để EAS Credentials có thể tiếp tục an toàn.
 - [x] Chuẩn bị profile EAS Android `apk` (cài trực tiếp) và `aab` (Google Play) trong `eas.json`.
 - [x] Xử lý phương án thay thế khi phiên điều khiển trình duyệt bị kẹt, để người dùng cấu hình Expo/Firebase từ trình duyệt thông thường.
 - [x] Lưu checkpoint bàn giao sau khi xác minh cấu hình build; TypeScript và 50/50 kiểm thử hồi quy đã đạt (version `bfff0822`).
+- [x] Xác thực kín Expo access token và Service Account FCM V1 thành công; kiểm thử hồi quy 50/50 đạt, 2 kiểm thử xác thực mạng được tách chạy riêng để không xung đột mock.
+- [ ] Lưu checkpoint sau khi tạo keystore, tải FCM V1 qua EAS CLI và căn chỉnh slug Expo.
