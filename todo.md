@@ -141,4 +141,4 @@
 - [ ] Tải Service Account FCM V1 vào Expo Credentials và tạo keystore Android theo quy trình Expo, sau đó tạo Android build mới có chứa cấu hình FCM.
 - [x] Chuẩn bị profile EAS Android `apk` (cài trực tiếp) và `aab` (Google Play) trong `eas.json`.
 - [x] Xử lý phương án thay thế khi phiên điều khiển trình duyệt bị kẹt, để người dùng cấu hình Expo/Firebase từ trình duyệt thông thường.
-- [ ] Lưu checkpoint bàn giao sau khi xác minh cấu hình build; TypeScript và 50/50 kiểm thử hồi quy đã đạt.
+- [x] Lưu checkpoint bàn giao sau khi xác minh cấu hình build; TypeScript và 50/50 kiểm thử hồi quy đã đạt (version `bfff0822`).
