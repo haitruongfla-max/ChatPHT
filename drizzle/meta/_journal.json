@@ -64,6 +64,13 @@
       "when": 1787319471269,
       "tag": "0008_slow_blizzard",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1787366863242,
+      "tag": "0010_worried_veda",
+      "breakpoints": true
     }
   ]
 }

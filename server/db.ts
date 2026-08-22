@@ -20,6 +20,7 @@ export type PublicProfile = {
   id: number;
   username: string;
   displayName: string;
+  avatarUrl: string | null;
   role: "user" | "admin";
   accessExpiresAt: Date | null;
 };
@@ -39,6 +40,7 @@ export function toPublicProfile(user: User): PublicProfile {
     id: user.id,
     username: user.username ?? user.openId.replace(/^local:/, ""),
     displayName: user.name ?? user.username ?? "Người dùng ChatPHT",
+    avatarUrl: user.avatarKey ? `/manus-storage/${user.avatarKey}` : null,
     role: user.role,
     accessExpiresAt: user.accessExpiresAt,
   };
@@ -166,6 +168,26 @@ export async function touchUser(id: number) {
   await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, id));
 }
 
+export async function updateOwnProfile(input: { userId: number; displayName: string; avatarKey?: string | null }) {
+  const db = requireDb(await getDb());
+  const current = await getUserById(input.userId);
+  if (!current) throw new Error("Tài khoản không còn tồn tại.");
+
+  const update: { name: string; avatarKey?: string | null } = { name: input.displayName };
+  if (input.avatarKey !== undefined) update.avatarKey = input.avatarKey;
+  await db.update(users).set(update).where(eq(users.id, input.userId));
+
+  const updated = await getUserById(input.userId);
+  if (!updated) throw new Error("Không thể cập nhật hồ sơ.");
+  return {
+    profile: toPublicProfile(updated),
+    replacedAvatarKey:
+      input.avatarKey !== undefined && current.avatarKey && current.avatarKey !== input.avatarKey
+        ? current.avatarKey
+        : null,
+  };
+}
+
 export async function listManagedUsers() {
   const db = requireDb(await getDb());
   const result = await db.select().from(users).orderBy(desc(users.createdAt));
@@ -208,7 +230,10 @@ export async function deleteManagedUser(userId: number) {
     .from(messages)
     .where(eq(messages.senderId, userId));
   const mediaKeys = Array.from(
-    new Set(sentMessages.map((message) => message.mediaKey).filter((key): key is string => Boolean(key))),
+    new Set([
+      ...sentMessages.map((message) => message.mediaKey).filter((key): key is string => Boolean(key)),
+      ...(user.avatarKey ? [user.avatarKey] : []),
+    ]),
   );
   const messageIds = sentMessages.map((message) => message.id);
   const memberRows = await db

@@ -5,7 +5,8 @@ import {
   getStoredPushToken,
 } from "@/lib/push-notifications";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { Redirect, router } from "expo-router";
+import { Redirect, router, useFocusEffect } from "expo-router";
+import { useCallback } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,11 +17,17 @@ import {
   View,
 } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
+import { ProfileAvatar } from "@/components/profile-avatar";
 
 export default function ProfileScreen() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, refresh } = useAuth();
   const serverLogout = trpc.auth.logout.useMutation();
   const unregisterDevice = trpc.notifications.unregisterDevice.useMutation();
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
   if (loading)
     return (
       <ScreenContainer className="items-center justify-center">
@@ -48,26 +55,22 @@ export default function ProfileScreen() {
       },
     ]);
   return (
-    <ScreenContainer edges={["top", "bottom", "left", "right"]}>
+    <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-[#EDF6FF]">
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.wrap}
         showsVerticalScrollIndicator
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.kicker}>TÀI KHOẢN</Text>
-        <Text style={styles.title}>Bạn & riêng tư</Text>
-        <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {user.displayName.slice(0, 1).toUpperCase()}
-            </Text>
-          </View>
-          <View>
+        <View style={styles.hero}><Text style={styles.kicker}>CÁ NHÂN</Text><Text style={styles.title}>Bạn & riêng tư</Text><Text style={styles.heroText}>Quản lý hồ sơ, bảo mật và trải nghiệm ChatPHT của bạn.</Text></View>
+        <Pressable onPress={() => router.push("/profile-edit" as never)} style={({ pressed }) => [styles.profileCard, pressed && styles.pressed]}>
+          <ProfileAvatar name={user.displayName} avatarUrl={user.avatarUrl} size={62} style={styles.avatar} />
+          <View style={{ flex: 1 }}>
             <Text style={styles.name}>{user.displayName}</Text>
             <Text style={styles.username}>@{user.username}</Text>
           </View>
-        </View>
+          <View style={styles.editAvatar}><MaterialIcons name="edit" size={17} color="#1769D4" /></View>
+        </Pressable>
         <View style={styles.security}>
           <View style={styles.lock}>
             <MaterialIcons name="lock" color="#16713B" size={19} />
@@ -143,22 +146,25 @@ export default function ProfileScreen() {
 }
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
-  wrap: { flexGrow: 1, padding: 22, paddingBottom: 30 },
+  wrap: { flexGrow: 1, paddingBottom: 30 },
+  hero: { backgroundColor: "#1769D4", borderBottomLeftRadius: 28, borderBottomRightRadius: 28, paddingBottom: 28, paddingHorizontal: 22, paddingTop: 11 },
   kicker: {
-    color: "#2563EB",
+    color: "#BBD8FF",
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 1.4,
   },
   title: {
-    color: "#172554",
+    color: "#FFFFFF",
     fontSize: 29,
     fontWeight: "800",
     letterSpacing: -0.6,
     marginTop: 3,
   },
+  heroText: { color: "#D5E8FF", fontSize: 13, lineHeight: 18, marginTop: 5 },
   profileCard: {
-    marginTop: 24,
+    marginHorizontal: 18,
+    marginTop: -8,
     padding: 18,
     borderRadius: 22,
     backgroundColor: "#FFF",
@@ -168,18 +174,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 13,
   },
-  avatar: {
-    width: 58,
-    height: 58,
-    borderRadius: 20,
-    backgroundColor: "#DDE7FB",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { color: "#1D4ED8", fontWeight: "800", fontSize: 23 },
+  avatar: { backgroundColor: "#DDE7FB" },
+  editAvatar: { alignItems: "center", backgroundColor: "#E8F2FF", borderRadius: 12, height: 34, justifyContent: "center", width: 34 },
   name: { color: "#172554", fontSize: 18, fontWeight: "800" },
   username: { color: "#718096", fontSize: 14, marginTop: 4 },
   security: {
+    marginHorizontal: 18,
     marginTop: 18,
     padding: 16,
     borderRadius: 19,
@@ -203,6 +203,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   info: {
+    marginHorizontal: 18,
     marginTop: 13,
     padding: 16,
     borderRadius: 19,
@@ -213,6 +214,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   settings: {
+    marginHorizontal: 18,
     marginTop: 13,
     padding: 16,
     borderRadius: 19,
@@ -224,6 +226,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   admin: {
+    marginHorizontal: 18,
     marginTop: 13,
     padding: 16,
     borderRadius: 19,
@@ -235,6 +238,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   about: {
+    marginHorizontal: 18,
     marginTop: 13,
     padding: 16,
     borderRadius: 19,
@@ -261,6 +265,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   logout: {
+    marginHorizontal: 18,
     marginTop: "auto",
     minHeight: 52,
     paddingHorizontal: 16,

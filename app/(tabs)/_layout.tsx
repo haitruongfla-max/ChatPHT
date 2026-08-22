@@ -7,12 +7,10 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/hooks/use-auth";
 import { useEffect } from "react";
 import { AppState, Platform } from "react-native";
-import { useColors } from "@/hooks/use-colors";
 
 export default function TabLayout() {
   const { user } = useAuth();
   const userId = user?.id;
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const { mutateAsync: markAllDelivered } = trpc.conversations.markAllDelivered.useMutation();
   const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 8);
@@ -33,15 +31,15 @@ export default function TabLayout() {
   return (
     <Tabs
         screenOptions={{
-          tabBarActiveTintColor: colors.tint,
+          tabBarActiveTintColor: "#1769D4",
           headerShown: false,
           tabBarButton: HapticTab,
           tabBarStyle: {
             paddingTop: 8,
             paddingBottom: bottomPadding,
             height: tabBarHeight,
-            backgroundColor: colors.background,
-            borderTopColor: colors.border,
+            backgroundColor: "#FBFDFF",
+            borderTopColor: "#D9E8F6",
             borderTopWidth: 0.5,
           },
         }}
@@ -49,7 +47,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: "Hộp thư",
+            title: "Tin nhắn",
             tabBarIcon: ({ color }) => <IconSymbol size={25} name="bubble.left.and.bubble.right.fill" color={color} />,
           }}
         />

@@ -26,9 +26,11 @@ const mediaMimeSchema = z.enum([
   "video/quicktime",
 ]);
 const videoMimeSchema = z.enum(["video/mp4", "video/quicktime"]);
+const avatarMimeSchema = z.enum(["image/jpeg", "image/png", "image/webp"]);
 const reactionEmojiSchema = z.enum(["👍", "❤️", "😂", "😮", "😢", "🔥"]);
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
 const assistantTurnSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().trim().min(1).max(1200),
@@ -140,6 +142,23 @@ export const appRouter = router({
   }),
   profile: router({
     me: protectedProcedure.query(({ ctx }) => db.toPublicProfile(ctx.user)),
+    requestAvatarUpload: protectedProcedure
+      .input(z.object({ filename: z.string().trim().min(1).max(80), mimeType: avatarMimeSchema, size: z.number().int().positive().max(MAX_AVATAR_BYTES) }))
+      .mutation(async ({ ctx, input }) => {
+        const extension = input.mimeType === "image/png" ? "png" : input.mimeType === "image/webp" ? "webp" : "jpg";
+        const storage = await storageCreateUploadUrl(`chatpht/avatars/${ctx.user.id}/${Date.now()}-avatar.${extension}`);
+        return { ...storage, maximumSize: MAX_AVATAR_BYTES };
+      }),
+    update: protectedProcedure
+      .input(z.object({ displayName: z.string().trim().min(2, "Tên hiển thị cần ít nhất 2 ký tự.").max(48), avatarKey: z.string().trim().min(18).max(512).nullable().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        if (input.avatarKey !== undefined && input.avatarKey !== null && !input.avatarKey.startsWith(`chatpht/avatars/${ctx.user.id}/`)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Ảnh đại diện không thuộc về tài khoản này." });
+        }
+        const updated = await db.updateOwnProfile({ userId: ctx.user.id, displayName: input.displayName, avatarKey: input.avatarKey });
+        if (updated.replacedAvatarKey) void storageDelete(updated.replacedAvatarKey).catch(() => undefined);
+        return updated.profile;
+      }),
   }),
   admin: router({
     listUsers: adminProcedure.query(() => db.listManagedUsers()),

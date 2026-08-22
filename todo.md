@@ -120,3 +120,8 @@
 - [x] Tăng bản Android lên 1.0.1 (versionCode 2) để thiết bị nhận cấu hình WebRTC, quyền gọi và âm báo mới qua bản cài đặt mới.
 - [x] Chạy kiểm tra TypeScript và hồi quy: 47/47 kiểm thử đạt.
 - [x] Soạn hướng dẫn cấu hình Firebase Cloud Messaging cho push Android khi ChatPHT bị tắt hẳn.
+- [x] Thiết kế nhận diện giao diện ChatPHT sáng, hiện đại, với nền riêng và bố cục portrait an toàn cho thao tác một tay.
+- [x] Làm mới hộp thư và danh bạ theo cấu trúc tìm kiếm, hành động nhanh và danh sách dễ quét, không sao chép nhận diện của ứng dụng tham chiếu.
+- [x] Bổ sung khả năng đổi tên hiển thị và ảnh đại diện cá nhân với kiểm soát quyền truy cập, chọn ảnh và lưu trữ an toàn.
+- [x] Thiết kế lại trang Cá nhân để quản lý hồ sơ, bảo mật và cài đặt rõ ràng, đồng thời giữ nguyên quản trị viên và mọi tính năng hiện hữu.
+- [x] Kiểm thử hồi quy giao diện và luồng cập nhật hồ sơ trên ChatPHT; lưu checkpoint bàn giao.

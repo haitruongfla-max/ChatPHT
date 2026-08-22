@@ -6,6 +6,7 @@ export type User = {
   id: number;
   username: string;
   displayName: string;
+  avatarUrl: string | null;
   role: "user" | "admin";
   accessExpiresAt: string | Date | null;
 };
