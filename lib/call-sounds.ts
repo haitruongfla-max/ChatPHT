@@ -1,45 +1,49 @@
-import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
+import { Platform, Vibration } from "react-native";
 
-type SystemTonePlayer = {
-  play: () => void;
-  pause: () => void;
-  seekTo: (seconds: number) => void;
-  remove: () => void;
-};
+type CallTonePlayer = Pick<AudioPlayer, "play" | "pause" | "seekTo" | "remove">;
 
-/** Uses the operating system notification tone so the app does not bundle a large media file. */
-export async function createCallTonePlayer(): Promise<SystemTonePlayer> {
-  if (Platform.OS !== "web") {
-    try {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "ChatPHT",
-          body: "Cuộc gọi đang chờ phản hồi",
-          sound: "default",
-          data: { type: "call_tone" },
-        },
-        trigger: null,
-      });
-    } catch {
-      // The notification channel still provides the system ringtone when available.
-    }
+let activeTone: CallTonePlayer | null = null;
+
+/**
+ * Creates a compact controllable tone for incoming calls and ringback.
+ * A real player is necessary because Android notification sounds cannot be stopped by JavaScript.
+ */
+export async function createCallTonePlayer(): Promise<CallTonePlayer> {
+  if (Platform.OS === "web") {
+    return { play: () => undefined, pause: () => undefined, seekTo: () => Promise.resolve(), remove: () => undefined };
   }
-  return {
-    play: () => undefined,
-    pause: () => undefined,
-    seekTo: () => undefined,
-    remove: () => undefined,
-  };
+  await setAudioModeAsync({ playsInSilentMode: true, interruptionModeAndroid: "duckOthers" });
+  const player = createAudioPlayer(require("@/assets/audio/chatpht-call-tone.m4a"), { keepAudioSessionActive: true });
+  player.loop = true;
+  player.volume = 0.78;
+  return player;
 }
 
-export function stopCallTone(player: SystemTonePlayer | null) {
+export function startIncomingCallAlert(player: CallTonePlayer) {
+  stopAllCallAlerts();
+  activeTone = player;
+  player.seekTo(0).catch(() => undefined);
+  player.play();
+  Vibration.vibrate([0, 500, 350, 500], true);
+}
+
+export function stopCallTone(player: CallTonePlayer | null) {
   if (!player) return;
   try {
     player.pause();
-    player.seekTo(0);
+    void player.seekTo(0).catch(() => undefined);
     player.remove();
   } catch {
     // A released native player is already in the desired state.
   }
+  if (activeTone === player) activeTone = null;
+}
+
+/** Stops every app-owned ringing effect synchronously before navigation or a network mutation. */
+export function stopAllCallAlerts() {
+  Vibration.cancel();
+  const player = activeTone;
+  activeTone = null;
+  stopCallTone(player);
 }

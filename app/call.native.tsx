@@ -7,7 +7,7 @@ import { LiveKitRoom, useTracks, VideoTrack } from "@livekit/react-native";
 import { Room, Track } from "livekit-client";
 
 import { activeCall } from "@/lib/active-call";
-import { createCallTonePlayer, stopCallTone } from "@/lib/call-sounds";
+import { createCallTonePlayer, stopAllCallAlerts, stopCallTone } from "@/lib/call-sounds";
 import { LiveKitCall } from "@/lib/livekit-call";
 import { trpc } from "@/lib/trpc";
 
@@ -51,6 +51,7 @@ export default function CallScreen() {
 
   useEffect(() => () => {
     if (!activeCall.isMinimized(callId)) void call.disconnect();
+    stopAllCallAlerts();
     stopCallTone(ringbackTone.current);
   }, [call, callId]);
 
@@ -146,6 +147,8 @@ export default function CallScreen() {
 
   async function enterCall(isAnswer: boolean) {
     if (!callId || isConnecting || !(await requestPermissions())) return;
+    // The global watcher remains mounted on this screen; stop feedback before waiting for the API response.
+    stopAllCallAlerts();
     setIsConnecting(true);
     try {
       if (isAnswer) {
@@ -168,6 +171,9 @@ export default function CallScreen() {
 
   async function finish(status: "ended" | "declined") {
     finalized.current = true;
+    stopAllCallAlerts();
+    stopCallTone(ringbackTone.current);
+    ringbackTone.current = null;
     try {
       if (status === "declined") await decline.mutateAsync({ callId });
       else await end.mutateAsync({ callId });
@@ -197,8 +203,8 @@ export default function CallScreen() {
       await call.setMicrophoneEnabled(!next);
       setMuted(next);
       activeCall.update(callId, { muted: next });
-    } catch {
-      Alert.alert("Chưa thể đổi micro", "Vui lòng thử lại sau giây lát.");
+    } catch (error) {
+      Alert.alert("Chưa thể đổi micro", error instanceof Error ? error.message : "Hãy kiểm tra quyền micro rồi thử lại.");
     }
   }
 
@@ -219,8 +225,8 @@ export default function CallScreen() {
       await call.setCameraEnabled(next);
       setCameraOn(next);
       activeCall.update(callId, { cameraOn: next });
-    } catch {
-      Alert.alert("Chưa thể đổi trạng thái camera", "Vui lòng thử lại sau giây lát.");
+    } catch (error) {
+      Alert.alert("Chưa thể đổi trạng thái camera", error instanceof Error ? error.message : "Hãy kiểm tra quyền camera rồi thử lại.");
     }
   }
 

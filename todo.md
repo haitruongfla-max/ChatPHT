@@ -111,3 +111,11 @@
 - [x] Xin và kiểm chứng quyền camera/micro trước khi kết nối LiveKit, đồng thời xuất bản track media theo trạng thái thực tế của thiết bị Android.
 - [x] Hiển thị track video cục bộ/từ xa rõ ràng, ổn định chuyển camera trước/sau và ghi nhận trạng thái media trong màn hình gọi.
 - [x] Đối chiếu token Expo, cấu hình project ID và payload gửi nền để xác định điều kiện cần cho thông báo khi ứng dụng đã đóng.
+- [ ] Khắc phục vòng rung/chuông không dừng khi cuộc gọi được nhận, từ chối hoặc kết thúc trên Android.
+- [ ] Sửa lỗi bật micro/camera LiveKit trên Android theo trạng thái track thực tế và thông báo lỗi có thể hành động.
+- [ ] Bổ sung âm báo chờ cho người gọi và chuông cuộc gọi đến có thể dừng chắc chắn trên thiết bị Android.
+- [ ] Hoàn tất cấu hình và xác minh push FCM/Expo cho tin nhắn, cuộc gọi khi ứng dụng Android bị tắt hẳn.
+- [x] Thay chuông thông báo cục bộ không thể hủy bằng audio player M4A 12 giây có thể lặp, dừng và giải phóng trên Android.
+- [x] Dừng đồng bộ toàn bộ rung/chuông trước khi nhận, từ chối, hủy, kết thúc hoặc rời màn hình cuộc gọi.
+- [x] Tăng bản Android lên 1.0.1 (versionCode 2) để thiết bị nhận cấu hình WebRTC, quyền gọi và âm báo mới qua bản cài đặt mới.
+- [x] Chạy kiểm tra TypeScript và hồi quy: 47/47 kiểm thử đạt.

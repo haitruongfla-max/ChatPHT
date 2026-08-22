@@ -1,8 +1,6 @@
 import { useEffect, useRef } from "react";
 import { router } from "expo-router";
-import { Vibration } from "react-native";
-
-import { createCallTonePlayer, stopCallTone } from "@/lib/call-sounds";
+import { startIncomingCallAlert, createCallTonePlayer, stopAllCallAlerts, stopCallTone } from "@/lib/call-sounds";
 import { trpc } from "@/lib/trpc";
 
 /** Opens the incoming-call screen once per ringing session while the app is active. */
@@ -15,7 +13,7 @@ export function IncomingCallWatcher() {
     const call = incoming.data;
     const isRinging = Boolean(call && call.status === "ringing");
     if (!isRinging) {
-      Vibration.cancel();
+      stopAllCallAlerts();
       stopCallTone(tone.current);
       tone.current = null;
       return;
@@ -24,12 +22,11 @@ export function IncomingCallWatcher() {
       void createCallTonePlayer().then((player) => {
         if (incoming.data?.id === call?.id && incoming.data?.status === "ringing") {
           tone.current = player;
-          player.play();
+          startIncomingCallAlert(player);
         } else {
           stopCallTone(player);
         }
       }).catch(() => undefined);
-      Vibration.vibrate([0, 500, 350, 500], true);
     }
     if (handledId.current === call?.id) return;
     handledId.current = call?.id ?? null;
@@ -41,7 +38,7 @@ export function IncomingCallWatcher() {
   }, [incoming.data]);
 
   useEffect(() => () => {
-    Vibration.cancel();
+    stopAllCallAlerts();
     stopCallTone(tone.current);
   }, []);
 
