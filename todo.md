@@ -147,4 +147,4 @@
 - [x] Xác thực kín Expo access token và Service Account FCM V1 thành công; kiểm thử hồi quy 50/50 đạt, 2 kiểm thử xác thực mạng được tách chạy riêng để không xung đột mock.
 - [x] Lưu checkpoint sau khi tạo keystore, tải FCM V1 qua EAS CLI và căn chỉnh slug Expo (version `1681ea91`).
 - [x] Cập nhật `extra.eas.projectId`, slug, owner và `EXPO_PUBLIC_EAS_PROJECT_ID` theo project ChatPHT `313af748-4c54-4949-8389-71ee2772b17a`; kiểm thử xác thực kín đã đạt.
-- [ ] Lưu checkpoint trước khi tạo Android build mới; cấu hình Expo/EAS đã xác minh và 50/50 hồi quy đạt.
+- [x] Lưu checkpoint trước khi tạo Android build mới; cấu hình Expo/EAS đã xác minh và 50/50 hồi quy đạt (version `8b04c4e0`).
