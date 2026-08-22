@@ -25,7 +25,9 @@ const bundleId =
 // e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
 const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
 const schemeFromBundleId = `manus${timestamp}`;
-const expoProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
+const expoProjectId =
+  process.env.EXPO_PUBLIC_EAS_PROJECT_ID ??
+  "313af748-4c54-4949-8389-71ee2772b17a";
 
 const env = {
   // App branding - update these values directly (do not use env vars)
@@ -42,6 +44,7 @@ const env = {
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
+  owner: "truongbbbs-team",
   version: "1.0.1",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
@@ -91,7 +94,7 @@ const config: ExpoConfig = {
     output: "static",
     favicon: "./assets/images/favicon.png",
   },
-  extra: expoProjectId ? { eas: { projectId: expoProjectId } } : undefined,
+  extra: { eas: { projectId: expoProjectId } },
   plugins: [
     "expo-router",
     [
