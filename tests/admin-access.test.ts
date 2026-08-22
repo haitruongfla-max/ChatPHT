@@ -4,8 +4,13 @@ vi.mock("../server/db", () => ({
   isUserAccessExpired: vi.fn(() => false),
   listManagedUsers: vi.fn(),
   getStorageUsageSummary: vi.fn(),
+  updateStorageQuotaSettings: vi.fn(),
   setUserAccessExpiry: vi.fn(),
   deleteManagedUser: vi.fn(),
+}));
+
+vi.mock("../server/media-cleanup", () => ({
+  runMediaCleanup: vi.fn().mockResolvedValue({ cleanedCount: 0 }),
 }));
 
 vi.mock("../server/storage", () => ({
@@ -41,12 +46,23 @@ describe("admin access controls", () => {
     vi.mocked(db.getStorageUsageSummary).mockResolvedValue({
       usedBytes: 823_319,
       mediaCount: 2,
-      quotaBytes: 20 * 1024 * 1024 * 1024,
+      quotaGb: 200,
+      quotaBytes: 200 * 1024 * 1024 * 1024,
+      unlimited: false,
+      lastCleanupAt: null,
       recentMedia: [],
     });
 
     await expect(callerFor("admin").admin.storageSummary()).resolves.toMatchObject({ usedBytes: 823_319, mediaCount: 2 });
     expect(db.getStorageUsageSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it("chỉ cho phép quản trị viên đổi quota trong các mức được hỗ trợ", async () => {
+    vi.mocked(db.updateStorageQuotaSettings).mockResolvedValue({ quotaGb: 50, unlimited: false, scheduledTaskUid: null, lastCleanupAt: null });
+
+    await expect(callerFor("user").admin.updateStorageQuota({ quotaGb: 50, unlimited: false })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(callerFor("admin").admin.updateStorageQuota({ quotaGb: 50, unlimited: false })).resolves.toMatchObject({ quotaGb: 50, unlimited: false });
+    expect(db.updateStorageQuotaSettings).toHaveBeenCalledWith({ quotaGb: 50, unlimited: false });
   });
 
   it("blocks an expired standard account before it can use protected features", async () => {

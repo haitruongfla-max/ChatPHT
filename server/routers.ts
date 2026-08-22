@@ -7,6 +7,7 @@ import { sdk } from "./_core/sdk";
 import { systemRouter } from "./_core/systemRouter";
 import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
+import { runMediaCleanup } from "./media-cleanup";
 import { createLiveKitCallToken } from "./call-token";
 import { dispatchIncomingCallPushNotification, dispatchNewMessagePushNotifications } from "./push";
 import { storageCreateUploadUrl, storageDelete, storageGetSignedUrl, storagePut } from "./storage";
@@ -66,6 +67,7 @@ function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | A
     createdAt: message.createdAt,
     mediaUrl,
     mediaCacheKey: message.mediaKey ?? null,
+    mediaCleanedAt: message.mediaCleanedAt ?? null,
     reactions: "reactions" in message ? message.reactions : [],
     recipientDeliveredAt: "recipientDeliveredAt" in message ? message.recipientDeliveredAt : null,
     recipientReadAt: "recipientReadAt" in message ? message.recipientReadAt : null,
@@ -164,6 +166,13 @@ export const appRouter = router({
   admin: router({
     listUsers: adminProcedure.query(() => db.listManagedUsers()),
     storageSummary: adminProcedure.query(() => db.getStorageUsageSummary()),
+    updateStorageQuota: adminProcedure
+      .input(z.object({ quotaGb: z.union([z.literal(20), z.literal(50), z.literal(100), z.literal(200)]), unlimited: z.boolean() }))
+      .mutation(async ({ input }) => {
+        const settings = await db.updateStorageQuotaSettings(input);
+        void runMediaCleanup().catch((error) => console.error("[storage] Immediate cleanup after quota update failed", error));
+        return settings;
+      }),
     setAccessDays: adminProcedure
       .input(z.object({ userId: z.number().int().positive(), days: z.number().int().min(1).max(3650) }))
       .mutation(async ({ input }) => {
@@ -435,7 +444,7 @@ export const appRouter = router({
         try {
           const items = await db.listMessages(input.conversationId, ctx.user.id);
           return Promise.all(
-            items.map(async (message) => publicMessage(message, message.mediaKey ? await storageGetSignedUrl(message.mediaKey) : null)),
+            items.map(async (message) => publicMessage(message, message.mediaKey && !message.mediaCleanedAt ? await storageGetSignedUrl(message.mediaKey) : null)),
           );
         } catch (error) {
           return appError(error, "Không thể tải tin nhắn.");

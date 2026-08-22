@@ -174,3 +174,9 @@
 - [x] Khắc phục lỗi “Không tải được bản xem trước” trong luồng `direct-media-upload` mà vẫn giữ upload trực tiếp dạng nhị phân.
 - [x] Kiểm thử hồi quy Admin, upload ảnh 20 MiB, preview media và lưu checkpoint.
 - [x] Ưu tiên xác minh và sửa dứt điểm lỗi “Không tải được bản xem trước” bằng kiểm tra kiểu ngay sau chỉnh sửa tách nhỏ.
+- [x] Rà soát dịch vụ lịch chạy, kho media và dữ liệu messages để thiết kế tự dọn chỉ xóa ảnh/video an toàn.
+- [x] Bổ sung cấu hình quota Admin: 20 GB, 50 GB, 100 GB, 200 GB hoặc không giới hạn; mặc định 200 GB.
+- [x] Triển khai FIFO tự dọn media khi vượt 90% quota về 70%, giữ tin nhắn chữ và hiển thị trạng thái file đã được dọn.
+- [ ] Thiết lập lịch dọn media quá 30 ngày vào 02:00 hằng đêm theo phương án chạy nền tương thích.
+- [ ] Kiểm thử hồi quy quota, FIFO, xóa tệp, thông báo chat, lịch dọn và lưu checkpoint.
+- [ ] Kích hoạt tác vụ tự động 02:00 hằng đêm theo phương án chạy nền đã được Admin xác nhận.

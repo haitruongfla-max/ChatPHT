@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, like, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, like, lt, ne, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
@@ -9,13 +9,14 @@ import {
   messageReactions,
   messages,
   pushDevices,
+  storageSettings,
   type CallSession,
   type InsertUser,
   type User,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
-import { STORAGE_QUOTA_BYTES } from "../lib/storage-usage";
+import { DEFAULT_STORAGE_QUOTA_GB, quotaGbToBytes } from "../lib/storage-usage";
 
 export type PublicProfile = {
   id: number;
@@ -200,17 +201,55 @@ export async function listManagedUsers() {
   }));
 }
 
+export async function getStorageQuotaSettings() {
+  const db = requireDb(await getDb());
+  const [settings] = await db.select().from(storageSettings).where(eq(storageSettings.id, 1)).limit(1);
+  return {
+    quotaGb: settings?.quotaGb ?? DEFAULT_STORAGE_QUOTA_GB,
+    unlimited: settings?.unlimited ?? false,
+    scheduledTaskUid: settings?.scheduledTaskUid ?? null,
+    lastCleanupAt: settings?.lastCleanupAt ?? null,
+  };
+}
+
+export async function updateStorageQuotaSettings(input: { quotaGb: number; unlimited: boolean }) {
+  const db = requireDb(await getDb());
+  const [settings] = await db.select().from(storageSettings).where(eq(storageSettings.id, 1)).limit(1);
+  if (settings) {
+    await db.update(storageSettings).set(input).where(eq(storageSettings.id, 1));
+  } else {
+    await db.insert(storageSettings).values({ id: 1, ...input });
+  }
+  return getStorageQuotaSettings();
+}
+
+export async function setStorageCleanupTaskUid(taskUid: string | null) {
+  const db = requireDb(await getDb());
+  await db.update(storageSettings).set({ scheduledTaskUid: taskUid }).where(eq(storageSettings.id, 1));
+}
+
+export async function markStorageCleanupRan() {
+  const db = requireDb(await getDb());
+  await db.update(storageSettings).set({ lastCleanupAt: new Date() }).where(eq(storageSettings.id, 1));
+}
+
+const activeMediaFilter = and(
+  isNotNull(messages.mediaKey),
+  isNull(messages.mediaCleanedAt),
+  inArray(messages.contentType, ["image", "video"]),
+);
+
 /** Totals completed chat media tracked by the application database. */
 export async function getStorageUsageSummary() {
   const db = requireDb(await getDb());
-  const mediaFilter = and(isNotNull(messages.mediaKey), inArray(messages.contentType, ["image", "video"]));
+  const settings = await getStorageQuotaSettings();
   const [aggregate] = await db
     .select({
       usedBytes: sql<number>`coalesce(sum(${messages.mediaSize}), 0)`,
       mediaCount: sql<number>`count(${messages.id})`,
     })
     .from(messages)
-    .where(mediaFilter);
+    .where(activeMediaFilter);
   const recentMedia = await db
     .select({
       id: messages.id,
@@ -223,20 +262,44 @@ export async function getStorageUsageSummary() {
     })
     .from(messages)
     .leftJoin(users, eq(messages.senderId, users.id))
-    .where(mediaFilter)
+    .where(activeMediaFilter)
     .orderBy(desc(messages.createdAt))
     .limit(5);
 
   return {
     usedBytes: Number(aggregate?.usedBytes ?? 0),
     mediaCount: Number(aggregate?.mediaCount ?? 0),
-    quotaBytes: STORAGE_QUOTA_BYTES,
+    quotaGb: settings.quotaGb,
+    quotaBytes: settings.unlimited ? null : quotaGbToBytes(settings.quotaGb),
+    unlimited: settings.unlimited,
+    lastCleanupAt: settings.lastCleanupAt,
     recentMedia: recentMedia.map((media) => ({
       ...media,
       mediaSize: media.mediaSize ?? 0,
       senderName: media.senderName ?? media.senderUsername ?? "Người dùng ChatPHT",
     })),
   };
+}
+
+export async function listActiveMediaForCleanup() {
+  const db = requireDb(await getDb());
+  return db.select({
+    id: messages.id,
+    mediaKey: messages.mediaKey,
+    mediaSize: messages.mediaSize,
+    createdAt: messages.createdAt,
+  }).from(messages).where(activeMediaFilter).orderBy(messages.createdAt);
+}
+
+export async function markMessageMediaCleaned(messageId: number) {
+  const db = requireDb(await getDb());
+  await db.update(messages).set({
+    mediaKey: null,
+    mediaMime: null,
+    mediaName: null,
+    mediaSize: null,
+    mediaCleanedAt: new Date(),
+  }).where(and(eq(messages.id, messageId), isNull(messages.mediaCleanedAt)));
 }
 
 export async function setUserAccessExpiry(userId: number, accessExpiresAt: Date | null) {

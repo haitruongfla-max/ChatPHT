@@ -105,6 +105,7 @@ export const messages = mysqlTable(
     mediaMime: varchar("mediaMime", { length: 96 }),
     mediaName: varchar("mediaName", { length: 255 }),
     mediaSize: int("mediaSize"),
+    mediaCleanedAt: timestamp("mediaCleanedAt"),
     recalledAt: timestamp("recalledAt"),
     recalledBy: int("recalledBy"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -113,6 +114,16 @@ export const messages = mysqlTable(
     index("message_conversation_created_idx").on(table.conversationId, table.createdAt),
   ],
 );
+
+export const storageSettings = mysqlTable("storage_settings", {
+  id: int("id").primaryKey(),
+  quotaGb: int("quotaGb").default(200).notNull(),
+  unlimited: boolean("unlimited").default(false).notNull(),
+  scheduledTaskUid: varchar("scheduledTaskUid", { length: 128 }),
+  lastCleanupAt: timestamp("lastCleanupAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
 
 export const callSessions = mysqlTable(
   "call_sessions",
@@ -158,3 +169,4 @@ export type Message = typeof messages.$inferSelect;
 export type CallSession = typeof callSessions.$inferSelect;
 export type MessageReaction = typeof messageReactions.$inferSelect;
 export type PushDevice = typeof pushDevices.$inferSelect;
+export type StorageSettings = typeof storageSettings.$inferSelect;

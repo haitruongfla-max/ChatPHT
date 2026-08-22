@@ -37,6 +37,7 @@ type ChatMessage = {
   mediaUrl: string | null;
   mediaCacheKey: string | null;
   mediaName: string | null;
+  mediaCleanedAt: Date | null;
   recalledAt: Date | null;
   recalledBy: number | null;
   createdAt: Date;
@@ -743,6 +744,7 @@ export default function ChatScreen() {
                             }
                           />
                         ) : null}
+                        {item.mediaCleanedAt ? <View style={[styles.mediaCleaned, mine && styles.mineMediaCleaned]}><MaterialIcons name="auto-delete" size={16} color={mine ? "#D9E5FF" : "#64748B"} /><Text style={[styles.mediaCleanedText, mine && styles.mineMediaCleanedText]}>File đã được tự động dọn dẹp để tiết kiệm dung lượng</Text></View> : null}
                         {item.body ? (
                           <Text
                             selectable
@@ -1079,6 +1081,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,.22)",
   },
   videoPreviewText: { color: "#E6F0FF", fontSize: 12.5, fontWeight: "700" },
+  mediaCleaned: { flexDirection: "row", alignItems: "center", gap: 7, marginVertical: 3, paddingVertical: 5, paddingHorizontal: 7, borderRadius: 10, backgroundColor: "#F1F5F9" },
+  mineMediaCleaned: { backgroundColor: "rgba(255,255,255,0.16)" },
+  mediaCleanedText: { flex: 1, color: "#64748B", fontSize: 12, lineHeight: 17, fontStyle: "italic" },
+  mineMediaCleanedText: { color: "#D9E5FF" },
   recalled: {
     flexDirection: "row",
     alignItems: "center",
