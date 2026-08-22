@@ -1,6 +1,7 @@
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { clearAppLockPin, hasAppLockPin, saveAppLockPin, verifyAppLockPin } from "@/lib/app-lock";
+import { openBackgroundCallSettings } from "@/lib/background-call-settings";
 import { areChatPushNotificationsEnabled, clearStoredPushToken, ensureChatNotificationChannels, getStoredPushToken, registerForChatPushNotifications, setChatPushNotificationsEnabled, storePushToken } from "@/lib/push-notifications";
 import { trpc } from "@/lib/trpc";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -23,6 +24,7 @@ export default function SettingsScreen() {
   const [pushEnabled, setPushEnabled] = useState(true);
   const [savingPush, setSavingPush] = useState(false);
   const [testingNotification, setTestingNotification] = useState(false);
+  const [openingBackgroundSettings, setOpeningBackgroundSettings] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -108,6 +110,15 @@ export default function SettingsScreen() {
     }
   };
 
+  const openBackgroundSettings = async () => {
+    if (Platform.OS !== "android" || openingBackgroundSettings) return;
+    setOpeningBackgroundSettings(true);
+    try {
+      const result = await openBackgroundCallSettings();
+      if (!result.openedBatterySettings) Alert.alert("Chưa thể mở cài đặt Pin", "Hãy vào cài đặt hệ thống và đặt Pin của ChatPHT thành Không hạn chế.");
+    } finally { setOpeningBackgroundSettings(false); }
+  };
+
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -122,6 +133,8 @@ export default function SettingsScreen() {
         </View></View>
 
         <View style={styles.section}><Text style={styles.sectionTitle}>Thông báo</Text><View style={styles.card}><View style={styles.row}><View style={styles.icon}><MaterialIcons name="notifications-none" size={21} color="#1D4ED8" /></View><View style={styles.rowBody}><Text style={styles.rowTitle}>Hiển thị thông báo</Text><Text style={styles.rowText}>Báo tin nhắn mới mà không hiển thị nội dung riêng tư.</Text></View><Switch value={pushEnabled} disabled={loading || savingPush} onValueChange={(value) => void changePushEnabled(value)} trackColor={{ false: "#CBD5E1", true: "#93C5FD" }} thumbColor={pushEnabled ? "#2563EB" : "#F8FAFC"} /></View><Pressable onPress={() => void sendLocalNotificationTest()} disabled={testingNotification} style={({ pressed }) => [styles.notificationTest, testingNotification && styles.disabled, pressed && styles.pressed]}><MaterialIcons name="notifications-active" size={18} color="#1D4ED8" />{testingNotification ? <ActivityIndicator color="#1D4ED8" /> : <Text style={styles.notificationTestText}>Gửi thông báo kiểm tra</Text>}</Pressable></View></View>
+
+        {Platform.OS === "android" ? <View style={styles.section}><Text style={styles.sectionTitle}>Chạy nền</Text><View style={styles.card}><View style={styles.row}><View style={styles.icon}><MaterialIcons name="battery-charging-full" size={21} color="#1D4ED8" /></View><View style={styles.rowBody}><Text style={styles.rowTitle}>Tin nhắn & cuộc gọi khi tắt app</Text><Text style={styles.rowText}>Đặt Pin thành Không hạn chế. Xiaomi/Oppo sẽ mở thêm trang Tự khởi chạy nếu máy hỗ trợ.</Text></View></View><Pressable onPress={() => void openBackgroundSettings()} disabled={openingBackgroundSettings} style={({ pressed }) => [styles.notificationTest, openingBackgroundSettings && styles.disabled, pressed && styles.pressed]}><MaterialIcons name="settings" size={18} color="#1D4ED8" />{openingBackgroundSettings ? <ActivityIndicator color="#1D4ED8" /> : <Text style={styles.notificationTestText}>Mở cài đặt chạy nền</Text>}</Pressable></View></View> : null}
 
         <View style={styles.section}><Text style={styles.sectionTitle}>Gửi video</Text><View style={styles.card}><View style={styles.row}><View style={styles.icon}><MaterialIcons name="movie" size={21} color="#1D4ED8" /></View><View style={styles.rowBody}><Text style={styles.rowTitle}>Video tối đa 100 MB</Text><Text style={styles.rowText}>Video lớn được tải trực tiếp vào kho riêng tư để ứng dụng vẫn ổn định.</Text></View></View></View></View>
       </ScrollView>

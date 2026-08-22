@@ -21,5 +21,8 @@ export class LiveKitCall {
   getRoom() {
     return undefined;
   }
+  getNetworkStats() {
+    return { pingMs: null, connectionQuality: "unknown" as const };
+  }
   async disconnect() {}
 }

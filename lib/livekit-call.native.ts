@@ -1,5 +1,5 @@
 import { AndroidAudioTypePresets, AudioSession } from "@livekit/react-native";
-import { LocalVideoTrack, Room, Track } from "livekit-client";
+import { ConnectionQuality, LocalVideoTrack, Room, Track } from "livekit-client";
 import { PermissionsAndroid, Platform } from "react-native";
 
 import { ensureLiveKitGlobals } from "@/lib/livekit-bootstrap";
@@ -9,6 +9,11 @@ ensureLiveKitGlobals();
 export type LiveKitSession = {
   serverUrl: string;
   token: string;
+};
+
+export type LiveKitNetworkStats = {
+  pingMs: number | null;
+  connectionQuality: ConnectionQuality;
 };
 
 type SwitchableMediaStreamTrack = {
@@ -97,6 +102,15 @@ export class LiveKitCall {
 
   getRoom() {
     return this.room;
+  }
+
+  getNetworkStats(): LiveKitNetworkStats {
+    const engine = this.room.engine as unknown as { client?: { rtt?: number } };
+    const rtt = engine.client?.rtt;
+    return {
+      pingMs: typeof rtt === "number" && Number.isFinite(rtt) && rtt >= 0 ? Math.round(rtt) : null,
+      connectionQuality: this.room.localParticipant.connectionQuality,
+    };
   }
 
   async disconnect() {

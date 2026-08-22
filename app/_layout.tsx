@@ -20,6 +20,7 @@ import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
 import { AppLockGate } from "@/components/app-lock-gate";
+import { BackgroundCallPermission } from "@/components/background-call-permission";
 import { IncomingCallWatcher } from "@/components/incoming-call-watcher";
 import { CallMiniOverlay } from "@/components/call-mini-overlay";
 import { PushNotificationManager } from "@/components/push-notification-manager";
@@ -101,6 +102,7 @@ export default function RootLayout() {
           </Stack>
           <IncomingCallWatcher />
           <PushNotificationManager />
+          <BackgroundCallPermission />
           <CallMiniOverlay />
           <AppLockGate />
           <StatusBar style="auto" />

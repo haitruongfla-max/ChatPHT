@@ -160,3 +160,8 @@
 - [x] Khôi phục watcher Metro bị lỗi đường dẫn `hermes-estree` tạm sau cập nhật dependency; API và preview duy trì cổng 3000/8081, HTTP 200 và không phát sinh lỗi watcher mới.
 - [x] Bổ sung loading cùng thông báo đang gọi, đang kết nối, đã kết nối và lỗi kết nối cho cuộc gọi video mà không thay đổi camera/micro/điều khiển hiện có.
 - [x] Kiểm thử hồi quy luồng gọi video/thoại và lưu checkpoint trải nghiệm kết nối mới.
+- [x] Rà soát khả năng toàn màn hình cuộc gọi đến, PiP, đo chất lượng mạng và quyền chạy nền Android theo Expo/Android hiện có.
+- [x] Bổ sung trải nghiệm cuộc gọi đến toàn màn hình cùng chỉ báo ping/chất lượng kết nối mà không làm thay đổi camera, micro hay điều khiển gọi.
+- [x] Thiết kế luồng xin phép tối ưu pin có thể hoãn, mở đúng cài đặt Android khi nền tảng hỗ trợ và không hứa hẹn tự bật Auto-start cho Xiaomi/Oppo.
+- [x] Tích hợp thu nhỏ cuộc gọi theo phương án PiP an toàn, có dự phòng màn hình nổi trong ứng dụng khi Android/thiết bị không cho phép PiP.
+- [x] Kiểm thử hồi quy gọi, quyền nền, bundle Android và lưu checkpoint nâng cấp trải nghiệm gọi.
