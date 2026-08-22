@@ -148,3 +148,5 @@
 - [x] Lưu checkpoint sau khi tạo keystore, tải FCM V1 qua EAS CLI và căn chỉnh slug Expo (version `1681ea91`).
 - [x] Cập nhật `extra.eas.projectId`, slug, owner và `EXPO_PUBLIC_EAS_PROJECT_ID` theo project ChatPHT `313af748-4c54-4949-8389-71ee2772b17a`; kiểm thử xác thực kín đã đạt.
 - [x] Lưu checkpoint trước khi tạo Android build mới; cấu hình Expo/EAS đã xác minh và 50/50 hồi quy đạt (version `8b04c4e0`).
+- [x] Chẩn đoán và khôi phục bản xem trước ChatPHT không tải được trong giao diện quản lý; Metro duy trì cổng 8081 và HTTP trả 200, không thay đổi backend hay cấu hình FCM/EAS.
+- [x] Xác minh lại preview và lưu checkpoint sửa lỗi: cổng 8081 trả HTTP 200, TypeScript và 50/50 kiểm thử hồi quy đạt; 2 kiểm thử credential ngoài được chủ động bỏ qua.

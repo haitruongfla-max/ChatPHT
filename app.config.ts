@@ -91,7 +91,8 @@ const config: ExpoConfig = {
   },
   web: {
     bundler: "metro",
-    output: "static",
+    // Chế độ preview cần Metro duy trì dev server thay vì chạy export tĩnh rồi thoát.
+    output: "single",
     favicon: "./assets/images/favicon.png",
   },
   extra: { eas: { projectId: expoProjectId } },
