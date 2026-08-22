@@ -92,7 +92,15 @@ const config: ExpoConfig = {
   extra: expoProjectId ? { eas: { projectId: expoProjectId } } : undefined,
   plugins: [
     "expo-router",
-    "@livekit/react-native-expo-plugin",
+    [
+      "@livekit/react-native-expo-plugin",
+      {
+        android: {
+          audioType: "communication",
+        },
+      },
+    ],
+    "@config-plugins/react-native-webrtc",
     [
       "expo-camera",
       {

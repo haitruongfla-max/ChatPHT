@@ -11,6 +11,10 @@ export type LiveKitSession = {
   token: string;
 };
 
+type SwitchableMediaStreamTrack = {
+  _switchCamera?: () => void | Promise<void>;
+};
+
 export class LiveKitCall {
   private room = new Room({ adaptiveStream: true, dynacast: true });
   private isFrontCamera = true;
@@ -24,28 +28,57 @@ export class LiveKitCall {
       },
       ios: { defaultOutput: "speaker" },
     });
+    await AudioSession.setDefaultRemoteAudioTrackVolume(1);
     await AudioSession.startAudioSession();
-    await this.room.connect(session.serverUrl, session.token);
-    await this.room.localParticipant.setMicrophoneEnabled(true);
-    if (kind === "video") await this.room.localParticipant.setCameraEnabled(true);
-    await this.setSpeakerEnabled(true);
+    try {
+      await this.room.connect(session.serverUrl, session.token);
+      await this.room.localParticipant.setMicrophoneEnabled(true, {
+        autoGainControl: true,
+        echoCancellation: true,
+        noiseSuppression: true,
+      });
+      if (kind === "video") {
+        await this.room.localParticipant.setCameraEnabled(true, {
+          facingMode: this.isFrontCamera ? "user" : "environment",
+        });
+      }
+      await this.setSpeakerEnabled(true);
+    } catch (error) {
+      this.room.disconnect();
+      await AudioSession.stopAudioSession().catch(() => undefined);
+      throw error;
+    }
   }
 
   async setMicrophoneEnabled(enabled: boolean) {
-    await this.room.localParticipant.setMicrophoneEnabled(enabled);
+    await this.room.localParticipant.setMicrophoneEnabled(enabled, enabled ? {
+      autoGainControl: true,
+      echoCancellation: true,
+      noiseSuppression: true,
+    } : undefined);
   }
 
   async setCameraEnabled(enabled: boolean) {
-    await this.room.localParticipant.setCameraEnabled(enabled);
+    await this.room.localParticipant.setCameraEnabled(enabled, enabled ? {
+      facingMode: this.isFrontCamera ? "user" : "environment",
+    } : undefined);
   }
 
   async switchCamera() {
-    const track = this.room.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
-    if (!(track instanceof LocalVideoTrack)) {
-      throw new Error("Camera chưa sẵn sàng để chuyển đổi.");
-    }
     const nextIsFrontCamera = !this.isFrontCamera;
-    await track.restartTrack({ facingMode: nextIsFrontCamera ? "user" : "environment" });
+    const track = this.room.localParticipant.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
+    const nativeTrack = track?.mediaStreamTrack as SwitchableMediaStreamTrack | undefined;
+    if (nativeTrack && typeof nativeTrack._switchCamera === "function") {
+      await nativeTrack._switchCamera();
+    } else if (track && typeof track.restartTrack === "function") {
+      await track.restartTrack({ facingMode: nextIsFrontCamera ? "user" : "environment" });
+    } else {
+      // A few Android camera implementations only switch reliably when their local track is recreated.
+      await this.room.localParticipant.setCameraEnabled(false);
+      this.isFrontCamera = nextIsFrontCamera;
+      await this.setCameraEnabled(true);
+      return this.isFrontCamera;
+    }
     this.isFrontCamera = nextIsFrontCamera;
     return this.isFrontCamera;
   }

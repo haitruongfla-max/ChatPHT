@@ -20,6 +20,7 @@ describe("private chat push dispatch", () => {
       body: "Bạn có tin nhắn mới",
       sound: "default",
       priority: "high",
+      ttl: 86_400,
       channelId: "messages",
       data: { conversationId: 18 },
     });
@@ -36,6 +37,7 @@ describe("private chat push dispatch", () => {
       body: "Mở ChatPHT để nhận hoặc từ chối cuộc gọi",
       sound: "default",
       priority: "high",
+      ttl: 60,
       channelId: "calls",
       data: {
         type: "incoming_call",

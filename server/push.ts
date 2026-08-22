@@ -8,6 +8,7 @@ type PushPayload = {
   body: string;
   sound: "default";
   priority: "high";
+  ttl: number;
   channelId: "messages" | "calls";
   data: Record<string, number | string>;
 };
@@ -44,6 +45,7 @@ export function buildNewMessagePushPayload(token: string, conversationId: number
     body: "Bạn có tin nhắn mới",
     sound: "default",
     priority: "high",
+    ttl: 86_400,
     channelId: "messages",
     data: { conversationId },
   };
@@ -56,6 +58,7 @@ export function buildIncomingCallPushPayload(token: string, input: { conversatio
     body: "Mở ChatPHT để nhận hoặc từ chối cuộc gọi",
     sound: "default",
     priority: "high",
+    ttl: 60,
     channelId: "calls",
     data: { type: "incoming_call", conversationId: input.conversationId, callId: input.callId, kind: input.kind },
   };

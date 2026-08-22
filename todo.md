@@ -104,3 +104,10 @@
 - [x] Tạo tài khoản quản trị riêng, API quản lý người dùng, xóa người dùng và thiết lập số ngày sử dụng.
 - [x] Bổ sung màn hình quản trị chỉ dành cho quản trị viên, không làm lộ dữ liệu nhạy cảm của người dùng thường.
 - [x] Kiểm thử hồi quy gọi video, quyền quản trị, hết hạn người dùng và lưu checkpoint ổn định.
+- [x] Chẩn đoán quyền camera/micro Android, cấu hình LiveKit và lý do media hai chiều không hiển thị/phát.
+- [ ] Khắc phục xuất bản camera/micro, phát video từ xa và chuyển camera trước/sau ổn định trong cuộc gọi video.
+- [ ] Làm mới giao diện gọi sáng, gọn và dễ thao tác; hoàn thiện thông báo Android khi ứng dụng đã đóng.
+- [ ] Kiểm thử hồi quy gọi video, thông báo Android và giao diện ChatPHT; lưu checkpoint ổn định.
+- [x] Xin và kiểm chứng quyền camera/micro trước khi kết nối LiveKit, đồng thời xuất bản track media theo trạng thái thực tế của thiết bị Android.
+- [x] Hiển thị track video cục bộ/từ xa rõ ràng, ổn định chuyển camera trước/sau và ghi nhận trạng thái media trong màn hình gọi.
+- [x] Đối chiếu token Expo, cấu hình project ID và payload gửi nền để xác định điều kiện cần cho thông báo khi ứng dụng đã đóng.
