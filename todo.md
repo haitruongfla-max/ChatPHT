@@ -158,3 +158,5 @@
 - [x] Chỉ sửa các lỗi đã xác minh, không thay đổi hoặc loại bỏ tính năng đang hoạt động ổn định.
 - [x] Thực hiện kiểm thử chấp nhận tự động cuối, cập nhật checklist thiết bị thật và lưu checkpoint sẵn sàng phát hành; cần nghiệm thu các mục camera, WebRTC và FCM trên hai thiết bị Android thật.
 - [x] Khôi phục watcher Metro bị lỗi đường dẫn `hermes-estree` tạm sau cập nhật dependency; API và preview duy trì cổng 3000/8081, HTTP 200 và không phát sinh lỗi watcher mới.
+- [x] Bổ sung loading cùng thông báo đang gọi, đang kết nối, đã kết nối và lỗi kết nối cho cuộc gọi video mà không thay đổi camera/micro/điều khiển hiện có.
+- [x] Kiểm thử hồi quy luồng gọi video/thoại và lưu checkpoint trải nghiệm kết nối mới.

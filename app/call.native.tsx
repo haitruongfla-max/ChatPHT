@@ -1,12 +1,13 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Camera } from "expo-camera";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Animated, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from "react-native";
 import { LiveKitRoom, useTracks, VideoTrack } from "@livekit/react-native";
 import { Room, Track } from "livekit-client";
 
 import { activeCall } from "@/lib/active-call";
+import { getCallConnectionStatus, type CallConnectionStatus } from "@/lib/call-connection-status";
 import { createCallTonePlayer, stopAllCallAlerts, stopCallTone } from "@/lib/call-sounds";
 import { LiveKitCall } from "@/lib/livekit-call";
 import { trpc } from "@/lib/trpc";
@@ -33,6 +34,7 @@ export default function CallScreen() {
   const [isFrontCamera, setIsFrontCamera] = useState(resumed?.isFrontCamera ?? true);
   const [seconds, setSeconds] = useState(resumed?.seconds ?? 0);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
   const call = useRef(resumed?.call ?? new LiveKitCall()).current;
   const ringingScale = useRef(new Animated.Value(1)).current;
@@ -146,7 +148,9 @@ export default function CallScreen() {
   }
 
   async function enterCall(isAnswer: boolean) {
-    if (!callId || isConnecting || !(await requestPermissions())) return;
+    if (!callId || isConnecting) return;
+    setConnectionError(null);
+    if (!(await requestPermissions())) return;
     // The global watcher remains mounted on this screen; stop feedback before waiting for the API response.
     stopAllCallAlerts();
     setIsConnecting(true);
@@ -158,12 +162,15 @@ export default function CallScreen() {
         const session = await join.mutateAsync({ callId });
         await call.connect(session, kind);
       }
+      setConnectionError(null);
       setConnected(true);
       publishActiveState({ seconds: 0 });
     } catch (error) {
       if (isAnswer) void end.mutateAsync({ callId }).catch(() => undefined);
       await call.disconnect().catch(() => undefined);
-      Alert.alert("Chưa thể kết nối", error instanceof Error ? error.message : "Hãy thử lại khi mạng ổn định hơn.");
+      const message = error instanceof Error ? error.message : "Hãy thử lại khi mạng ổn định hơn.";
+      setConnectionError(message);
+      Alert.alert("Chưa thể kết nối", message);
     } finally {
       setIsConnecting(false);
     }
@@ -240,14 +247,19 @@ export default function CallScreen() {
     }
   }
 
-  const subtitle = useMemo(() => {
-    if (connected && isAnswered) return callDuration(seconds);
-    if (direction === "incoming") return kind === "video" ? "Cuộc gọi video đến" : "Cuộc gọi thoại đến";
-    return kind === "video" ? "Đang mời tham gia video…" : "Đang gọi…";
-  }, [connected, direction, isAnswered, kind, seconds]);
+  const connectionStatus = getCallConnectionStatus({
+    kind,
+    direction,
+    detailsLoading: details.isLoading,
+    isConnecting,
+    connected,
+    isAnswered,
+    error: connectionError,
+  });
+  const subtitle = connected && isAnswered ? callDuration(seconds) : connectionStatus.title;
 
   if (details.isLoading && !connected) {
-    return <SafeAreaView style={styles.safe}><StatusBar barStyle="dark-content" /><View style={styles.center}><Text style={styles.mutedText}>Đang chuẩn bị cuộc gọi…</Text></View></SafeAreaView>;
+    return <SafeAreaView style={styles.safe}><StatusBar barStyle="dark-content" /><View style={styles.center}><ConnectionStatus status={connectionStatus} /></View></SafeAreaView>;
   }
 
   if (!connected && direction === "incoming") {
@@ -258,8 +270,8 @@ export default function CallScreen() {
           <View style={styles.brandPill}><MaterialIcons name="lock" size={14} color="#2563EB" /><Text style={styles.brandPillText}>KẾT NỐI RIÊNG TƯ</Text></View>
           <Text style={styles.eyebrow}>{kind === "video" ? "CUỘC GỌI VIDEO ĐẾN" : "CUỘC GỌI THOẠI ĐẾN"}</Text>
           <Animated.View style={[styles.avatar, { transform: [{ scale: ringingScale }] }]}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></Animated.View>
-          <Text style={styles.name}>{name}</Text><Text style={styles.mutedText}>{isConnecting ? "Đang kết nối…" : subtitle}</Text>
-          <View style={styles.incomingActions}><RoundAction label="Từ chối" icon="call-end" color="#E8505B" onPress={() => void finish("declined")} /><RoundAction label={isConnecting ? "Đang kết nối" : "Nhận"} icon={kind === "video" ? "videocam" : "phone"} color="#20A86B" onPress={() => void enterCall(true)} /></View>
+          <Text style={styles.name}>{name}</Text>{isConnecting || connectionError ? <ConnectionStatus status={connectionStatus} /> : <Text style={styles.mutedText}>{subtitle}</Text>}
+          <View style={styles.incomingActions}><RoundAction label="Từ chối" icon="call-end" color="#E8505B" onPress={() => void finish("declined")} /><RoundAction label={isConnecting ? "Đang kết nối" : "Nhận"} icon={kind === "video" ? "videocam" : "phone"} color="#20A86B" disabled={isConnecting} onPress={() => void enterCall(true)} /></View>
         </View>
       </SafeAreaView>
     );
@@ -275,7 +287,7 @@ export default function CallScreen() {
           <Pressable onPress={minimize} style={({ pressed }) => [styles.dismiss, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={connected ? "Thu nhỏ cuộc gọi" : "Hủy cuộc gọi"}><MaterialIcons name={connected ? "keyboard-arrow-down" : "close"} size={28} color={isFullVideo ? "#FFFFFF" : "#183053"} /></Pressable>
           <View style={[styles.secure, isFullVideo && styles.videoSecure]}><MaterialIcons name="lock" size={13} color={isFullVideo ? "#D8E7FF" : "#2563EB"} /><Text style={[styles.secureText, isFullVideo && styles.videoSecureText]}>Kết nối bảo mật</Text></View><View style={styles.dismissPlaceholder} />
         </View> : null}
-        {showCallChrome ? <View style={[styles.identity, isFullVideo && styles.videoIdentity]}><View style={[styles.avatar, styles.callAvatar, isFullVideo && styles.videoAvatar]}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></View><Text style={[styles.name, isFullVideo && styles.videoText]}>{name}</Text><Text style={[styles.mutedText, isFullVideo && styles.videoSubtext]}>{isConnecting ? "Đang kết nối…" : subtitle}</Text>{connected ? <Text style={[styles.quality, isFullVideo && styles.videoQuality]}>Kết nối qua Internet</Text> : null}</View> : null}
+        {showCallChrome ? <View style={[styles.identity, isFullVideo && styles.videoIdentity]}><View style={[styles.avatar, styles.callAvatar, isFullVideo && styles.videoAvatar]}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></View><Text style={[styles.name, isFullVideo && styles.videoText]}>{name}</Text>{connected ? <><Text style={[styles.mutedText, isFullVideo && styles.videoSubtext]}>{subtitle}</Text><Text style={[styles.quality, isFullVideo && styles.videoQuality]}>{isAnswered ? "Đã kết nối qua Internet" : "Kết nối bảo mật sẵn sàng"}</Text></> : <ConnectionStatus status={connectionStatus} />}</View> : null}
         {showCallChrome ? <View style={[styles.controls, isFullVideo && styles.videoControls]}>
           {connected ? <><View style={styles.controlRow}><Control label={muted ? "Bật micro" : "Tắt micro"} icon={muted ? "mic-off" : "mic"} active={muted} inverse={isFullVideo} onPress={() => void toggleMicrophone()} /><Control label={speaker ? "Loa ngoài" : "Tai nghe"} icon={speaker ? "volume-up" : "hearing"} active={speaker} inverse={isFullVideo} onPress={() => void toggleSpeaker()} />{kind === "video" ? <Control label={cameraOn ? "Tắt camera" : "Bật camera"} icon={cameraOn ? "videocam" : "videocam-off"} active={!cameraOn} inverse={isFullVideo} onPress={() => void toggleCamera()} /> : null}</View>{kind === "video" && cameraOn ? <View style={styles.secondaryControls}><Control label={isFrontCamera ? "Camera trước" : "Camera sau"} icon="flip-camera-android" active={false} inverse={isFullVideo} onPress={() => void switchCamera()} /></View> : null}<RoundAction label="Kết thúc" icon="call-end" color="#E8505B" inverse={isFullVideo} onPress={() => void finish("ended")} /></> : <View style={styles.pending}><RoundAction label="Hủy cuộc gọi" icon="call-end" color="#E8505B" onPress={() => void finish("ended")} /></View>}
         </View> : null}
@@ -296,12 +308,17 @@ function VideoStage({ room }: { room: Room }) {
   );
 }
 
+function ConnectionStatus({ status }: { status: CallConnectionStatus }) {
+  const isError = status.phase === "error";
+  return <View style={[styles.connectionStatus, isError && styles.connectionStatusError]} accessibilityLiveRegion="polite" accessibilityLabel={`${status.title}. ${status.description}`}><View style={styles.connectionStatusIcon}>{isError ? <MaterialIcons name="error-outline" size={22} color="#D6404B" /> : <ActivityIndicator size="small" color="#2563EB" />}</View><View style={styles.connectionStatusContent}><Text style={[styles.connectionStatusTitle, isError && styles.connectionStatusTitleError]}>{status.title}</Text><Text style={[styles.connectionStatusDetail, isError && styles.connectionStatusDetailError]}>{status.description}</Text></View></View>;
+}
+
 function Control({ label, icon, active, inverse, onPress }: { label: string; icon: React.ComponentProps<typeof MaterialIcons>["name"]; active: boolean; inverse?: boolean; onPress: () => void }) {
   return <Pressable onPress={onPress} style={({ pressed }) => [styles.control, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label}><View style={[styles.controlIcon, active && styles.controlActive, inverse && styles.inverseControlIcon]}><MaterialIcons name={icon} size={22} color={active ? "#FFFFFF" : inverse ? "#FFFFFF" : "#1D4ED8"} /></View><Text style={[styles.controlLabel, inverse && styles.inverseLabel]}>{label}</Text></Pressable>;
 }
 
-function RoundAction({ label, icon, color, inverse, onPress }: { label: string; icon: React.ComponentProps<typeof MaterialIcons>["name"]; color: string; inverse?: boolean; onPress: () => void }) {
-  return <Pressable onPress={onPress} style={({ pressed }) => [styles.action, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label}><View style={[styles.actionIcon, { backgroundColor: color }]}><MaterialIcons name={icon} size={29} color="#FFF" /></View><Text style={[styles.actionLabel, inverse && styles.inverseLabel]}>{label}</Text></Pressable>;
+function RoundAction({ label, icon, color, inverse, disabled = false, onPress }: { label: string; icon: React.ComponentProps<typeof MaterialIcons>["name"]; color: string; inverse?: boolean; disabled?: boolean; onPress: () => void }) {
+  return <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.action, disabled && styles.actionDisabled, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }}><View style={[styles.actionIcon, { backgroundColor: color }]}><MaterialIcons name={icon} size={29} color="#FFF" /></View><Text style={[styles.actionLabel, inverse && styles.inverseLabel]}>{label}</Text></Pressable>;
 }
 
 const styles = StyleSheet.create({
@@ -318,6 +335,14 @@ const styles = StyleSheet.create({
   avatarText: { color: "#FFF", fontSize: 48, fontWeight: "800" },
   name: { color: "#172554", fontSize: 27, fontWeight: "800", marginTop: 22 },
   mutedText: { color: "#62718D", fontSize: 15, marginTop: 7, textAlign: "center" },
+  connectionStatus: { alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 10, maxWidth: 310, marginTop: 14, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 16, backgroundColor: "#EAF2FF" },
+  connectionStatusError: { backgroundColor: "#FFF0F1" },
+  connectionStatusIcon: { width: 24, alignItems: "center" },
+  connectionStatusContent: { flex: 1 },
+  connectionStatusTitle: { color: "#1E3A8A", fontSize: 14, fontWeight: "800" },
+  connectionStatusTitleError: { color: "#B4232C" },
+  connectionStatusDetail: { color: "#53647F", fontSize: 12, lineHeight: 17, marginTop: 2 },
+  connectionStatusDetailError: { color: "#9F2D35" },
   incomingActions: { position: "absolute", bottom: 24, left: 46, right: 46, flexDirection: "row", justifyContent: "space-between" },
   container: { flex: 1, padding: 20, paddingBottom: 20 },
   top: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
@@ -340,6 +365,7 @@ const styles = StyleSheet.create({
   controlLabel: { color: "#3C4B68", fontSize: 11, fontWeight: "600", marginTop: 7, textAlign: "center" },
   inverseLabel: { color: "#F7FAFF" },
   action: { alignItems: "center" },
+  actionDisabled: { opacity: 0.58 },
   actionIcon: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
   actionLabel: { color: "#334155", fontSize: 13, fontWeight: "800", marginTop: 7 },
   pending: { alignItems: "center" },
