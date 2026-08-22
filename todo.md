@@ -150,3 +150,11 @@
 - [x] Lưu checkpoint trước khi tạo Android build mới; cấu hình Expo/EAS đã xác minh và 50/50 hồi quy đạt (version `8b04c4e0`).
 - [x] Chẩn đoán và khôi phục bản xem trước ChatPHT không tải được trong giao diện quản lý; Metro duy trì cổng 8081 và HTTP trả 200, không thay đổi backend hay cấu hình FCM/EAS.
 - [x] Xác minh lại preview và lưu checkpoint sửa lỗi: cổng 8081 trả HTTP 200, TypeScript và 50/50 kiểm thử hồi quy đạt; 2 kiểm thử credential ngoài được chủ động bỏ qua.
+- [x] Rà soát tĩnh toàn bộ mã nguồn, dependency, cấu hình Expo/EAS/FCM và nhật ký dịch vụ trước phát hành.
+- [x] Khắc phục dependency Expo thiếu `expo-asset` và căn chỉnh các phiên bản Expo SDK 54 được Expo Doctor cảnh báo; Expo Doctor 18/18 và hồi quy đạt.
+- [x] Sửa đăng ký lại token push khi người dùng đăng xuất rồi đăng nhập tài khoản khác trên cùng thiết bị.
+- [x] Thay thuộc tính `pointerEvents` lỗi thời tại màn hình chat bằng `style.pointerEvents` tương thích React Native Web.
+- [x] Kiểm tra hồi quy các luồng chat, media, danh bạ, AI, PIN, thông báo, gọi, quản trị và xử lý lỗi giao diện có thể tái hiện.
+- [x] Chỉ sửa các lỗi đã xác minh, không thay đổi hoặc loại bỏ tính năng đang hoạt động ổn định.
+- [x] Thực hiện kiểm thử chấp nhận tự động cuối, cập nhật checklist thiết bị thật và lưu checkpoint sẵn sàng phát hành; cần nghiệm thu các mục camera, WebRTC và FCM trên hai thiết bị Android thật.
+- [x] Khôi phục watcher Metro bị lỗi đường dẫn `hermes-estree` tạm sau cập nhật dependency; API và preview duy trì cổng 3000/8081, HTTP 200 và không phát sinh lỗi watcher mới.

@@ -69,7 +69,7 @@ function VideoBubble({ uri, onOpen }: { uri: string; onOpen: () => void }) {
       accessibilityRole="button"
       accessibilityLabel="Mở video toàn màn hình"
     >
-      <View pointerEvents="none" style={styles.videoPreview}>
+      <View style={styles.videoPreview}>
         <View style={styles.videoIcon}>
           <MaterialIcons name="play-arrow" size={30} color="#FFFFFF" />
         </View>
@@ -562,14 +562,13 @@ export default function ChatScreen() {
     >
       {wallpaper.data?.url ? (
         <Image
-          pointerEvents="none"
           source={{ uri: wallpaper.data.url }}
           contentFit="cover"
           transition={180}
           style={styles.wallpaper}
         />
       ) : null}
-      {wallpaper.data?.url ? <View pointerEvents="none" style={styles.wallpaperTint} /> : null}
+      {wallpaper.data?.url ? <View style={styles.wallpaperTint} /> : null}
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -928,9 +927,10 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F6F8FC" },
-  wallpaper: { ...StyleSheet.absoluteFillObject },
+  wallpaper: { ...StyleSheet.absoluteFillObject, pointerEvents: "none" },
   wallpaperTint: {
     ...StyleSheet.absoluteFillObject,
+    pointerEvents: "none",
     backgroundColor: "rgba(238, 246, 255, 0.60)",
   },
   loading: {
@@ -1068,6 +1068,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 9,
     backgroundColor: "#102A5A",
+    pointerEvents: "none",
   },
   videoIcon: {
     height: 46,

@@ -98,6 +98,9 @@ const config: ExpoConfig = {
   extra: { eas: { projectId: expoProjectId } },
   plugins: [
     "expo-router",
+    "expo-asset",
+    "expo-font",
+    "expo-web-browser",
     [
       "@livekit/react-native-expo-plugin",
       {
