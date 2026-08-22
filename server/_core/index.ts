@@ -8,6 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { scheduledMediaCleanupHandler } from "../scheduled-media-cleanup";
+import { mediaDownloadHandler } from "../media-access";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -64,6 +65,7 @@ async function startServer() {
   });
 
   app.post("/api/scheduled/media-cleanup", scheduledMediaCleanupHandler);
+  app.get("/api/media/:mediaKey", mediaDownloadHandler);
 
   app.use(
     "/api/trpc",

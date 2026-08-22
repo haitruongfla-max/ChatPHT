@@ -584,6 +584,38 @@ export async function isConversationMember(conversationId: number, userId: numbe
   return membership.length > 0;
 }
 
+/** Chỉ xác nhận object media còn hiệu lực nếu người yêu cầu là thành viên hội thoại sở hữu nó. */
+export async function findAuthorizedConversationMedia(mediaKey: string, userId: number) {
+  const db = requireDb(await getDb());
+  const message = (
+    await db
+      .select({ conversationId: messages.conversationId, mediaMime: messages.mediaMime })
+      .from(messages)
+      .where(and(eq(messages.mediaKey, mediaKey), isNull(messages.recalledAt), isNull(messages.mediaCleanedAt)))
+      .limit(1)
+  )[0];
+  if (!message || !(await isConversationMember(message.conversationId, userId))) return undefined;
+  return { mediaMime: message.mediaMime ?? "application/octet-stream" };
+}
+
+/** Ảnh nền là riêng theo thành viên; chỉ thành viên sở hữu ảnh nền được tải lại. */
+export async function findAuthorizedWallpaper(mediaKey: string, userId: number) {
+  const db = requireDb(await getDb());
+  const wallpaper = await db
+    .select({ id: conversationMembers.id })
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.userId, userId), eq(conversationMembers.wallpaperKey, mediaKey)))
+    .limit(1);
+  return wallpaper[0] ? { mediaMime: "image/jpeg" } : undefined;
+}
+
+/** Ảnh đại diện chỉ phục vụ cho phiên đăng nhập hợp lệ; object key không được công khai qua proxy storage. */
+export async function findAuthorizedAvatar(mediaKey: string) {
+  const db = requireDb(await getDb());
+  const avatar = await db.select({ id: users.id }).from(users).where(eq(users.avatarKey, mediaKey)).limit(1);
+  return avatar[0] ? { mediaMime: "image/jpeg" } : undefined;
+}
+
 export async function getConversationPeer(conversationId: number, userId: number) {
   const db = requireDb(await getDb());
   const membership = await isConversationMember(conversationId, userId);

@@ -180,3 +180,7 @@
 - [x] Thiết lập lịch dọn media quá 30 ngày vào 02:00 hằng đêm theo phương án chạy nền tương thích.
 - [x] Kiểm thử hồi quy quota, FIFO, xóa tệp, thông báo chat, lịch dọn và lưu checkpoint.
 - [x] Kích hoạt tác vụ tự động 02:00 hằng đêm theo phương án chạy nền đã được Admin xác nhận.
+- [x] Rà soát endpoint tải media, URL ký và khóa object để xác định bề mặt truy cập trái phép.
+- [x] Bắt buộc phiên hợp lệ và quyền thành viên hội thoại cho mọi yêu cầu tải ảnh/video.
+- [x] Bảo đảm URL media có chữ ký hết hạn trong một giờ và khóa lưu trữ không chứa tên tệp gốc.
+- [x] Thêm kiểm thử hồi quy quyền tải media, URL ký và quy tắc đặt khóa; lưu checkpoint bảo mật.

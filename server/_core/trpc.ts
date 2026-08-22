@@ -17,6 +17,9 @@ const requireUser = t.middleware(async (opts) => {
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
   }
+  if (ctx.user.isMediaAccessToken) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Liên kết media chỉ được dùng để tải tệp." });
+  }
   if (isUserAccessExpired(ctx.user)) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Thời hạn sử dụng tài khoản đã kết thúc. Vui lòng liên hệ quản trị viên." });
   }

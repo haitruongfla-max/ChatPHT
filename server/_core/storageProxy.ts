@@ -9,6 +9,11 @@ export function registerStorageProxy(app: Express) {
       return;
     }
 
+    if (key.startsWith("swiftchat/") || key.startsWith("chatpht/media/") || key.startsWith("chatpht/wallpapers/") || key.startsWith("chatpht/avatars/")) {
+      res.status(403).json({ error: "protected-media-route-required" });
+      return;
+    }
+
     if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
       res.status(500).send("Storage proxy not configured");
       return;

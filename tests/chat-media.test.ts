@@ -26,6 +26,11 @@ vi.mock("../server/storage", () => ({
   storageCreateUploadUrl: vi.fn(),
   storageDelete: vi.fn(),
   storageGetSignedUrl: vi.fn(),
+  createOpaqueStorageKey: vi.fn((prefix: string, extension: string) => `${prefix}/opaque-object.${extension}`),
+}));
+
+vi.mock("../server/media-access", () => ({
+  createMediaAccessUrl: vi.fn(() => "https://api.example/api/media/capability?access_token=short-lived"),
 }));
 
 import * as db from "../server/db";
@@ -35,7 +40,7 @@ import * as storage from "../server/storage";
 function callerFor(userId = 7) {
   return appRouter.createCaller({
     user: { id: userId, role: "user", accessExpiresAt: null },
-    req: {},
+    req: { headers: { host: "api.example" }, protocol: "https" },
     res: { cookie: vi.fn(), clearCookie: vi.fn() },
   } as any);
 }
@@ -67,15 +72,14 @@ describe("chat media access controls", () => {
 
   it("sanitizes a permitted attachment name and returns a temporary media URL", async () => {
     vi.mocked(db.isConversationMember).mockResolvedValue(true);
-    vi.mocked(storage.storagePut).mockResolvedValue({ key: "swiftchat/18/7/example.jpg" } as any);
-    vi.mocked(storage.storageGetSignedUrl).mockResolvedValue("https://temporary.example/media.jpg");
+    vi.mocked(storage.storagePut).mockResolvedValue({ key: "chatpht/media/18/7/opaque-object.jpg" } as any);
     vi.mocked(db.createMessage).mockResolvedValue({
       id: 55,
       conversationId: 18,
       senderId: 7,
       body: null,
       contentType: "image",
-      mediaKey: "swiftchat/18/7/example.jpg",
+      mediaKey: "chatpht/media/18/7/opaque-object.jpg",
       mediaMime: "image/jpeg",
       mediaName: "summer_photo.jpg",
       mediaSize: 5,
@@ -85,10 +89,10 @@ describe("chat media access controls", () => {
     await expect(callerFor().messages.upload(uploadInput)).resolves.toMatchObject({
       id: 55,
       contentType: "image",
-      mediaUrl: "https://temporary.example/media.jpg",
-      mediaCacheKey: "swiftchat/18/7/example.jpg",
+      mediaUrl: "https://api.example/api/media/capability?access_token=short-lived",
+      mediaCacheKey: "chat-media-55",
     });
-    expect(storage.storagePut).toHaveBeenCalledWith(expect.stringContaining("summer_photo.jpg"), expect.any(Buffer), "image/jpeg");
+    expect(storage.storagePut).toHaveBeenCalledWith("chatpht/media/18/7/opaque-object.jpg", expect.any(Buffer), "image/jpeg");
   });
 
   it("hides a conversation only for the requesting account", async () => {
@@ -101,19 +105,19 @@ describe("chat media access controls", () => {
   it("issues a private wallpaper upload URL only after validating the requesting member", async () => {
     vi.mocked(db.getConversationWallpaperKey).mockResolvedValue({ wallpaperKey: null, wallpaperOpacity: 60 });
     vi.mocked(storage.storageCreateUploadUrl).mockResolvedValue({
-      key: "chatpht/wallpapers/7/18/new-wallpaper.jpg",
+      key: "chatpht/wallpapers/7/18/opaque-object.jpg",
       uploadUrl: "https://upload.example/wallpaper.jpg",
     } as any);
 
     await expect(
       callerFor(7).conversations.requestWallpaperUpload({ conversationId: 18, mimeType: "image/jpeg", size: 1024 }),
-    ).resolves.toMatchObject({ key: "chatpht/wallpapers/7/18/new-wallpaper.jpg" });
+    ).resolves.toMatchObject({ key: "chatpht/wallpapers/7/18/opaque-object.jpg" });
     expect(db.getConversationWallpaperKey).toHaveBeenCalledWith(18, 7);
   });
 
   it("accepts chat images up to 20 MiB and keeps the 100 MiB video limit separate", async () => {
     vi.mocked(db.isConversationMember).mockResolvedValue(true);
-    vi.mocked(storage.storageCreateUploadUrl).mockResolvedValue({ key: "swiftchat/18/7/photo.jpg", uploadUrl: "https://upload.example/photo.jpg" } as any);
+    vi.mocked(storage.storageCreateUploadUrl).mockResolvedValue({ key: "chatpht/media/18/7/opaque-object.jpg", uploadUrl: "https://upload.example/photo.jpg" } as any);
 
     await expect(callerFor(7).messages.requestMediaUpload({ conversationId: 18, filename: "photo.jpg", mimeType: "image/jpeg", size: 20 * 1024 * 1024 })).resolves.toMatchObject({ maximumSize: 20 * 1024 * 1024 });
     await expect(callerFor(7).messages.requestMediaUpload({ conversationId: 18, filename: "photo.jpg", mimeType: "image/jpeg", size: 20 * 1024 * 1024 + 1 })).rejects.toMatchObject({ code: "PAYLOAD_TOO_LARGE" });
@@ -134,11 +138,10 @@ describe("chat media access controls", () => {
     const nextKey = "chatpht/wallpapers/7/18/new-wallpaper.jpg";
     vi.mocked(db.setConversationWallpaperKey).mockResolvedValue({ previousKey: oldKey, wallpaperKey: nextKey, wallpaperOpacity: 58 });
     vi.mocked(storage.storageDelete).mockResolvedValue(undefined);
-    vi.mocked(storage.storageGetSignedUrl).mockResolvedValue("https://temporary.example/wallpaper.jpg");
 
     await expect(callerFor(7).conversations.setWallpaper({ conversationId: 18, wallpaperKey: nextKey, opacity: 58 })).resolves.toMatchObject({
       key: nextKey,
-      url: "https://temporary.example/wallpaper.jpg",
+      url: "https://api.example/api/media/capability?access_token=short-lived",
       opacity: 58,
     });
     expect(db.setConversationWallpaperKey).toHaveBeenCalledWith(18, 7, nextKey, 58);

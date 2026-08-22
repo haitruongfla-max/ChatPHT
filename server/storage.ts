@@ -28,6 +28,17 @@ function appendHashSuffix(relKey: string): string {
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
 }
 
+/**
+ * Sinh khóa object chỉ gồm namespace kỹ thuật, định danh ngẫu nhiên và phần mở rộng.
+ * Tên tệp gốc chỉ được lưu làm metadata hiển thị trong cơ sở dữ liệu, không đi vào key S3.
+ */
+export function createOpaqueStorageKey(prefix: string, extension: string): string {
+  const safePrefix = normalizeKey(prefix).replace(/[^a-zA-Z0-9/_-]/g, "").replace(/\/+$/, "");
+  const safeExtension = extension.replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 8) || "bin";
+  if (!safePrefix) throw new Error("Storage key prefix is required");
+  return `${safePrefix}/${crypto.randomUUID().replace(/-/g, "")}.${safeExtension}`;
+}
+
 async function createPresignedPutUrl(key: string): Promise<string> {
   const { forgeUrl, forgeKey } = getForgeConfig();
   const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");

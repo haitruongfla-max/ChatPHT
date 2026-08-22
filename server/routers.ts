@@ -10,7 +10,8 @@ import * as db from "./db";
 import { runMediaCleanup } from "./media-cleanup";
 import { createLiveKitCallToken } from "./call-token";
 import { dispatchIncomingCallPushNotification, dispatchNewMessagePushNotifications } from "./push";
-import { storageCreateUploadUrl, storageDelete, storageGetSignedUrl, storagePut } from "./storage";
+import { createMediaAccessUrl } from "./media-access";
+import { createOpaqueStorageKey, storageCreateUploadUrl, storageDelete, storagePut } from "./storage";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
 const credentialsSchema = z.object({
@@ -66,12 +67,40 @@ function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | A
     recalledBy: message.recalledBy,
     createdAt: message.createdAt,
     mediaUrl,
-    mediaCacheKey: message.mediaKey ?? null,
+    mediaCacheKey: message.mediaKey ? `chat-media-${message.id}` : null,
     mediaCleanedAt: message.mediaCleanedAt ?? null,
     reactions: "reactions" in message ? message.reactions : [],
     recipientDeliveredAt: "recipientDeliveredAt" in message ? message.recipientDeliveredAt : null,
     recipientReadAt: "recipientReadAt" in message ? message.recipientReadAt : null,
   };
+}
+
+function extensionForMime(mimeType: string) {
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  if (mimeType === "image/gif") return "gif";
+  if (mimeType === "video/quicktime") return "mov";
+  if (mimeType === "video/mp4") return "mp4";
+  return "jpg";
+}
+
+function chatMediaKey(conversationId: number, userId: number, mimeType: string) {
+  return createOpaqueStorageKey(`chatpht/media/${conversationId}/${userId}`, extensionForMime(mimeType));
+}
+
+async function withSecureAvatarUrls<T>(ctx: { req: any; user: any }, value: T): Promise<T> {
+  if (Array.isArray(value)) return Promise.all(value.map((item) => withSecureAvatarUrls(ctx, item))) as T;
+  if (!value || typeof value !== "object" || value instanceof Date) return value;
+  const record = value as Record<string, unknown>;
+  const clone: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(record)) {
+    if (key === "avatarUrl" && typeof nested === "string" && nested.startsWith("/manus-storage/")) {
+      clone[key] = await createMediaAccessUrl(ctx.req, ctx.user, nested.slice("/manus-storage/".length));
+    } else {
+      clone[key] = await withSecureAvatarUrls(ctx, nested);
+    }
+  }
+  return clone as T;
 }
 
 async function signInResponse(ctx: { req: any; res: any }, user: Awaited<ReturnType<typeof db.getUserById>>) {
@@ -84,7 +113,7 @@ async function signInResponse(ctx: { req: any; res: any }, user: Awaited<ReturnT
     ...getSessionCookieOptions(ctx.req),
     maxAge: ONE_YEAR_MS,
   });
-  return { token, user: db.toPublicProfile(user) };
+  return { token, user: await withSecureAvatarUrls({ ...ctx, user }, db.toPublicProfile(user)) };
 }
 
 function appError(error: unknown, fallback: string): never {
@@ -96,7 +125,7 @@ function appError(error: unknown, fallback: string): never {
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query(({ ctx }) => (ctx.user ? db.toPublicProfile(ctx.user) : null)),
+    me: publicProcedure.query(({ ctx }) => (ctx.user ? withSecureAvatarUrls(ctx, db.toPublicProfile(ctx.user)) : null)),
     usernameAvailable: publicProcedure
       .input(z.object({ username: z.string().trim().min(3).max(24) }))
       .query(async ({ input }) => {
@@ -144,12 +173,11 @@ export const appRouter = router({
     }),
   }),
   profile: router({
-    me: protectedProcedure.query(({ ctx }) => db.toPublicProfile(ctx.user)),
+    me: protectedProcedure.query(({ ctx }) => withSecureAvatarUrls(ctx, db.toPublicProfile(ctx.user))),
     requestAvatarUpload: protectedProcedure
       .input(z.object({ filename: z.string().trim().min(1).max(80), mimeType: avatarMimeSchema, size: z.number().int().positive().max(MAX_AVATAR_BYTES) }))
       .mutation(async ({ ctx, input }) => {
-        const extension = input.mimeType === "image/png" ? "png" : input.mimeType === "image/webp" ? "webp" : "jpg";
-        const storage = await storageCreateUploadUrl(`chatpht/avatars/${ctx.user.id}/${Date.now()}-avatar.${extension}`);
+        const storage = await storageCreateUploadUrl(createOpaqueStorageKey(`chatpht/avatars/${ctx.user.id}`, extensionForMime(input.mimeType)));
         return { ...storage, maximumSize: MAX_AVATAR_BYTES };
       }),
     update: protectedProcedure
@@ -160,11 +188,11 @@ export const appRouter = router({
         }
         const updated = await db.updateOwnProfile({ userId: ctx.user.id, displayName: input.displayName, avatarKey: input.avatarKey });
         if (updated.replacedAvatarKey) void storageDelete(updated.replacedAvatarKey).catch(() => undefined);
-        return updated.profile;
+        return withSecureAvatarUrls(ctx, updated.profile);
       }),
   }),
   admin: router({
-    listUsers: adminProcedure.query(() => db.listManagedUsers()),
+    listUsers: adminProcedure.query(async ({ ctx }) => withSecureAvatarUrls(ctx, await db.listManagedUsers())),
     storageSummary: adminProcedure.query(() => db.getStorageUsageSummary()),
     updateStorageQuota: adminProcedure
       .input(z.object({ quotaGb: z.union([z.literal(20), z.literal(50), z.literal(100), z.literal(200)]), unlimited: z.boolean() }))
@@ -267,15 +295,15 @@ export const appRouter = router({
       .input(z.object({ conversationId: z.number().int().positive(), limit: z.number().int().min(1).max(100).default(60) }))
       .query(async ({ ctx, input }) => {
         try {
-          return await db.listCallSessionsByConversation(input.conversationId, ctx.user.id, input.limit);
+          return await withSecureAvatarUrls(ctx, await db.listCallSessionsByConversation(input.conversationId, ctx.user.id, input.limit));
         } catch (error) {
           return appError(error, "Không thể tải lịch sử cuộc gọi.");
         }
       }),
-    incoming: protectedProcedure.query(async ({ ctx }) => db.getIncomingCallSession(ctx.user.id)),
+    incoming: protectedProcedure.query(async ({ ctx }) => withSecureAvatarUrls(ctx, await db.getIncomingCallSession(ctx.user.id))),
     get: protectedProcedure
       .input(z.object({ callId: z.string().uuid() }))
-      .query(async ({ ctx, input }) => db.getCallSession(input.callId, ctx.user.id)),
+      .query(async ({ ctx, input }) => withSecureAvatarUrls(ctx, await db.getCallSession(input.callId, ctx.user.id))),
     answer: protectedProcedure
       .input(z.object({ callId: z.string().uuid() }))
       .mutation(async ({ ctx, input }) => {
@@ -320,9 +348,9 @@ export const appRouter = router({
   friends: router({
     search: protectedProcedure
       .input(z.object({ query: z.string().trim().min(1).max(24) }))
-      .query(({ ctx, input }) => db.searchProfiles(normalizeUsername(input.query), ctx.user.id)),
-    incoming: protectedProcedure.query(({ ctx }) => db.listIncomingFriendRequests(ctx.user.id)),
-    contacts: protectedProcedure.query(({ ctx }) => db.listContacts(ctx.user.id)),
+      .query(async ({ ctx, input }) => withSecureAvatarUrls(ctx, await db.searchProfiles(normalizeUsername(input.query), ctx.user.id))),
+    incoming: protectedProcedure.query(async ({ ctx }) => withSecureAvatarUrls(ctx, await db.listIncomingFriendRequests(ctx.user.id))),
+    contacts: protectedProcedure.query(async ({ ctx }) => withSecureAvatarUrls(ctx, await db.listContacts(ctx.user.id))),
     request: protectedProcedure
       .input(z.object({ username: z.string().trim().min(3).max(24) }))
       .mutation(async ({ ctx, input }) => {
@@ -351,7 +379,7 @@ export const appRouter = router({
       }),
   }),
   conversations: router({
-    list: protectedProcedure.query(({ ctx }) => db.listConversations(ctx.user.id)),
+    list: protectedProcedure.query(async ({ ctx }) => withSecureAvatarUrls(ctx, await db.listConversations(ctx.user.id))),
     wallpaper: protectedProcedure
       .input(z.object({ conversationId: z.number().int().positive() }))
       .query(async ({ ctx, input }) => {
@@ -359,7 +387,7 @@ export const appRouter = router({
           const wallpaper = await db.getConversationWallpaperKey(input.conversationId, ctx.user.id);
           return {
             key: wallpaper.wallpaperKey,
-            url: wallpaper.wallpaperKey ? await storageGetSignedUrl(wallpaper.wallpaperKey) : null,
+            url: wallpaper.wallpaperKey ? await createMediaAccessUrl(ctx.req, ctx.user, wallpaper.wallpaperKey) : null,
             opacity: wallpaper.wallpaperOpacity,
           };
         } catch (error) {
@@ -371,7 +399,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         await db.getConversationWallpaperKey(input.conversationId, ctx.user.id);
         const storage = await storageCreateUploadUrl(
-          `chatpht/wallpapers/${ctx.user.id}/${input.conversationId}/${Date.now()}-wallpaper.jpg`,
+          createOpaqueStorageKey(`chatpht/wallpapers/${ctx.user.id}/${input.conversationId}`, extensionForMime(input.mimeType)),
         );
         return { ...storage, maximumSize: MAX_WALLPAPER_BYTES };
       }),
@@ -391,7 +419,7 @@ export const appRouter = router({
         }
         return {
           key: result.wallpaperKey,
-          url: result.wallpaperKey ? await storageGetSignedUrl(result.wallpaperKey) : null,
+          url: result.wallpaperKey ? await createMediaAccessUrl(ctx.req, ctx.user, result.wallpaperKey) : null,
           opacity: result.wallpaperOpacity,
         };
       }),
@@ -409,7 +437,7 @@ export const appRouter = router({
         const conversation = await db.getOrCreateDirectConversation(ctx.user.id, input.peerId);
         await db.restoreConversationForUser(conversation.id, ctx.user.id);
         const peer = await db.getConversationPeer(conversation.id, ctx.user.id);
-        return { id: conversation.id, peer };
+        return withSecureAvatarUrls(ctx, { id: conversation.id, peer });
       }),
     remove: protectedProcedure
       .input(z.object({ conversationId: z.number().int().positive() }))
@@ -444,7 +472,7 @@ export const appRouter = router({
         try {
           const items = await db.listMessages(input.conversationId, ctx.user.id);
           return Promise.all(
-            items.map(async (message) => publicMessage(message, message.mediaKey && !message.mediaCleanedAt ? await storageGetSignedUrl(message.mediaKey) : null)),
+            items.map(async (message) => publicMessage(message, message.mediaKey && !message.mediaCleanedAt ? await createMediaAccessUrl(ctx.req, ctx.user, message.mediaKey) : null)),
           );
         } catch (error) {
           return appError(error, "Không thể tải tin nhắn.");
@@ -529,7 +557,7 @@ export const appRouter = router({
         }
         const safeFilename = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "attachment";
         const stored = await storagePut(
-          `swiftchat/${input.conversationId}/${ctx.user.id}/${Date.now()}-${safeFilename}`,
+          chatMediaKey(input.conversationId, ctx.user.id, input.mimeType),
           data,
           input.mimeType,
         );
@@ -543,7 +571,7 @@ export const appRouter = router({
             mediaSize: data.length,
           });
           void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
-          return publicMessage(message, await storageGetSignedUrl(stored.key));
+          return publicMessage(message, await createMediaAccessUrl(ctx.req, ctx.user, stored.key));
       }),
     requestVideoUpload: protectedProcedure
       .input(z.object({
@@ -557,7 +585,7 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền gửi tệp vào hội thoại này." });
         }
         const filename = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "video.mp4";
-        const storage = await storageCreateUploadUrl(`swiftchat/${input.conversationId}/${ctx.user.id}/${Date.now()}-${filename}`);
+        const storage = await storageCreateUploadUrl(chatMediaKey(input.conversationId, ctx.user.id, input.mimeType));
         return { ...storage, filename, maximumSize: MAX_VIDEO_BYTES };
       }),
     requestMediaUpload: protectedProcedure
@@ -577,9 +605,9 @@ export const appRouter = router({
            code: "PAYLOAD_TOO_LARGE",
             message: input.mimeType.startsWith("video/") ? "Video tối đa 100 MB." : "Ảnh tối đa 20 MB.",
          });
-       }
+        }
         const filename = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "attachment";
-        const storage = await storageCreateUploadUrl(`swiftchat/${input.conversationId}/${ctx.user.id}/${Date.now()}-${filename}`);
+        const storage = await storageCreateUploadUrl(chatMediaKey(input.conversationId, ctx.user.id, input.mimeType));
         return { ...storage, filename, maximumSize };
       }),
     completeVideoUpload: protectedProcedure
@@ -594,7 +622,7 @@ export const appRouter = router({
         if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền gửi tệp vào hội thoại này." });
         }
-        const ownedPrefix = `swiftchat/${input.conversationId}/${ctx.user.id}/`;
+        const ownedPrefix = `chatpht/media/${input.conversationId}/${ctx.user.id}/`;
         if (!input.key.startsWith(ownedPrefix)) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Tệp tải lên không hợp lệ." });
         }
@@ -608,7 +636,7 @@ export const appRouter = router({
           mediaSize: input.size,
         });
         void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
-        return publicMessage(message, await storageGetSignedUrl(input.key));
+        return publicMessage(message, await createMediaAccessUrl(ctx.req, ctx.user, input.key));
       }),
     completeMediaUpload: protectedProcedure
       .input(z.object({
@@ -629,7 +657,7 @@ export const appRouter = router({
             message: input.mimeType.startsWith("video/") ? "Video tối đa 100 MB." : "Ảnh tối đa 20 MB.",
          });
        }
-        const ownedPrefix = `swiftchat/${input.conversationId}/${ctx.user.id}/`;
+        const ownedPrefix = `chatpht/media/${input.conversationId}/${ctx.user.id}/`;
         if (!input.key.startsWith(ownedPrefix)) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Tệp tải lên không hợp lệ." });
         }
@@ -643,7 +671,7 @@ export const appRouter = router({
           mediaSize: input.size,
         });
         void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
-        return publicMessage(message, await storageGetSignedUrl(input.key));
+        return publicMessage(message, await createMediaAccessUrl(ctx.req, ctx.user, input.key));
       }),
     recall: protectedProcedure
       .input(z.object({ messageId: z.number().int().positive() }))
