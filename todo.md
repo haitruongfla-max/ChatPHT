@@ -133,3 +133,6 @@
 - [x] Mở rộng thiết lập ảnh nền riêng để lưu độ mờ theo từng người dùng và cuộc trò chuyện.
 - [x] Bổ sung thanh trượt trực quan để điều chỉnh độ mờ ảnh nền, có xem trước tức thì và nhãn phần trăm dễ hiểu.
 - [x] Kiểm thử hồi quy độ rõ nội dung, lưu thiết lập nền và các luồng chat hiện có; lưu checkpoint bàn giao.
+- [x] Bổ sung mục Danh bạ chỉ hiển thị người đã kết bạn, hỗ trợ tìm kiếm và mở cuộc trò chuyện.
+- [x] Bổ sung thao tác nhấn giữ cuộc trò chuyện để mở xác nhận xóa sạch nội dung và media với xác nhận rõ ràng.
+- [x] Kiểm thử hồi quy danh bạ, xóa hội thoại và toàn bộ luồng chat; lưu checkpoint bàn giao (TypeScript và 50/50 kiểm thử đạt).

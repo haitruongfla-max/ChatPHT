@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Redirect, router } from "expo-router";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { ProfileAvatar } from "@/components/profile-avatar";
 
@@ -18,11 +18,31 @@ export default function InboxScreen() {
   const { user, loading } = useAuth();
   const conversations = trpc.conversations.list.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 2500 });
   const requests = trpc.friends.incoming.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 5000 });
+  const clearConversation = trpc.conversations.clearContent.useMutation();
   const [refreshing, setRefreshing] = useState(false);
   const refreshInbox = useCallback(async () => {
     setRefreshing(true);
     try { await conversations.refetch(); } finally { setRefreshing(false); }
   }, [conversations]);
+
+  const clearContent = async (conversationId: number) => {
+    try {
+      await clearConversation.mutateAsync({ conversationId });
+      await conversations.refetch();
+    } catch (error) {
+      Alert.alert("Không thể xóa sạch", error instanceof Error ? error.message : "Vui lòng thử lại.");
+    }
+  };
+
+  const confirmClearContent = (conversationId: number, displayName: string) =>
+    Alert.alert(
+      "Xóa sạch toàn bộ nội dung?",
+      `Tin nhắn, ảnh và video trong cuộc trò chuyện với ${displayName} sẽ bị xóa vĩnh viễn cho cả hai người. Thao tác này không thể hoàn tác.`,
+      [
+        { text: "Hủy", style: "cancel" },
+        { text: "Xóa sạch", style: "destructive", onPress: () => void clearContent(conversationId) },
+      ],
+    );
 
   if (loading) return <ScreenContainer className="items-center justify-center"><ActivityIndicator color="#2563EB" /></ScreenContainer>;
   if (!user) return <Redirect href={"/login" as never} />;
@@ -61,7 +81,15 @@ export default function InboxScreen() {
         contentContainerStyle={(conversations.data?.length ?? 0) === 0 ? styles.emptyList : styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refreshInbox()} tintColor="#2563EB" />}
         renderItem={({ item }) => (
-          <Pressable onPress={() => router.push(`/chat/${item.id}` as never)} style={({ pressed }) => [styles.thread, pressed && styles.threadPressed]}>
+          <Pressable
+            onPress={() => router.push(`/chat/${item.id}` as never)}
+            onLongPress={() => confirmClearContent(item.id, item.peer.displayName)}
+            delayLongPress={450}
+            disabled={clearConversation.isPending}
+            style={({ pressed }) => [styles.thread, (pressed || clearConversation.isPending) && styles.threadPressed]}
+            accessibilityLabel={`Mở cuộc trò chuyện với ${item.peer.displayName}`}
+            accessibilityHint="Nhấn giữ để xóa sạch toàn bộ nội dung cuộc trò chuyện"
+          >
             <ProfileAvatar name={item.peer.displayName} avatarUrl={item.peer.avatarUrl} size={50} style={styles.avatar} />
             <View style={styles.threadBody}>
               <View style={styles.threadTop}><Text numberOfLines={1} style={styles.threadName}>{item.peer.displayName}</Text><Text style={styles.time}>{item.latestMessage ? new Date(item.latestMessage.createdAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }) : ""}</Text></View>
