@@ -4,10 +4,12 @@ import {
   ChatMediaPreview,
   ChatMediaViewer,
 } from "@/components/chat-media-viewer";
+import { ChatMediaGrid } from "@/components/chat-media-grid";
 import {
   resolveMediaUploadUri,
   uploadMediaDirectly,
 } from "@/lib/direct-media-upload";
+import { runMediaUploadQueue } from "@/lib/media-upload-queue";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
@@ -37,6 +39,7 @@ type ChatMessage = {
   mediaUrl: string | null;
   mediaCacheKey: string | null;
   mediaName: string | null;
+  mediaBatchId: string | null;
   mediaCleanedAt: Date | null;
   recalledAt: Date | null;
   recalledBy: number | null;
@@ -56,9 +59,20 @@ type CallHistory = {
   direction: "incoming" | "outgoing";
 };
 
+type TimelineMessage = ChatMessage & { albumItems?: ChatMessage[] };
+
 type TimelineItem =
-  | (ChatMessage & { entryType: "message" })
+  | (TimelineMessage & { entryType: "message" })
   | (CallHistory & { entryType: "call" });
+
+type UploadCandidate = {
+  id: string;
+  uri: string;
+  assetId?: string | null;
+  fileName: string;
+  size: number;
+  mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "video/mp4" | "video/quicktime";
+};
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
 
@@ -214,6 +228,7 @@ export default function ChatScreen() {
   const messageCount = messages.data?.length ?? 0;
   const sendText = trpc.messages.sendText.useMutation();
   const requestMediaUpload = trpc.messages.requestMediaUpload.useMutation();
+  const preflightMediaUpload = trpc.messages.preflightMediaUpload.useMutation();
   const completeMediaUpload = trpc.messages.completeMediaUpload.useMutation();
   const toggleReaction = trpc.messages.toggleReaction.useMutation();
   const { mutateAsync: markRead } = trpc.messages.markRead.useMutation();
@@ -232,7 +247,15 @@ export default function ChatScreen() {
     [],
   );
   const timeline = useMemo<TimelineItem[]>(() => {
-    const messageItems = ((messages.data ?? []) as ChatMessage[]).map((message) => ({ ...message, entryType: "message" as const }));
+    const sourceMessages = (messages.data ?? []) as ChatMessage[];
+    const renderedBatches = new Set<string>();
+    const messageItems = sourceMessages.flatMap((message) => {
+      if (!message.mediaBatchId) return [{ ...message, entryType: "message" as const }];
+      if (renderedBatches.has(message.mediaBatchId)) return [];
+      renderedBatches.add(message.mediaBatchId);
+      const albumItems = sourceMessages.filter((candidate) => candidate.mediaBatchId === message.mediaBatchId);
+      return [{ ...message, albumItems, entryType: "message" as const }];
+    });
     const callItems = ((callHistory.data ?? []) as CallHistory[]).map((call) => ({ ...call, entryType: "call" as const }));
     return [...messageItems, ...callItems].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
   }, [callHistory.data, messages.data]);
@@ -372,93 +395,102 @@ export default function ChatScreen() {
 
   const chooseMedia = async () => {
     if (uploading) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Cần quyền thư viện", "Hãy cho phép ChatPHT truy cập thư viện ảnh và video để gửi tệp.");
+      return;
+    }
     const picked = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.All,
+      allowsMultipleSelection: true,
+      selectionLimit: 50,
       allowsEditing: false,
-      quality: 0.85,
+      quality: 1,
     });
-    if (picked.canceled || !picked.assets[0]) return;
-    const asset = picked.assets[0];
-    const isVideo = asset.type === "video";
-    const maxBytes = isVideo ? 100 * 1024 * 1024 : 20 * 1024 * 1024;
-    const fileSize = asset.fileSize;
-    if (!fileSize) {
-      Alert.alert(
-        "Không đọc được dung lượng",
-        "Hãy chọn lại tệp từ thư viện để SwiftChat kiểm tra giới hạn an toàn.",
-      );
-      return;
+    if (picked.canceled || picked.assets.length === 0) return;
+
+    const supportedMimeTypes = new Set<UploadCandidate["mimeType"]>([
+      "image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/quicktime",
+    ]);
+    const candidates: UploadCandidate[] = [];
+    for (const [index, asset] of picked.assets.slice(0, 50).entries()) {
+      const isVideo = asset.type === "video";
+      const fileSize = asset.fileSize;
+      const mimeType = asset.mimeType ?? (isVideo ? "video/mp4" : "image/jpeg");
+      if (!fileSize) {
+        Alert.alert("Không đọc được dung lượng", "Hãy chọn lại media để ChatPHT kiểm tra giới hạn an toàn.");
+        return;
+      }
+      if (!supportedMimeTypes.has(mimeType as UploadCandidate["mimeType"])) {
+        Alert.alert("Định dạng chưa hỗ trợ", "Hãy chọn ảnh JPEG/PNG/WEBP/GIF hoặc video MP4/MOV.");
+        return;
+      }
+      const maxBytes = isVideo ? 1024 * 1024 * 1024 : 20 * 1024 * 1024;
+      if (fileSize > maxBytes) {
+        Alert.alert("Tệp quá lớn", isVideo ? "Video tối đa 1GB." : "Ảnh tối đa 20 MB.");
+        return;
+      }
+      candidates.push({
+        id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+        uri: asset.uri,
+        assetId: asset.assetId,
+        fileName: asset.fileName ?? `chatpht-${Date.now()}-${index}.${isVideo ? "mp4" : "jpg"}`,
+        size: fileSize,
+        mimeType: mimeType as UploadCandidate["mimeType"],
+      });
     }
-    if (fileSize > maxBytes) {
-      Alert.alert(
-        "Tệp quá lớn",
-        isVideo ? "Video tối đa 100 MB." : "Ảnh tối đa 20 MB.",
-      );
-      return;
-    }
-    const mimeType = asset.mimeType ?? (isVideo ? "video/mp4" : "image/jpeg");
-    const filename =
-      asset.fileName ?? `swiftchat-${Date.now()}.${isVideo ? "mp4" : "jpg"}`;
-    if (
-      !(
-        mimeType.startsWith("image/") ||
-        mimeType === "video/mp4" ||
-        mimeType === "video/quicktime"
-      )
-    ) {
-      Alert.alert(
-        "Định dạng chưa hỗ trợ",
-        "Hãy chọn ảnh JPEG/PNG/WEBP/GIF hoặc video MP4/MOV.",
-      );
-      return;
-    }
+    if (candidates.length === 0) return;
+
     setUploading(true);
     setUploadProgress(0);
-    setUploadLabel("Chuẩn bị tệp...");
+    setUploadLabel(`Đang gửi 0/${candidates.length}...`);
     try {
-      const uploadUri = await resolveMediaUploadUri(asset.uri, asset.assetId);
-      const prepared = await requestMediaUpload.mutateAsync({
+      const preflight = await preflightMediaUpload.mutateAsync({
         conversationId,
-        filename,
-        mimeType: mimeType as
-          | "image/jpeg"
-          | "image/png"
-          | "image/webp"
-          | "image/gif"
-          | "video/mp4"
-          | "video/quicktime",
-        size: fileSize,
+        totalBytes: candidates.reduce((total, item) => total + item.size, 0),
+        fileCount: candidates.length,
       });
-      setUploadLabel("Đang tải lên");
-      await uploadMediaDirectly({
-        uri: uploadUri,
-        uploadUrl: prepared.uploadUrl,
-        mimeType,
-        onProgress: setUploadProgress,
-      });
-      setUploadProgress(100);
-      setUploadLabel("Đang gửi tin nhắn...");
-      await completeMediaUpload.mutateAsync({
-        conversationId,
-        key: prepared.key,
-        filename: prepared.filename,
-        mimeType: mimeType as
-          | "image/jpeg"
-          | "image/png"
-          | "image/webp"
-          | "image/gif"
-          | "video/mp4"
-          | "video/quicktime",
-        size: fileSize,
-      });
+      if (preflight.nearQuota) {
+        Alert.alert("Kho gần đầy", "Kho gần đầy, sẽ tự dọn ảnh cũ nhất.");
+      }
+      const mediaBatchId = `batch-${Date.now()}-${Math.random().toString(36).slice(2, 16)}`;
+      await runMediaUploadQueue(
+        candidates,
+        async (candidate, onProgress) => {
+          const uploadUri = await resolveMediaUploadUri(candidate.uri, candidate.assetId);
+          const prepared = await requestMediaUpload.mutateAsync({
+            conversationId,
+            filename: candidate.fileName,
+            mimeType: candidate.mimeType,
+            size: candidate.size,
+          });
+          await uploadMediaDirectly({
+            uri: uploadUri,
+            uploadUrl: prepared.uploadUrl,
+            mimeType: candidate.mimeType,
+            onProgress,
+          });
+          await completeMediaUpload.mutateAsync({
+            conversationId,
+            key: prepared.key,
+            filename: prepared.filename,
+            mimeType: candidate.mimeType,
+            size: candidate.size,
+            mediaBatchId,
+          });
+        },
+        ({ completed, total, percent }) => {
+          setUploadProgress(percent);
+          setUploadLabel(completed === total ? "Đang hoàn tất tin nhắn..." : `Đang gửi ${completed}/${total}...`);
+        },
+        3,
+      );
       await utils.messages.list.invalidate({ conversationId });
       void utils.conversations.list.invalidate();
     } catch (error) {
       Alert.alert(
         "Không tải được tệp",
-        error instanceof Error
-          ? error.message
-          : "Vui lòng thử lại bằng tệp nhỏ hơn.",
+        error instanceof Error ? error.message : "Vui lòng thử lại bằng tệp nhỏ hơn.",
       );
     } finally {
       setUploading(false);
@@ -707,7 +739,19 @@ export default function ChatScreen() {
                       </View>
                     ) : (
                       <>
-                        {item.contentType === "image" && item.mediaUrl ? (
+                        {item.albumItems && item.albumItems.length > 1 ? (
+                          <ChatMediaGrid
+                            items={item.albumItems}
+                            onOpen={(media) =>
+                              setPreview({
+                                uri: media.mediaUrl as string,
+                                type: media.contentType === "video" ? "video" : "image",
+                                name: media.mediaName,
+                              })
+                            }
+                          />
+                        ) : null}
+                        {(!item.albumItems || item.albumItems.length === 1) && item.contentType === "image" && item.mediaUrl ? (
                           <Pressable
                             onPress={() =>
                               setPreview({
@@ -732,7 +776,7 @@ export default function ChatScreen() {
                             />
                           </Pressable>
                         ) : null}
-                        {item.contentType === "video" && item.mediaUrl ? (
+                        {(!item.albumItems || item.albumItems.length === 1) && item.contentType === "video" && item.mediaUrl ? (
                           <VideoBubble
                             uri={item.mediaUrl}
                             onOpen={() =>

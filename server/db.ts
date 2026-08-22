@@ -864,6 +864,7 @@ export async function createMessage(input: {
   mediaMime?: string | null;
   mediaName?: string | null;
   mediaSize?: number | null;
+  mediaBatchId?: string | null;
 }) {
   const db = requireDb(await getDb());
   if (!(await isConversationMember(input.conversationId, input.senderId))) {

@@ -9,6 +9,24 @@ type DirectUploadInput = {
   onProgress?: (percent: number) => void;
 };
 
+const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+
+function withUploadTimeout<T>(operation: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Tải tệp vượt quá thời gian 10 phút. Hãy kiểm tra kết nối và thử lại.")), UPLOAD_TIMEOUT_MS);
+    operation.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 /**
  * Converts library-provider URIs into files that Expo FileSystem can upload.
  * iOS may provide a ph:// URI and Android may provide a content:// URI; neither
@@ -45,7 +63,9 @@ export async function uploadMediaDirectly({ uri, uploadUrl, mimeType, onProgress
     onProgress?.(0);
     const source = await fetch(uri);
     const blob = await source.blob();
-    const response = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": mimeType }, body: blob });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+    const response = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": mimeType }, body: blob, signal: controller.signal }).finally(() => clearTimeout(timeout));
     if (!response.ok) throw new Error(`Không thể tải tệp lên kho riêng tư (mã ${response.status}).`);
     onProgress?.(100);
     return;
@@ -59,7 +79,7 @@ export async function uploadMediaDirectly({ uri, uploadUrl, mimeType, onProgress
     if (!progress.totalBytesExpectedToSend) return;
     onProgress?.(Math.min(100, Math.round((progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100)));
   });
-  const response = await task.uploadAsync();
+  const response = await withUploadTimeout(task.uploadAsync());
   if (!response) throw new Error("Không nhận được phản hồi khi tải tệp lên kho riêng tư.");
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`Không thể tải tệp lên kho riêng tư (mã ${response.status}).`);

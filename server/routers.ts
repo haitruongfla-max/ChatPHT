@@ -30,7 +30,7 @@ const mediaMimeSchema = z.enum([
 const videoMimeSchema = z.enum(["video/mp4", "video/quicktime"]);
 const avatarMimeSchema = z.enum(["image/jpeg", "image/png", "image/webp"]);
 const reactionEmojiSchema = z.enum(["👍", "❤️", "😂", "😮", "😢", "🔥"]);
-const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
 const MAX_WALLPAPER_BYTES = 6 * 1024 * 1024;
@@ -63,6 +63,7 @@ function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | A
     mediaMime: message.mediaMime,
     mediaName: message.mediaName,
     mediaSize: message.mediaSize,
+    mediaBatchId: message.mediaBatchId,
     recalledAt: message.recalledAt,
     recalledBy: message.recalledBy,
     createdAt: message.createdAt,
@@ -578,11 +579,14 @@ export const appRouter = router({
         conversationId: z.number().int().positive(),
         filename: z.string().trim().min(1).max(120),
         mimeType: videoMimeSchema,
-        size: z.number().int().positive().max(MAX_VIDEO_BYTES),
+        size: z.number().int().positive(),
       }))
       .mutation(async ({ ctx, input }) => {
         if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền gửi tệp vào hội thoại này." });
+        }
+        if (input.size > MAX_VIDEO_BYTES) {
+          throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "Video tối đa 1GB." });
         }
         const filename = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "video.mp4";
         const storage = await storageCreateUploadUrl(chatMediaKey(input.conversationId, ctx.user.id, input.mimeType));
@@ -593,7 +597,7 @@ export const appRouter = router({
         conversationId: z.number().int().positive(),
         filename: z.string().trim().min(1).max(120),
         mimeType: mediaMimeSchema,
-        size: z.number().int().positive().max(MAX_VIDEO_BYTES),
+        size: z.number().int().positive(),
       }))
       .mutation(async ({ ctx, input }) => {
         if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
@@ -603,12 +607,27 @@ export const appRouter = router({
        if (input.size > maximumSize) {
          throw new TRPCError({
            code: "PAYLOAD_TOO_LARGE",
-            message: input.mimeType.startsWith("video/") ? "Video tối đa 100 MB." : "Ảnh tối đa 20 MB.",
+            message: input.mimeType.startsWith("video/") ? "Video tối đa 1GB." : "Ảnh tối đa 20 MB.",
          });
         }
         const filename = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "attachment";
         const storage = await storageCreateUploadUrl(chatMediaKey(input.conversationId, ctx.user.id, input.mimeType));
         return { ...storage, filename, maximumSize };
+      }),
+    preflightMediaUpload: protectedProcedure
+      .input(z.object({
+        conversationId: z.number().int().positive(),
+        totalBytes: z.number().int().positive().max(MAX_VIDEO_BYTES * 50),
+        fileCount: z.number().int().min(1).max(50),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền gửi tệp vào hội thoại này." });
+        }
+        const usage = await db.getStorageUsageSummary();
+        const projectedBytes = usage.usedBytes + input.totalBytes;
+        const nearQuota = !usage.unlimited && usage.quotaBytes !== null && projectedBytes >= usage.quotaBytes * 0.9;
+        return { nearQuota, projectedBytes, quotaBytes: usage.quotaBytes, unlimited: usage.unlimited };
       }),
     completeVideoUpload: protectedProcedure
       .input(z.object({
@@ -616,11 +635,15 @@ export const appRouter = router({
         key: z.string().trim().min(10).max(320),
         filename: z.string().trim().min(1).max(120),
         mimeType: videoMimeSchema,
-        size: z.number().int().positive().max(MAX_VIDEO_BYTES),
+        size: z.number().int().positive(),
+        mediaBatchId: z.string().trim().min(12).max(80).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền gửi tệp vào hội thoại này." });
+        }
+        if (input.size > MAX_VIDEO_BYTES) {
+          throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "Video tối đa 1GB." });
         }
         const ownedPrefix = `chatpht/media/${input.conversationId}/${ctx.user.id}/`;
         if (!input.key.startsWith(ownedPrefix)) {
@@ -634,6 +657,7 @@ export const appRouter = router({
           mediaMime: input.mimeType,
           mediaName: input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100),
           mediaSize: input.size,
+          mediaBatchId: input.mediaBatchId ?? null,
         });
         void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
         return publicMessage(message, await createMediaAccessUrl(ctx.req, ctx.user, input.key));
@@ -644,7 +668,8 @@ export const appRouter = router({
         key: z.string().trim().min(10).max(320),
         filename: z.string().trim().min(1).max(120),
         mimeType: mediaMimeSchema,
-        size: z.number().int().positive().max(MAX_VIDEO_BYTES),
+        size: z.number().int().positive(),
+        mediaBatchId: z.string().trim().min(12).max(80).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
@@ -654,7 +679,7 @@ export const appRouter = router({
        if (input.size > maximumSize) {
          throw new TRPCError({
            code: "PAYLOAD_TOO_LARGE",
-            message: input.mimeType.startsWith("video/") ? "Video tối đa 100 MB." : "Ảnh tối đa 20 MB.",
+            message: input.mimeType.startsWith("video/") ? "Video tối đa 1GB." : "Ảnh tối đa 20 MB.",
          });
        }
         const ownedPrefix = `chatpht/media/${input.conversationId}/${ctx.user.id}/`;
@@ -669,6 +694,7 @@ export const appRouter = router({
           mediaMime: input.mimeType,
           mediaName: input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100),
           mediaSize: input.size,
+          mediaBatchId: input.mediaBatchId ?? null,
         });
         void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
         return publicMessage(message, await createMediaAccessUrl(ctx.req, ctx.user, input.key));

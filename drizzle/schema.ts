@@ -105,6 +105,7 @@ export const messages = mysqlTable(
     mediaMime: varchar("mediaMime", { length: 96 }),
     mediaName: varchar("mediaName", { length: 255 }),
     mediaSize: int("mediaSize"),
+    mediaBatchId: varchar("mediaBatchId", { length: 80 }),
     mediaCleanedAt: timestamp("mediaCleanedAt"),
     recalledAt: timestamp("recalledAt"),
     recalledBy: int("recalledBy"),
@@ -112,6 +113,7 @@ export const messages = mysqlTable(
   },
   (table) => [
     index("message_conversation_created_idx").on(table.conversationId, table.createdAt),
+    index("message_conversation_batch_idx").on(table.conversationId, table.mediaBatchId, table.createdAt),
   ],
 );
 

@@ -32,6 +32,10 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  // Media bytes use presigned PUT URLs and bypass Express. Keep the control-plane
+  // request window at ten minutes so slow mobile networks can finish their upload flow.
+  server.requestTimeout = 10 * 60 * 1000;
+  server.headersTimeout = 10 * 60 * 1000 + 5_000;
 
   // Enable CORS for all routes - reflect the request origin to support credentials
   app.use((req, res, next) => {

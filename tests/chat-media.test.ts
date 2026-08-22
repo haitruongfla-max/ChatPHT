@@ -17,6 +17,7 @@ vi.mock("../server/db", () => ({
   setConversationWallpaperKey: vi.fn(),
   upsertPushDevice: vi.fn(),
   removePushDevice: vi.fn(),
+  getStorageUsageSummary: vi.fn(),
   listConversationRecipientDevices: vi.fn().mockResolvedValue([]),
   toPublicProfile: vi.fn(),
 }));
@@ -115,12 +116,58 @@ describe("chat media access controls", () => {
     expect(db.getConversationWallpaperKey).toHaveBeenCalledWith(18, 7);
   });
 
-  it("accepts chat images up to 20 MiB and keeps the 100 MiB video limit separate", async () => {
+  it("accepts chat images up to 20 MiB and video up to 1 GiB", async () => {
     vi.mocked(db.isConversationMember).mockResolvedValue(true);
     vi.mocked(storage.storageCreateUploadUrl).mockResolvedValue({ key: "chatpht/media/18/7/opaque-object.jpg", uploadUrl: "https://upload.example/photo.jpg" } as any);
 
     await expect(callerFor(7).messages.requestMediaUpload({ conversationId: 18, filename: "photo.jpg", mimeType: "image/jpeg", size: 20 * 1024 * 1024 })).resolves.toMatchObject({ maximumSize: 20 * 1024 * 1024 });
     await expect(callerFor(7).messages.requestMediaUpload({ conversationId: 18, filename: "photo.jpg", mimeType: "image/jpeg", size: 20 * 1024 * 1024 + 1 })).rejects.toMatchObject({ code: "PAYLOAD_TOO_LARGE" });
+    await expect(callerFor(7).messages.requestMediaUpload({ conversationId: 18, filename: "clip.mp4", mimeType: "video/mp4", size: 1024 * 1024 * 1024 })).resolves.toMatchObject({ maximumSize: 1024 * 1024 * 1024 });
+    await expect(callerFor(7).messages.requestMediaUpload({ conversationId: 18, filename: "clip.mp4", mimeType: "video/mp4", size: 1024 * 1024 * 1024 + 1 })).rejects.toMatchObject({ message: "Video tối đa 1GB." });
+  });
+
+  it("warns the client when a 50-file upload would take bounded storage near the FIFO threshold", async () => {
+    vi.mocked(db.isConversationMember).mockResolvedValue(true);
+    vi.mocked(db.getStorageUsageSummary).mockResolvedValue({
+      usedBytes: 175 * 1024 * 1024 * 1024,
+      quotaBytes: 200 * 1024 * 1024 * 1024,
+      unlimited: false,
+      mediaCount: 4,
+      recentMedia: [],
+    } as any);
+
+    await expect(callerFor(7).messages.preflightMediaUpload({
+      conversationId: 18,
+      totalBytes: 6 * 1024 * 1024 * 1024,
+      fileCount: 50,
+    })).resolves.toMatchObject({ nearQuota: true, unlimited: false });
+  });
+
+  it("stores the shared album id when completing an authenticated direct upload", async () => {
+    vi.mocked(db.isConversationMember).mockResolvedValue(true);
+    vi.mocked(db.createMessage).mockResolvedValue({
+      id: 88,
+      conversationId: 18,
+      senderId: 7,
+      body: null,
+      contentType: "image",
+      mediaKey: "chatpht/media/18/7/opaque-object.jpg",
+      mediaMime: "image/jpeg",
+      mediaName: "photo.jpg",
+      mediaSize: 100,
+      mediaBatchId: "batch-1234567890-abcd",
+      createdAt: new Date(),
+    } as any);
+
+    await expect(callerFor(7).messages.completeMediaUpload({
+      conversationId: 18,
+      key: "chatpht/media/18/7/opaque-object.jpg",
+      filename: "photo.jpg",
+      mimeType: "image/jpeg",
+      size: 100,
+      mediaBatchId: "batch-1234567890-abcd",
+    })).resolves.toMatchObject({ id: 88, mediaBatchId: "batch-1234567890-abcd" });
+    expect(db.createMessage).toHaveBeenCalledWith(expect.objectContaining({ mediaBatchId: "batch-1234567890-abcd" }));
   });
 
   it("refuses a wallpaper key that belongs to another account", async () => {

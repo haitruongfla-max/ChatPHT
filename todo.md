@@ -184,3 +184,8 @@
 - [x] Bắt buộc phiên hợp lệ và quyền thành viên hội thoại cho mọi yêu cầu tải ảnh/video.
 - [x] Bảo đảm URL media có chữ ký hết hạn trong một giờ và khóa lưu trữ không chứa tên tệp gốc.
 - [x] Thêm kiểm thử hồi quy quyền tải media, URL ký và quy tắc đặt khóa; lưu checkpoint bảo mật.
+- [x] Rà soát giới hạn upload hiện hữu, cấu hình Expo Image Picker/Media Library và tác động của video 1 GiB.
+- [x] Nâng giới hạn video lên 1 GiB, bảo vệ timeout upload và cập nhật thông báo lỗi tương ứng.
+- [x] Cho phép chọn tối đa 50 ảnh/video từ thư viện hệ thống, xin quyền cần thiết và xếp hàng 3 tác vụ tải song song.
+- [x] Hiển thị tiến trình tổng, nhóm media dạng lưới sau khi gửi và cảnh báo khi quota gần đầy nhưng vẫn giữ FIFO 02:00.
+- [x] Bổ sung hồi quy upload đa media/quota, kiểm thử toàn bộ và lưu checkpoint nâng cấp.
