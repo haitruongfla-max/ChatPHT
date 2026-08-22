@@ -1,0 +1,1 @@
+ALTER TABLE `conversation_members` ADD `wallpaperKey` varchar(512);

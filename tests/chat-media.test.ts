@@ -13,6 +13,8 @@ vi.mock("../server/db", () => ({
   markConversationRead: vi.fn(),
   setConversationTyping: vi.fn(),
   getConversationTypingStatus: vi.fn(),
+  getConversationWallpaperKey: vi.fn(),
+  setConversationWallpaperKey: vi.fn(),
   upsertPushDevice: vi.fn(),
   removePushDevice: vi.fn(),
   listConversationRecipientDevices: vi.fn().mockResolvedValue([]),
@@ -94,6 +96,44 @@ describe("chat media access controls", () => {
 
     await expect(callerFor(7).conversations.remove({ conversationId: 18 })).resolves.toEqual({ success: true });
     expect(db.hideConversationForUser).toHaveBeenCalledWith(18, 7);
+  });
+
+  it("issues a private wallpaper upload URL only after validating the requesting member", async () => {
+    vi.mocked(db.getConversationWallpaperKey).mockResolvedValue(null);
+    vi.mocked(storage.storageCreateUploadUrl).mockResolvedValue({
+      key: "chatpht/wallpapers/7/18/new-wallpaper.jpg",
+      uploadUrl: "https://upload.example/wallpaper.jpg",
+    } as any);
+
+    await expect(
+      callerFor(7).conversations.requestWallpaperUpload({ conversationId: 18, mimeType: "image/jpeg", size: 1024 }),
+    ).resolves.toMatchObject({ key: "chatpht/wallpapers/7/18/new-wallpaper.jpg" });
+    expect(db.getConversationWallpaperKey).toHaveBeenCalledWith(18, 7);
+  });
+
+  it("refuses a wallpaper key that belongs to another account", async () => {
+    await expect(
+      callerFor(7).conversations.setWallpaper({
+        conversationId: 18,
+        wallpaperKey: "chatpht/wallpapers/9/18/other-account-wallpaper.jpg",
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(db.setConversationWallpaperKey).not.toHaveBeenCalled();
+  });
+
+  it("replaces only the caller's wallpaper and deletes the old private asset", async () => {
+    const oldKey = "chatpht/wallpapers/7/18/old-wallpaper.jpg";
+    const nextKey = "chatpht/wallpapers/7/18/new-wallpaper.jpg";
+    vi.mocked(db.setConversationWallpaperKey).mockResolvedValue({ previousKey: oldKey, wallpaperKey: nextKey });
+    vi.mocked(storage.storageDelete).mockResolvedValue(undefined);
+    vi.mocked(storage.storageGetSignedUrl).mockResolvedValue("https://temporary.example/wallpaper.jpg");
+
+    await expect(callerFor(7).conversations.setWallpaper({ conversationId: 18, wallpaperKey: nextKey })).resolves.toMatchObject({
+      key: nextKey,
+      url: "https://temporary.example/wallpaper.jpg",
+    });
+    expect(db.setConversationWallpaperKey).toHaveBeenCalledWith(18, 7, nextKey);
+    expect(storage.storageDelete).toHaveBeenCalledWith(oldKey);
   });
 
   it("clears every message and media payload for both members through the authorized account", async () => {

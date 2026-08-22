@@ -5,14 +5,14 @@ import { uploadMediaDirectly, resolveMediaUploadUri } from "@/lib/direct-media-u
 import * as Auth from "@/lib/_core/auth";
 import { trpc } from "@/lib/trpc";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import * as FileSystem from "expo-file-system/legacy";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-type SelectedAvatar = { uri: string; assetId?: string | null; fileSize?: number | null; mimeType?: string | null };
-
-const ACCEPTED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+type SelectedAvatar = { uri: string; size: number };
 
 export default function ProfileEditScreen() {
   const { user } = useAuth();
@@ -40,11 +40,20 @@ export default function ProfileEditScreen() {
     });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
-    if (asset.fileSize && asset.fileSize > 4 * 1024 * 1024) {
-      Alert.alert("Ảnh quá lớn", "Vui lòng chọn ảnh không quá 4 MB.");
-      return;
+    try {
+      const sourceUri = await resolveMediaUploadUri(asset.uri, asset.assetId);
+      const context = ImageManipulator.manipulate(sourceUri);
+      context.resize({ width: 1024, height: 1024 });
+      const rendered = await context.renderAsync();
+      const normalized = await rendered.saveAsync({ compress: 0.78, format: SaveFormat.JPEG });
+      const info = await FileSystem.getInfoAsync(normalized.uri);
+      const size = info.exists && "size" in info && typeof info.size === "number" ? info.size : 0;
+      if (!size) throw new Error("Không thể chuẩn bị tệp ảnh từ thư viện.");
+      if (size > 4 * 1024 * 1024) throw new Error("Ảnh sau khi tối ưu vẫn vượt quá 4 MB.");
+      setAvatar({ uri: normalized.uri, size });
+    } catch (error) {
+      Alert.alert("Không thể chuẩn bị ảnh", error instanceof Error ? error.message : "Vui lòng chọn ảnh khác.");
     }
-    setAvatar({ uri: asset.uri, assetId: asset.assetId, fileSize: asset.fileSize, mimeType: asset.mimeType });
   };
 
   const save = async () => {
@@ -56,11 +65,9 @@ export default function ProfileEditScreen() {
     try {
       let avatarKey: string | undefined;
       if (avatar) {
-        const sourceMime = avatar.mimeType;
-        const mimeType = sourceMime === "image/png" || sourceMime === "image/webp" || sourceMime === "image/jpeg" ? sourceMime : "image/jpeg";
-        const uploadUri = await resolveMediaUploadUri(avatar.uri, avatar.assetId);
-        const upload = await requestUpload.mutateAsync({ filename: "avatar", mimeType, size: avatar.fileSize ?? 4 * 1024 * 1024 });
-        await uploadMediaDirectly({ uri: uploadUri, uploadUrl: upload.uploadUrl, mimeType, onProgress: setProgress });
+        const mimeType = "image/jpeg" as const;
+        const upload = await requestUpload.mutateAsync({ filename: "avatar.jpg", mimeType, size: avatar.size });
+        await uploadMediaDirectly({ uri: avatar.uri, uploadUrl: upload.uploadUrl, mimeType, onProgress: setProgress });
         avatarKey = upload.key;
       }
       const updated = await updateProfile.mutateAsync({ displayName: trimmedName, ...(avatarKey ? { avatarKey } : {}) });

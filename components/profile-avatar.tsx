@@ -3,7 +3,7 @@ import { Image, StyleSheet, Text, View, type ImageStyle, type StyleProp } from "
 
 export function getProfileAvatarUri(avatarUrl?: string | null) {
   if (!avatarUrl) return null;
-  if (/^https?:\/\//i.test(avatarUrl)) return avatarUrl;
+  if (/^(https?:\/\/|file:\/\/|content:\/\/|data:image\/)/i.test(avatarUrl)) return avatarUrl;
   const baseUrl = getApiBaseUrl();
   return baseUrl ? `${baseUrl}${avatarUrl}` : avatarUrl;
 }

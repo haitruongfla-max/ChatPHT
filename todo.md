@@ -125,3 +125,8 @@
 - [x] Bổ sung khả năng đổi tên hiển thị và ảnh đại diện cá nhân với kiểm soát quyền truy cập, chọn ảnh và lưu trữ an toàn.
 - [x] Thiết kế lại trang Cá nhân để quản lý hồ sơ, bảo mật và cài đặt rõ ràng, đồng thời giữ nguyên quản trị viên và mọi tính năng hiện hữu.
 - [x] Kiểm thử hồi quy giao diện và luồng cập nhật hồ sơ trên ChatPHT; lưu checkpoint bàn giao.
+- [x] Chẩn đoán và sửa luồng chọn, tải lên, lưu và hiển thị ảnh đại diện trên thiết bị Android/iOS.
+- [x] Mở rộng dữ liệu hội thoại để lưu thiết lập ảnh nền riêng theo từng người dùng mà không ảnh hưởng thành viên còn lại.
+- [x] Bổ sung chọn, tải lên, xem trước, thay thế và xóa ảnh nền riêng trong màn hình cuộc trò chuyện.
+- [x] Hiển thị ảnh nền riêng có độ tương phản tốt trong đoạn chat, đồng thời giữ nguyên media, trạng thái đọc và thao tác hiện có.
+- [x] Kiểm thử hồi quy hồ sơ, ảnh nền hội thoại và mọi luồng chat; lưu checkpoint bàn giao.

@@ -9,6 +9,8 @@ import {
   uploadMediaDirectly,
 } from "@/lib/direct-media-upload";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import * as FileSystem from "expo-file-system/legacy";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import { Redirect, router, useLocalSearchParams } from "expo-router";
@@ -177,6 +179,7 @@ export default function ChatScreen() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadLabel, setUploadLabel] = useState("Đang tải lên");
+  const [wallpaperProgress, setWallpaperProgress] = useState<number | null>(null);
   const [reactionPickerFor, setReactionPickerFor] = useState<number | null>(
     null,
   );
@@ -203,6 +206,10 @@ export default function ChatScreen() {
       refetchInterval: 650,
     },
   );
+  const wallpaper = trpc.conversations.wallpaper.useQuery(
+    { conversationId },
+    { enabled: Boolean(user) && Number.isInteger(conversationId) },
+  );
   const messageCount = messages.data?.length ?? 0;
   const sendText = trpc.messages.sendText.useMutation();
   const requestMediaUpload = trpc.messages.requestMediaUpload.useMutation();
@@ -213,6 +220,8 @@ export default function ChatScreen() {
   const recall = trpc.messages.recall.useMutation();
   const removeConversation = trpc.conversations.remove.useMutation();
   const clearConversation = trpc.conversations.clearContent.useMutation();
+  const requestWallpaperUpload = trpc.conversations.requestWallpaperUpload.useMutation();
+  const setWallpaper = trpc.conversations.setWallpaper.useMutation();
   const startCall = trpc.calls.start.useMutation();
   const header = useMemo(
     () => ({
@@ -296,6 +305,69 @@ export default function ChatScreen() {
       void setTyping({ conversationId, isTyping }).catch(() => undefined);
     }
   };
+
+  const chooseWallpaper = async () => {
+    if (wallpaperProgress !== null || requestWallpaperUpload.isPending || setWallpaper.isPending) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Cần quyền thư viện ảnh", "Hãy cho phép ChatPHT truy cập ảnh để đặt nền riêng cho cuộc trò chuyện.");
+      return;
+    }
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [9, 16],
+      quality: 0.82,
+      selectionLimit: 1,
+    });
+    if (picked.canceled || !picked.assets[0]) return;
+    try {
+      setWallpaperProgress(0);
+      const asset = picked.assets[0];
+      const sourceUri = await resolveMediaUploadUri(asset.uri, asset.assetId);
+      const context = ImageManipulator.manipulate(sourceUri);
+      context.resize({ width: 1440 });
+      const rendered = await context.renderAsync();
+      const normalized = await rendered.saveAsync({ compress: 0.72, format: SaveFormat.JPEG });
+      const info = await FileSystem.getInfoAsync(normalized.uri);
+      const size = info.exists && "size" in info && typeof info.size === "number" ? info.size : 0;
+      if (!size) throw new Error("Không thể chuẩn bị ảnh nền từ thư viện.");
+      if (size > 8 * 1024 * 1024) throw new Error("Ảnh nền sau khi tối ưu vẫn vượt quá 8 MB.");
+      const upload = await requestWallpaperUpload.mutateAsync({ conversationId, mimeType: "image/jpeg", size });
+      await uploadMediaDirectly({
+        uri: normalized.uri,
+        uploadUrl: upload.uploadUrl,
+        mimeType: "image/jpeg",
+        onProgress: setWallpaperProgress,
+      });
+      await setWallpaper.mutateAsync({ conversationId, wallpaperKey: upload.key });
+      await utils.conversations.wallpaper.invalidate({ conversationId });
+    } catch (error) {
+      Alert.alert("Không thể đặt ảnh nền", error instanceof Error ? error.message : "Vui lòng chọn ảnh khác và thử lại.");
+    } finally {
+      setWallpaperProgress(null);
+    }
+  };
+
+  const clearWallpaper = async () => {
+    try {
+      await setWallpaper.mutateAsync({ conversationId, wallpaperKey: null });
+      await utils.conversations.wallpaper.invalidate({ conversationId });
+    } catch (error) {
+      Alert.alert("Không thể xóa ảnh nền", error instanceof Error ? error.message : "Vui lòng thử lại.");
+    }
+  };
+
+  const openWallpaperMenu = () =>
+    Alert.alert(
+      "Ảnh nền cuộc trò chuyện",
+      "Ảnh nền này chỉ hiển thị với bạn, không thay đổi giao diện của người kia.",
+      [
+        { text: "Hủy", style: "cancel" },
+        ...(wallpaper.data?.url ? [{ text: "Xóa ảnh nền", style: "destructive" as const, onPress: () => void clearWallpaper() }] : []),
+        { text: "Chọn ảnh từ thư viện", onPress: () => void chooseWallpaper() },
+      ],
+    );
 
   const chooseMedia = async () => {
     if (uploading) return;
@@ -488,6 +560,16 @@ export default function ChatScreen() {
       style={styles.safe}
       edges={["top", "bottom", "left", "right"]}
     >
+      {wallpaper.data?.url ? (
+        <Image
+          pointerEvents="none"
+          source={{ uri: wallpaper.data.url }}
+          contentFit="cover"
+          transition={180}
+          style={styles.wallpaper}
+        />
+      ) : null}
+      {wallpaper.data?.url ? <View pointerEvents="none" style={styles.wallpaperTint} /> : null}
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -502,7 +584,9 @@ export default function ChatScreen() {
           </Pressable>
           <View style={styles.headerText}>
             <Text style={styles.headerTitle}>{header.title}</Text>
-            <Text style={styles.headerSubtitle}>{header.subtitle}</Text>
+            <Text style={styles.headerSubtitle}>
+              {wallpaperProgress !== null ? `Đang tải ảnh nền ${wallpaperProgress}%` : header.subtitle}
+            </Text>
           </View>
           <Pressable
             onPress={() => void beginCall("audio")}
@@ -550,9 +634,15 @@ export default function ChatScreen() {
           >
             <MaterialIcons name="delete-forever" size={21} color="#B91C1C" />
           </Pressable>
-          <View style={styles.shield}>
-            <MaterialIcons name="shield" size={19} color="#16713B" />
-          </View>
+          <Pressable
+            onPress={openWallpaperMenu}
+            disabled={wallpaperProgress !== null || requestWallpaperUpload.isPending || setWallpaper.isPending}
+            style={({ pressed }) => [styles.wallpaperButton, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Tùy chỉnh ảnh nền cuộc trò chuyện"
+          >
+            <MaterialIcons name="wallpaper" size={20} color="#2563EB" />
+          </Pressable>
         </View>
         <FlatList
           ref={listRef}
@@ -838,6 +928,11 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F6F8FC" },
+  wallpaper: { ...StyleSheet.absoluteFillObject },
+  wallpaperTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(238, 246, 255, 0.60)",
+  },
   loading: {
     flex: 1,
     alignItems: "center",
@@ -850,7 +945,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#E6EAF1",
-    backgroundColor: "#F6F8FC",
+    backgroundColor: "rgba(246, 248, 252, 0.92)",
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
@@ -891,7 +986,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#FEE2E2",
   },
-  shield: {
+  wallpaperButton: {
     height: 36,
     width: 36,
     borderRadius: 12,

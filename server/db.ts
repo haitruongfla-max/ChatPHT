@@ -439,6 +439,33 @@ export async function getConversationTypingStatus(conversationId: number, userId
   return { isTyping: Boolean(typingUntil), typingUntil };
 }
 
+/** Returns the requesting member's private wallpaper key for one conversation. */
+export async function getConversationWallpaperKey(conversationId: number, userId: number) {
+  const db = requireDb(await getDb());
+  const membership = await db
+    .select({ wallpaperKey: conversationMembers.wallpaperKey })
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)))
+    .limit(1);
+  if (!membership[0]) throw new Error("Bạn không có quyền truy cập hội thoại này.");
+  return membership[0].wallpaperKey;
+}
+
+/** Stores a wallpaper only for the authenticated member, never for the other participant. */
+export async function setConversationWallpaperKey(
+  conversationId: number,
+  userId: number,
+  wallpaperKey: string | null,
+) {
+  const db = requireDb(await getDb());
+  const previousKey = await getConversationWallpaperKey(conversationId, userId);
+  await db
+    .update(conversationMembers)
+    .set({ wallpaperKey })
+    .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
+  return { previousKey, wallpaperKey };
+}
+
 export async function isConversationMember(conversationId: number, userId: number) {
   const db = requireDb(await getDb());
   const membership = await db

@@ -66,6 +66,7 @@ export const conversationMembers = mysqlTable(
     lastDeliveredAt: timestamp("lastDeliveredAt"),
     lastReadAt: timestamp("lastReadAt"),
     typingUntil: timestamp("typingUntil"),
+    wallpaperKey: varchar("wallpaperKey", { length: 512 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => [
