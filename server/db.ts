@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, like, lt, ne, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, like, lt, ne, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
@@ -15,6 +15,7 @@ import {
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { STORAGE_QUOTA_BYTES } from "../lib/storage-usage";
 
 export type PublicProfile = {
   id: number;
@@ -197,6 +198,45 @@ export async function listManagedUsers() {
     lastSignedIn: user.lastSignedIn,
     isExpired: isUserAccessExpired(user),
   }));
+}
+
+/** Totals completed chat media tracked by the application database. */
+export async function getStorageUsageSummary() {
+  const db = requireDb(await getDb());
+  const mediaFilter = and(isNotNull(messages.mediaKey), inArray(messages.contentType, ["image", "video"]));
+  const [aggregate] = await db
+    .select({
+      usedBytes: sql<number>`coalesce(sum(${messages.mediaSize}), 0)`,
+      mediaCount: sql<number>`count(${messages.id})`,
+    })
+    .from(messages)
+    .where(mediaFilter);
+  const recentMedia = await db
+    .select({
+      id: messages.id,
+      contentType: messages.contentType,
+      mediaName: messages.mediaName,
+      mediaSize: messages.mediaSize,
+      createdAt: messages.createdAt,
+      senderName: users.name,
+      senderUsername: users.username,
+    })
+    .from(messages)
+    .leftJoin(users, eq(messages.senderId, users.id))
+    .where(mediaFilter)
+    .orderBy(desc(messages.createdAt))
+    .limit(5);
+
+  return {
+    usedBytes: Number(aggregate?.usedBytes ?? 0),
+    mediaCount: Number(aggregate?.mediaCount ?? 0),
+    quotaBytes: STORAGE_QUOTA_BYTES,
+    recentMedia: recentMedia.map((media) => ({
+      ...media,
+      mediaSize: media.mediaSize ?? 0,
+      senderName: media.senderName ?? media.senderUsername ?? "Người dùng ChatPHT",
+    })),
+  };
 }
 
 export async function setUserAccessExpiry(userId: number, accessExpiresAt: Date | null) {

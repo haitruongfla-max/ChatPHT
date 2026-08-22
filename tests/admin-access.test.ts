@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../server/db", () => ({
   isUserAccessExpired: vi.fn(() => false),
   listManagedUsers: vi.fn(),
+  getStorageUsageSummary: vi.fn(),
   setUserAccessExpiry: vi.fn(),
   deleteManagedUser: vi.fn(),
 }));
@@ -31,7 +32,21 @@ describe("admin access controls", () => {
 
   it("refuses every management action from a standard account", async () => {
     await expect(callerFor("user").admin.listUsers()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(callerFor("user").admin.storageSummary()).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(db.listManagedUsers).not.toHaveBeenCalled();
+    expect(db.getStorageUsageSummary).not.toHaveBeenCalled();
+  });
+
+  it("returns the read-only storage summary only to an administrator", async () => {
+    vi.mocked(db.getStorageUsageSummary).mockResolvedValue({
+      usedBytes: 823_319,
+      mediaCount: 2,
+      quotaBytes: 20 * 1024 * 1024 * 1024,
+      recentMedia: [],
+    });
+
+    await expect(callerFor("admin").admin.storageSummary()).resolves.toMatchObject({ usedBytes: 823_319, mediaCount: 2 });
+    expect(db.getStorageUsageSummary).toHaveBeenCalledTimes(1);
   });
 
   it("blocks an expired standard account before it can use protected features", async () => {

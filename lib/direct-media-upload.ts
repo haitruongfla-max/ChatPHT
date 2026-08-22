@@ -31,7 +31,11 @@ export async function resolveMediaUploadUri(uri: string, assetId?: string | null
 
   const cacheDirectory = FileSystem.cacheDirectory;
   if (!cacheDirectory) throw new Error("Thiết bị không cung cấp vùng tạm để chuẩn bị tệp tải lên.");
-  const destination = `${cacheDirectory}chatpht-upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const uriWithoutQuery = uploadUri.split(/[?#]/, 1)[0] ?? uploadUri;
+  const suffix = /\.[a-zA-Z0-9]{1,10}$/.exec(uriWithoutQuery)?.[0] ?? "";
+  // Preserve a safe extension when a content URI is copied into cache. Android decoders and media previews
+  // may reject extensionless temporary files even when their bytes and MIME type are valid.
+  const destination = `${cacheDirectory}chatpht-upload-${Date.now()}-${Math.random().toString(36).slice(2)}${suffix}`;
   await FileSystem.copyAsync({ from: uploadUri, to: destination });
   return destination;
 }

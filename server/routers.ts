@@ -29,7 +29,7 @@ const videoMimeSchema = z.enum(["video/mp4", "video/quicktime"]);
 const avatarMimeSchema = z.enum(["image/jpeg", "image/png", "image/webp"]);
 const reactionEmojiSchema = z.enum(["👍", "❤️", "😂", "😮", "😢", "🔥"]);
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
 const MAX_WALLPAPER_BYTES = 6 * 1024 * 1024;
 const assistantTurnSchema = z.object({
@@ -163,6 +163,7 @@ export const appRouter = router({
   }),
   admin: router({
     listUsers: adminProcedure.query(() => db.listManagedUsers()),
+    storageSummary: adminProcedure.query(() => db.getStorageUsageSummary()),
     setAccessDays: adminProcedure
       .input(z.object({ userId: z.number().int().positive(), days: z.number().int().min(1).max(3650) }))
       .mutation(async ({ input }) => {
@@ -510,11 +511,11 @@ export const appRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "Dữ liệu tệp không hợp lệ." });
         }
         const data = Buffer.from(input.base64, "base64");
-        const maximum = input.mimeType.startsWith("video/") ? 24 * 1024 * 1024 : 8 * 1024 * 1024;
+        const maximum = input.mimeType.startsWith("video/") ? 24 * 1024 * 1024 : MAX_IMAGE_BYTES;
         if (!data.length || data.length > maximum) {
           throw new TRPCError({
             code: "PAYLOAD_TOO_LARGE",
-            message: input.mimeType.startsWith("video/") ? "Video tối đa 24 MB." : "Ảnh tối đa 8 MB.",
+            message: input.mimeType.startsWith("video/") ? "Video tối đa 24 MB." : "Ảnh tối đa 20 MB.",
           });
         }
         const safeFilename = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "attachment";
@@ -561,13 +562,13 @@ export const appRouter = router({
         if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền gửi tệp vào hội thoại này." });
         }
-        const maximumSize = input.mimeType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
-        if (input.size > maximumSize) {
-          throw new TRPCError({
-            code: "PAYLOAD_TOO_LARGE",
-            message: input.mimeType.startsWith("video/") ? "Video tối đa 100 MB." : "Ảnh tối đa 8 MB.",
-          });
-        }
+       const maximumSize = input.mimeType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+       if (input.size > maximumSize) {
+         throw new TRPCError({
+           code: "PAYLOAD_TOO_LARGE",
+            message: input.mimeType.startsWith("video/") ? "Video tối đa 100 MB." : "Ảnh tối đa 20 MB.",
+         });
+       }
         const filename = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "attachment";
         const storage = await storageCreateUploadUrl(`swiftchat/${input.conversationId}/${ctx.user.id}/${Date.now()}-${filename}`);
         return { ...storage, filename, maximumSize };
@@ -612,13 +613,13 @@ export const appRouter = router({
         if (!(await db.isConversationMember(input.conversationId, ctx.user.id))) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền gửi tệp vào hội thoại này." });
         }
-        const maximumSize = input.mimeType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
-        if (input.size > maximumSize) {
-          throw new TRPCError({
-            code: "PAYLOAD_TOO_LARGE",
-            message: input.mimeType.startsWith("video/") ? "Video tối đa 100 MB." : "Ảnh tối đa 8 MB.",
-          });
-        }
+       const maximumSize = input.mimeType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+       if (input.size > maximumSize) {
+         throw new TRPCError({
+           code: "PAYLOAD_TOO_LARGE",
+            message: input.mimeType.startsWith("video/") ? "Video tối đa 100 MB." : "Ảnh tối đa 20 MB.",
+         });
+       }
         const ownedPrefix = `swiftchat/${input.conversationId}/${ctx.user.id}/`;
         if (!input.key.startsWith(ownedPrefix)) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Tệp tải lên không hợp lệ." });

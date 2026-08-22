@@ -379,7 +379,7 @@ export default function ChatScreen() {
     if (picked.canceled || !picked.assets[0]) return;
     const asset = picked.assets[0];
     const isVideo = asset.type === "video";
-    const maxBytes = isVideo ? 100 * 1024 * 1024 : 8 * 1024 * 1024;
+    const maxBytes = isVideo ? 100 * 1024 * 1024 : 20 * 1024 * 1024;
     const fileSize = asset.fileSize;
     if (!fileSize) {
       Alert.alert(
@@ -391,7 +391,7 @@ export default function ChatScreen() {
     if (fileSize > maxBytes) {
       Alert.alert(
         "Tệp quá lớn",
-        isVideo ? "Video tối đa 100 MB." : "Ảnh tối đa 8 MB.",
+        isVideo ? "Video tối đa 100 MB." : "Ảnh tối đa 20 MB.",
       );
       return;
     }

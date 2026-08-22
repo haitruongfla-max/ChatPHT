@@ -65,8 +65,17 @@ describe("direct private media upload", () => {
 
     const resolved = await resolveMediaUploadUri("content://gallery/clip.mp4");
 
-    expect(resolved).toMatch(/^file:\/\/cache\/chatpht-upload-/);
+    expect(resolved).toMatch(/^file:\/\/cache\/chatpht-upload-.*\.mp4$/);
     expect(copyAsync).toHaveBeenCalledWith(expect.objectContaining({ from: "content://gallery/clip.mp4", to: resolved }));
+  });
+
+  it("keeps the image extension when preparing an Android content URI for a media preview", async () => {
+    platform.OS = "android";
+    copyAsync.mockResolvedValue(undefined);
+
+    const resolved = await resolveMediaUploadUri("content://gallery/preview-photo.jpeg?session=1");
+
+    expect(resolved).toMatch(/\.jpeg$/);
   });
 
   it("uses the iOS local library URI when the picker returns a ph URI", async () => {

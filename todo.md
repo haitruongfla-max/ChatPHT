@@ -165,3 +165,12 @@
 - [x] Thiết kế luồng xin phép tối ưu pin có thể hoãn, mở đúng cài đặt Android khi nền tảng hỗ trợ và không hứa hẹn tự bật Auto-start cho Xiaomi/Oppo.
 - [x] Tích hợp thu nhỏ cuộc gọi theo phương án PiP an toàn, có dự phòng màn hình nổi trong ứng dụng khi Android/thiết bị không cho phép PiP.
 - [x] Kiểm thử hồi quy gọi, quyền nền, bundle Android và lưu checkpoint nâng cấp trải nghiệm gọi.
+- [x] Kiểm tra biến môi trường, mã lưu ảnh/video và khả năng tích hợp Firebase/Firestore hiện tại.
+- [x] Đối chiếu collection/bảng messages và đo dung lượng media có thể quan sát được mà không thay đổi dữ liệu.
+- [x] Báo cáo nơi lưu media, có/không dùng Base64/Firestore và giới hạn dung lượng thực tế hoặc chưa được cấu hình.
+- [x] Rà soát API kho lưu trữ, số liệu messages và lỗi xem trước media hiện có.
+- [x] Bổ sung trang Admin “Dung lượng lưu trữ” với tổng đã dùng trên quota hiển thị, cùng 5 tin nhắn media gần nhất.
+- [x] Nâng giới hạn mỗi ảnh từ 8 MiB lên 20 MiB tại cả backend và giao diện chọn/tải.
+- [x] Khắc phục lỗi “Không tải được bản xem trước” trong luồng `direct-media-upload` mà vẫn giữ upload trực tiếp dạng nhị phân.
+- [x] Kiểm thử hồi quy Admin, upload ảnh 20 MiB, preview media và lưu checkpoint.
+- [x] Ưu tiên xác minh và sửa dứt điểm lỗi “Không tải được bản xem trước” bằng kiểm tra kiểu ngay sau chỉnh sửa tách nhỏ.

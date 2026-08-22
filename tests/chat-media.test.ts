@@ -111,6 +111,14 @@ describe("chat media access controls", () => {
     expect(db.getConversationWallpaperKey).toHaveBeenCalledWith(18, 7);
   });
 
+  it("accepts chat images up to 20 MiB and keeps the 100 MiB video limit separate", async () => {
+    vi.mocked(db.isConversationMember).mockResolvedValue(true);
+    vi.mocked(storage.storageCreateUploadUrl).mockResolvedValue({ key: "swiftchat/18/7/photo.jpg", uploadUrl: "https://upload.example/photo.jpg" } as any);
+
+    await expect(callerFor(7).messages.requestMediaUpload({ conversationId: 18, filename: "photo.jpg", mimeType: "image/jpeg", size: 20 * 1024 * 1024 })).resolves.toMatchObject({ maximumSize: 20 * 1024 * 1024 });
+    await expect(callerFor(7).messages.requestMediaUpload({ conversationId: 18, filename: "photo.jpg", mimeType: "image/jpeg", size: 20 * 1024 * 1024 + 1 })).rejects.toMatchObject({ code: "PAYLOAD_TOO_LARGE" });
+  });
+
   it("refuses a wallpaper key that belongs to another account", async () => {
     await expect(
       callerFor(7).conversations.setWallpaper({
