@@ -1,0 +1,1 @@
+ALTER TABLE `conversation_members` ADD `wallpaperOpacity` int DEFAULT 60 NOT NULL;

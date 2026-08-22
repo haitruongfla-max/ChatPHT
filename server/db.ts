@@ -443,12 +443,15 @@ export async function getConversationTypingStatus(conversationId: number, userId
 export async function getConversationWallpaperKey(conversationId: number, userId: number) {
   const db = requireDb(await getDb());
   const membership = await db
-    .select({ wallpaperKey: conversationMembers.wallpaperKey })
+    .select({
+      wallpaperKey: conversationMembers.wallpaperKey,
+      wallpaperOpacity: conversationMembers.wallpaperOpacity,
+    })
     .from(conversationMembers)
     .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)))
     .limit(1);
   if (!membership[0]) throw new Error("Bạn không có quyền truy cập hội thoại này.");
-  return membership[0].wallpaperKey;
+  return membership[0];
 }
 
 /** Stores a wallpaper only for the authenticated member, never for the other participant. */
@@ -456,14 +459,16 @@ export async function setConversationWallpaperKey(
   conversationId: number,
   userId: number,
   wallpaperKey: string | null,
+  wallpaperOpacity?: number,
 ) {
   const db = requireDb(await getDb());
-  const previousKey = await getConversationWallpaperKey(conversationId, userId);
+  const previous = await getConversationWallpaperKey(conversationId, userId);
+  const nextOpacity = wallpaperOpacity ?? previous.wallpaperOpacity;
   await db
     .update(conversationMembers)
-    .set({ wallpaperKey })
+    .set({ wallpaperKey, wallpaperOpacity: nextOpacity })
     .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
-  return { previousKey, wallpaperKey };
+  return { previousKey: previous.wallpaperKey, wallpaperKey, wallpaperOpacity: nextOpacity };
 }
 
 export async function isConversationMember(conversationId: number, userId: number) {

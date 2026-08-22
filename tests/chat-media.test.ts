@@ -99,7 +99,7 @@ describe("chat media access controls", () => {
   });
 
   it("issues a private wallpaper upload URL only after validating the requesting member", async () => {
-    vi.mocked(db.getConversationWallpaperKey).mockResolvedValue(null);
+    vi.mocked(db.getConversationWallpaperKey).mockResolvedValue({ wallpaperKey: null, wallpaperOpacity: 60 });
     vi.mocked(storage.storageCreateUploadUrl).mockResolvedValue({
       key: "chatpht/wallpapers/7/18/new-wallpaper.jpg",
       uploadUrl: "https://upload.example/wallpaper.jpg",
@@ -124,15 +124,16 @@ describe("chat media access controls", () => {
   it("replaces only the caller's wallpaper and deletes the old private asset", async () => {
     const oldKey = "chatpht/wallpapers/7/18/old-wallpaper.jpg";
     const nextKey = "chatpht/wallpapers/7/18/new-wallpaper.jpg";
-    vi.mocked(db.setConversationWallpaperKey).mockResolvedValue({ previousKey: oldKey, wallpaperKey: nextKey });
+    vi.mocked(db.setConversationWallpaperKey).mockResolvedValue({ previousKey: oldKey, wallpaperKey: nextKey, wallpaperOpacity: 58 });
     vi.mocked(storage.storageDelete).mockResolvedValue(undefined);
     vi.mocked(storage.storageGetSignedUrl).mockResolvedValue("https://temporary.example/wallpaper.jpg");
 
-    await expect(callerFor(7).conversations.setWallpaper({ conversationId: 18, wallpaperKey: nextKey })).resolves.toMatchObject({
+    await expect(callerFor(7).conversations.setWallpaper({ conversationId: 18, wallpaperKey: nextKey, opacity: 58 })).resolves.toMatchObject({
       key: nextKey,
       url: "https://temporary.example/wallpaper.jpg",
+      opacity: 58,
     });
-    expect(db.setConversationWallpaperKey).toHaveBeenCalledWith(18, 7, nextKey);
+    expect(db.setConversationWallpaperKey).toHaveBeenCalledWith(18, 7, nextKey, 58);
     expect(storage.storageDelete).toHaveBeenCalledWith(oldKey);
   });
 

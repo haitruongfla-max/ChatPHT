@@ -346,8 +346,12 @@ export const appRouter = router({
       .input(z.object({ conversationId: z.number().int().positive() }))
       .query(async ({ ctx, input }) => {
         try {
-          const key = await db.getConversationWallpaperKey(input.conversationId, ctx.user.id);
-          return { key, url: key ? await storageGetSignedUrl(key) : null };
+          const wallpaper = await db.getConversationWallpaperKey(input.conversationId, ctx.user.id);
+          return {
+            key: wallpaper.wallpaperKey,
+            url: wallpaper.wallpaperKey ? await storageGetSignedUrl(wallpaper.wallpaperKey) : null,
+            opacity: wallpaper.wallpaperOpacity,
+          };
         } catch (error) {
           return appError(error, "Không thể tải ảnh nền hội thoại.");
         }
@@ -362,16 +366,24 @@ export const appRouter = router({
         return { ...storage, maximumSize: MAX_WALLPAPER_BYTES };
       }),
     setWallpaper: protectedProcedure
-      .input(z.object({ conversationId: z.number().int().positive(), wallpaperKey: z.string().trim().min(20).max(512).nullable() }))
+      .input(z.object({
+        conversationId: z.number().int().positive(),
+        wallpaperKey: z.string().trim().min(20).max(512).nullable(),
+        opacity: z.number().int().min(35).max(90).optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         if (input.wallpaperKey && !input.wallpaperKey.startsWith(`chatpht/wallpapers/${ctx.user.id}/${input.conversationId}/`)) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Ảnh nền không thuộc về hội thoại này." });
         }
-        const result = await db.setConversationWallpaperKey(input.conversationId, ctx.user.id, input.wallpaperKey);
+        const result = await db.setConversationWallpaperKey(input.conversationId, ctx.user.id, input.wallpaperKey, input.opacity);
         if (result.previousKey && result.previousKey !== input.wallpaperKey) {
           void storageDelete(result.previousKey).catch(() => undefined);
         }
-        return { key: result.wallpaperKey, url: result.wallpaperKey ? await storageGetSignedUrl(result.wallpaperKey) : null };
+        return {
+          key: result.wallpaperKey,
+          url: result.wallpaperKey ? await storageGetSignedUrl(result.wallpaperKey) : null,
+          opacity: result.wallpaperOpacity,
+        };
       }),
     markAllDelivered: protectedProcedure.mutation(async ({ ctx }) => {
       await db.markAllConversationsDelivered(ctx.user.id);

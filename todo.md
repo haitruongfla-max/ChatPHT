@@ -130,3 +130,6 @@
 - [x] Bổ sung chọn, tải lên, xem trước, thay thế và xóa ảnh nền riêng trong màn hình cuộc trò chuyện.
 - [x] Hiển thị ảnh nền riêng có độ tương phản tốt trong đoạn chat, đồng thời giữ nguyên media, trạng thái đọc và thao tác hiện có.
 - [x] Kiểm thử hồi quy hồ sơ, ảnh nền hội thoại và mọi luồng chat; lưu checkpoint bàn giao.
+- [x] Mở rộng thiết lập ảnh nền riêng để lưu độ mờ theo từng người dùng và cuộc trò chuyện.
+- [x] Bổ sung thanh trượt trực quan để điều chỉnh độ mờ ảnh nền, có xem trước tức thì và nhãn phần trăm dễ hiểu.
+- [x] Kiểm thử hồi quy độ rõ nội dung, lưu thiết lập nền và các luồng chat hiện có; lưu checkpoint bàn giao.
