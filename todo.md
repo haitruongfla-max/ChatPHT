@@ -145,4 +145,4 @@
 - [x] Xử lý phương án thay thế khi phiên điều khiển trình duyệt bị kẹt, để người dùng cấu hình Expo/Firebase từ trình duyệt thông thường.
 - [x] Lưu checkpoint bàn giao sau khi xác minh cấu hình build; TypeScript và 50/50 kiểm thử hồi quy đã đạt (version `bfff0822`).
 - [x] Xác thực kín Expo access token và Service Account FCM V1 thành công; kiểm thử hồi quy 50/50 đạt, 2 kiểm thử xác thực mạng được tách chạy riêng để không xung đột mock.
-- [ ] Lưu checkpoint sau khi tạo keystore, tải FCM V1 qua EAS CLI và căn chỉnh slug Expo.
+- [x] Lưu checkpoint sau khi tạo keystore, tải FCM V1 qua EAS CLI và căn chỉnh slug Expo (version `1681ea91`).
