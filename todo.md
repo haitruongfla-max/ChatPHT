@@ -119,3 +119,4 @@
 - [x] Dừng đồng bộ toàn bộ rung/chuông trước khi nhận, từ chối, hủy, kết thúc hoặc rời màn hình cuộc gọi.
 - [x] Tăng bản Android lên 1.0.1 (versionCode 2) để thiết bị nhận cấu hình WebRTC, quyền gọi và âm báo mới qua bản cài đặt mới.
 - [x] Chạy kiểm tra TypeScript và hồi quy: 47/47 kiểm thử đạt.
+- [x] Soạn hướng dẫn cấu hình Firebase Cloud Messaging cho push Android khi ChatPHT bị tắt hẳn.
