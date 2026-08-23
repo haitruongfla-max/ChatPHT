@@ -227,3 +227,6 @@
 - [x] Cấu hình workflow xuất `ChatPHT-1.0.15-OTA-Base.apk`, tải artifact `ChatPHT-APK` và tạo GitHub Release có file APK đính kèm.
 - [x] Nâng Android versionCode cho APK nền OTA để có thể cập nhật đè mọi bản 1.0.15 hiện có.
 - [x] Xác minh cấu hình OTA, Android export và workflow trước khi phát hành APK nền OTA.
+- [x] Tạo chuỗi Base64 của `google-services.json` để người dùng đặt GitHub Secret `GOOGLE_SERVICES_JSON_BASE64` cho workflow APK nền OTA.
+- [ ] Kết nối repository `haitruongfla-max/ChatPHT`, đẩy mã ChatPHT hiện tại và kích hoạt workflow `build-ota-base-apk` đã được người dùng xác nhận.
+- [ ] Xác minh GitHub Actions hoàn tất, GitHub Release có APK nền OTA và bàn giao liên kết tải trực tiếp.
