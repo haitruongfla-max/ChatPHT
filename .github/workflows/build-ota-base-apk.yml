@@ -1,0 +1,92 @@
+name: Build ChatPHT OTA Base APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "GitHub Release tag cho APK nền OTA"
+        required: true
+        default: "v1.0.15-ota-base"
+
+# GitHub Release cần quyền ghi nội dung; workflow không sử dụng Expo cloud build.
+permissions:
+  contents: write
+
+jobs:
+  build-ota-base-apk:
+    name: Build OTA base APK locally
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+      APK_OUTPUT: ./ChatPHT-1.0.15-OTA-Base.apk
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Firebase Android configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > google-services.json
+          fi
+          test -s google-services.json || {
+            echo "::error::Thiếu Google Services JSON. Hãy đặt GitHub secret GOOGLE_SERVICES_JSON_BASE64.";
+            exit 1;
+          }
+
+      - name: Verify Expo credentials access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${EXPO_TOKEN:-}" || {
+            echo "::error::Thiếu GitHub secret EXPO_TOKEN có quyền truy cập project Expo ChatPHT.";
+            exit 1;
+          }
+
+      - name: Build signed Android APK locally
+        run: >-
+          npx eas-cli@latest build --local --non-interactive --platform android
+          --profile ota-base-apk --output "$APK_OUTPUT"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatPHT-APK
+          path: ./ChatPHT-1.0.15-OTA-Base.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          APK_OUTPUT: ./ChatPHT-1.0.15-OTA-Base.apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$APK_OUTPUT#ChatPHT-1.0.15-OTA-Base.apk" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$APK_OUTPUT#ChatPHT-1.0.15-OTA-Base.apk" \
+              --title "ChatPHT 1.0.15 — OTA Base" \
+              --generate-notes \
+              --target "$GITHUB_SHA"
+          fi

@@ -9,6 +9,13 @@
         "buildType": "apk"
       }
     },
+    "ota-base-apk": {
+      "distribution": "internal",
+      "channel": "production",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "aab": {
       "android": {
         "buildType": "app-bundle"

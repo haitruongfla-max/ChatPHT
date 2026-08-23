@@ -218,3 +218,12 @@
 - [x] Tích hợp chia sẻ màn hình Android qua MediaProjection/LiveKit, bảo đảm vẫn giữ micro, có thao tác dừng rõ ràng và hiển thị track màn hình hợp lý.
 - [ ] Hoàn thiện bố cục cuộc gọi toàn màn hình, hình trong hình, bong bóng khi thu nhỏ và thao tác xóa sạch nội dung an toàn mà không xóa tài khoản/thành viên.
 - [ ] Kiểm thử hồi quy API, migration, gọi P2P/LiveKit, chia sẻ màn hình và nghiệm thu thực tế trên hai Android trước khi đóng gói APK mới.
+- [x] Đánh giá khả năng đóng gói APK Android cục bộ trong môi trường hiện tại mà không thay đổi backend hoặc mã ứng dụng: môi trường không có Android SDK/NDK, Gradle hoặc Android Studio nên không thể đóng gói cục bộ an toàn tại đây.
+- [x] Xác minh tương thích OTA của APK 1.0.13/1.0.14/1.0.15, runtimeVersion, Expo project ID và khả năng rollback trước khi cấu hình cập nhật: cấu hình nguồn hiện không có `expo-updates`, `updates.url` hoặc `runtimeVersion`, nên không thể khẳng định APK cũ đã có client OTA.
+- [x] Cấu hình Expo Updates an toàn, chỉ áp dụng khi không làm APK hiện có mất khả năng nhận cập nhật và không ảnh hưởng backend.
+- [ ] Kiểm thử bundle OTA và lập quy trình phân biệt thay đổi JavaScript/TypeScript với thay đổi native cần APK mới.
+- [x] Thêm `expo-updates`, cấu hình URL EAS Update theo project ID và runtime fingerprint cho APK nền OTA.
+- [x] Tạo workflow GitHub Actions build APK nền OTA bằng runner Linux, chỉ dùng secrets của GitHub và giữ signing keystore hiện có.
+- [x] Cấu hình workflow xuất `ChatPHT-1.0.15-OTA-Base.apk`, tải artifact `ChatPHT-APK` và tạo GitHub Release có file APK đính kèm.
+- [x] Nâng Android versionCode cho APK nền OTA để có thể cập nhật đè mọi bản 1.0.15 hiện có.
+- [x] Xác minh cấu hình OTA, Android export và workflow trước khi phát hành APK nền OTA.
