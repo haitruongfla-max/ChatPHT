@@ -20,6 +20,7 @@ export class P2pCall {
   getLocalStream() { return null; }
   getRemoteStream() { return null; }
   async setMicrophoneEnabled(_enabled: boolean) { return unavailable(); }
+  async setSpeakerEnabled(_enabled: boolean) { return unavailable(); }
   async setCameraEnabled(_enabled: boolean) { return unavailable(); }
   async switchCamera() { return unavailable(); }
   async setVideoQuality(_quality: "sd" | "hd") { return unavailable(); }

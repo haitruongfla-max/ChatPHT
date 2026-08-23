@@ -89,7 +89,7 @@ export default function InboxScreen() {
             : { displayName: item.group!.title, avatarUrl: item.group!.avatarUrl, isGroup: true, memberCount: item.group!.memberCount };
           return (
           <Pressable
-            onPress={() => router.push(`/chat/${item.id}` as never)}
+            onPress={() => router.push({ pathname: "/chat/[id]", params: { id: String(item.id), group: target.isGroup ? "1" : "0" } })}
             onLongPress={target.isGroup ? undefined : () => confirmClearContent(item.id, target.displayName)}
             delayLongPress={450}
             disabled={clearConversation.isPending}

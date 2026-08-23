@@ -1,5 +1,6 @@
 import { getApiBaseUrl } from "@/constants/oauth";
-import { Image, StyleSheet, Text, View, type ImageStyle, type StyleProp } from "react-native";
+import { Image } from "expo-image";
+import { StyleSheet, Text, View, type ImageStyle, type StyleProp } from "react-native";
 
 export function getProfileAvatarUri(avatarUrl?: string | null) {
   if (!avatarUrl) return null;
@@ -23,7 +24,17 @@ export function ProfileAvatar({
   const initials = name.trim().slice(0, 1).toUpperCase() || "C";
   const avatarStyle = { width: size, height: size, borderRadius: size / 2 };
 
-  if (uri) return <Image source={{ uri }} style={[styles.image, avatarStyle, style]} accessibilityLabel={`Ảnh đại diện của ${name}`} />;
+  if (uri) {
+    return (
+      <Image
+        source={{ uri, cacheKey: `avatar-${uri.split("?")[0]}` }}
+        cachePolicy="memory-disk"
+        transition={0}
+        style={[styles.image, avatarStyle, style]}
+        accessibilityLabel={`Ảnh đại diện của ${name}`}
+      />
+    );
+  }
   return (
     <View style={[styles.fallback, avatarStyle, style]} accessibilityLabel={`Ảnh đại diện mặc định của ${name}`}>
       <Text style={[styles.initials, { fontSize: Math.max(15, Math.round(size * 0.4)) }]}>{initials}</Text>

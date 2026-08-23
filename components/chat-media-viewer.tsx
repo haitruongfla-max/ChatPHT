@@ -4,11 +4,11 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { saveChatMediaToDevice, type MediaSaveItem } from "@/lib/save-chat-media";
-import { useState } from "react";
-import { ActivityIndicator, Alert, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, FlatList, Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-export type ChatMediaPreview = MediaSaveItem;
+export type ChatMediaPreview = MediaSaveItem & { id?: number; cacheKey?: string | null };
 
 function FullScreenVideo({ uri }: { uri: string }) {
   const player = useVideoPlayer({ uri, useCaching: true }, (instance) => {
@@ -18,14 +18,30 @@ function FullScreenVideo({ uri }: { uri: string }) {
   return <VideoView style={styles.video} player={player} nativeControls allowsFullscreen allowsPictureInPicture contentFit="contain" surfaceType="textureView" />;
 }
 
-export function ChatMediaViewer({ item, onClose }: { item: ChatMediaPreview | null; onClose: () => void }) {
+export function ChatMediaViewer({ item, items, onClose }: { item: ChatMediaPreview | null; items?: ChatMediaPreview[]; onClose: () => void }) {
   const [saving, setSaving] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const listRef = useRef<FlatList<ChatMediaPreview>>(null);
+  const { width } = useWindowDimensions();
+  const collection = useMemo(() => {
+    const source = items?.length ? items : item ? [item] : [];
+    return source.filter((entry) => Boolean(entry.uri));
+  }, [item, items]);
+  const activeItem = collection[activeIndex] ?? null;
+
+  useEffect(() => {
+    if (!item) return;
+    const nextIndex = Math.max(0, collection.findIndex((entry) => entry.uri === item.uri));
+    setActiveIndex(nextIndex);
+    const frame = requestAnimationFrame(() => listRef.current?.scrollToIndex({ index: nextIndex, animated: false }));
+    return () => cancelAnimationFrame(frame);
+  }, [collection, item]);
 
   const saveToDevice = async () => {
-    if (!item || saving) return;
+    if (!activeItem || saving) return;
     setSaving(true);
     try {
-      const result = await saveChatMediaToDevice(item, {
+      const result = await saveChatMediaToDevice(activeItem, {
         isWeb: Platform.OS === "web",
         cacheDirectory: FileSystem.cacheDirectory,
         documentDirectory: FileSystem.documentDirectory,
@@ -38,7 +54,7 @@ export function ChatMediaViewer({ item, onClose }: { item: ChatMediaPreview | nu
       } else if (result === "permission-denied") {
         Alert.alert("Cần quyền lưu media", "Hãy cho phép SwiftChat thêm ảnh và video vào thư viện điện thoại của bạn.");
       } else {
-        Alert.alert("Đã lưu", item.type === "image" ? "Ảnh đã được lưu vào thư viện." : "Video đã được lưu vào thư viện.");
+        Alert.alert("Đã lưu", activeItem.type === "image" ? "Ảnh đã được lưu vào thư viện." : "Video đã được lưu vào thư viện.");
       }
     } catch (error) {
       Alert.alert("Không thể lưu media", error instanceof Error ? error.message : "Vui lòng thử lại.");
@@ -48,7 +64,7 @@ export function ChatMediaViewer({ item, onClose }: { item: ChatMediaPreview | nu
   };
 
   return (
-    <Modal visible={Boolean(item)} animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal visible={Boolean(activeItem)} animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <SafeAreaView style={styles.safe} edges={["top", "bottom", "left", "right"]}>
           <View style={styles.topBar}>
@@ -60,7 +76,22 @@ export function ChatMediaViewer({ item, onClose }: { item: ChatMediaPreview | nu
               <Text style={styles.saveLabel}>Lưu</Text>
             </Pressable>
           </View>
-          <View style={styles.mediaFrame}>{item?.type === "image" ? <Image source={{ uri: item.uri, cacheKey: `viewer-${item.uri.split("?")[0]}` }} cachePolicy="memory-disk" style={styles.image} contentFit="contain" transition={120} /> : item ? <FullScreenVideo uri={item.uri} /> : null}</View>
+          {collection.length > 1 ? <Text style={styles.counter}>{activeIndex + 1} / {collection.length}</Text> : null}
+          <FlatList
+            ref={listRef}
+            data={collection}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(media, index) => String(media.id ?? `${media.uri}-${index}`)}
+            getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+            onMomentumScrollEnd={(event) => setActiveIndex(Math.max(0, Math.min(collection.length - 1, Math.round(event.nativeEvent.contentOffset.x / width))))}
+            renderItem={({ item: media }) => (
+              <View style={[styles.mediaFrame, { width }]}>
+                {media.type === "image" ? <Image source={{ uri: media.uri, cacheKey: media.cacheKey ?? `viewer-${media.uri.split("?")[0]}` }} cachePolicy="memory-disk" style={styles.image} contentFit="contain" transition={0} /> : <FullScreenVideo uri={media.uri} />}
+              </View>
+            )}
+          />
         </SafeAreaView>
       </View>
     </Modal>
@@ -74,6 +105,7 @@ const styles = StyleSheet.create({
   roundButton: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.16)" },
   saveButton: { minHeight: 44, paddingHorizontal: 14, borderRadius: 22, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "rgba(37,99,235,0.9)" },
   saveLabel: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
+  counter: { alignSelf: "center", color: "#CBD5E1", fontSize: 13, fontWeight: "700", marginBottom: 4 },
   mediaFrame: { flex: 1, alignItems: "center", justifyContent: "center" },
   image: { width: "100%", height: "100%" },
   video: { width: "100%", height: "100%", backgroundColor: "#000000" },

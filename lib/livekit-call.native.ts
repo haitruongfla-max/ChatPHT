@@ -30,12 +30,15 @@ export class LiveKitCall {
   async connect(session: LiveKitSession, kind: "audio" | "video") {
     ensureLiveKitGlobals();
     await this.requestMediaPermissions(kind);
+    const useSpeakerByDefault = kind === "video";
     await AudioSession.configureAudio({
       android: {
-        preferredOutputList: ["speaker", "bluetooth", "headset", "earpiece"],
+        preferredOutputList: useSpeakerByDefault
+          ? ["speaker", "bluetooth", "headset", "earpiece"]
+          : ["bluetooth", "headset", "earpiece", "speaker"],
         audioTypeOptions: { ...AndroidAudioTypePresets.communication, forceHandleAudioRouting: true },
       },
-      ios: { defaultOutput: "speaker" },
+      ios: { defaultOutput: useSpeakerByDefault ? "speaker" : "earpiece" },
     });
     await AudioSession.setDefaultRemoteAudioTrackVolume(1);
     await AudioSession.startAudioSession();
@@ -43,7 +46,7 @@ export class LiveKitCall {
       await this.room.connect(session.serverUrl, session.token);
       await this.setMicrophoneEnabled(true);
       if (kind === "video") await this.setCameraEnabled(true);
-      await this.setSpeakerEnabled(true);
+      await this.setSpeakerEnabled(useSpeakerByDefault);
     } catch (error) {
       this.room.disconnect();
       await AudioSession.stopAudioSession().catch(() => undefined);
@@ -119,8 +122,8 @@ export class LiveKitCall {
   }
 
   getNetworkStats(): LiveKitNetworkStats {
-    const engine = this.room.engine as unknown as { client?: { rtt?: number } };
-    const rtt = engine.client?.rtt;
+    const engine = this.room.engine as unknown as { client?: { rtt?: number } } | null | undefined;
+    const rtt = engine?.client?.rtt;
     return {
       pingMs: typeof rtt === "number" && Number.isFinite(rtt) && rtt >= 0 ? Math.round(rtt) : null,
       connectionQuality: this.room.localParticipant.connectionQuality,

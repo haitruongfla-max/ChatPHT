@@ -80,7 +80,11 @@ export async function mediaDownloadHandler(req: Request, res: Response) {
     res.status(200);
     res.setHeader("Content-Type", upstream.headers.get("content-type") || media.mediaMime);
     res.setHeader("Content-Length", String(body.byteLength));
-    res.setHeader("Cache-Control", "private, no-store, max-age=0");
+    // Mỗi URL có capability riêng theo đúng người dùng và hết hạn sau một giờ.
+    // Cho phép cache *trên chính thiết bị* trong thời hạn đó để Expo Image/Video
+    // không nháy hoặc tải lại cùng một media khi danh sách chat tự làm mới.
+    // `private` ngăn proxy/cache dùng chung lưu dữ liệu hội thoại.
+    res.setHeader("Cache-Control", "private, max-age=3600, immutable");
     res.setHeader("X-Content-Type-Options", "nosniff");
     return res.end(body);
   } catch (error) {

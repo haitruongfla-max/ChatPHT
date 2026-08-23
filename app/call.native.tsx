@@ -34,7 +34,7 @@ export default function CallScreen() {
   const resumed = activeCall.get(callId);
   const [connected, setConnected] = useState(Boolean(resumed?.connected));
   const [muted, setMuted] = useState(resumed?.muted ?? false);
-  const [speaker, setSpeaker] = useState(resumed?.speaker ?? true);
+  const [speaker, setSpeaker] = useState(resumed?.speaker ?? kind === "video");
   const [cameraOn, setCameraOn] = useState(resumed?.cameraOn ?? kind === "video");
   const [isFrontCamera, setIsFrontCamera] = useState(resumed?.isFrontCamera ?? true);
   const [videoQuality, setVideoQuality] = useState<VideoQualityMode>(resumed?.videoQuality ?? "hd");
@@ -142,19 +142,24 @@ export default function CallScreen() {
   }, [answeredAt, callId, connected, isAnswered, ringingScale]);
 
   useEffect(() => {
-    if (!connected) {
+    if (!connected || transport !== "livekit") {
       setNetworkStats({ pingMs: null, connectionQuality: "unknown" });
       return;
     }
     let active = true;
     const refreshNetworkStats = () => {
-      const stats = call.getNetworkStats();
-      if (active) setNetworkStats(stats);
+      try {
+        const stats = call.getNetworkStats();
+        if (active) setNetworkStats(stats);
+      } catch {
+        // A room can disconnect while the interval is queued; never crash the incoming-call screen.
+        if (active) setNetworkStats({ pingMs: null, connectionQuality: "unknown" });
+      }
     };
     refreshNetworkStats();
     const timer = setInterval(refreshNetworkStats, 3000);
     return () => { active = false; clearInterval(timer); };
-  }, [call, connected]);
+  }, [call, connected, transport]);
 
   useEffect(() => {
     if (Platform.OS !== "android" || kind !== "video" || !connected || !ExpoPip.isAvailable()) return;
@@ -381,9 +386,8 @@ export default function CallScreen() {
   async function toggleSpeaker() {
     const next = !speaker;
     try {
-      if (transport === "p2p") {
-        Alert.alert("Âm thanh P2P", "Âm thanh sẽ theo thiết bị đang sử dụng. Chuyển loa ngoài tùy thuộc cấu hình Android/iOS.");
-      } else await call.setSpeakerEnabled(next);
+      if (transport === "p2p") await p2p.setSpeakerEnabled(next);
+      else await call.setSpeakerEnabled(next);
       setSpeaker(next);
       activeCall.update(callId, { speaker: next });
     } catch {

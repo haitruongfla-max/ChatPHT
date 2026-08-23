@@ -80,7 +80,7 @@ describe("media download security", () => {
 
     expect(storageGetSignedUrl).toHaveBeenCalledWith("chatpht/media/10/7/a1b2c3d4.jpg");
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.setHeader).toHaveBeenCalledWith("Cache-Control", "private, no-store, max-age=0");
+    expect(res.setHeader).toHaveBeenCalledWith("Cache-Control", "private, max-age=3600, immutable");
     expect(res.end).toHaveBeenCalledWith(expect.any(Buffer));
   });
 

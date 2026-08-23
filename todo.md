@@ -200,3 +200,13 @@
 - [x] Thêm signaling P2P chỉ giữa hai thành viên, STUN Google, timeout fallback LiveKit 5 giây và hồi quy quyền/token dự phòng.
 - [ ] Cấu hình TURN với thông tin đã xác thực và nghiệm thu P2P/LiveKit trên tối thiểu hai Android qua các mạng khác nhau; không dùng OpenRelay công khai làm hạ tầng production.
 - [x] Tổng hợp prompt nâng cấp ChatPHT đầy đủ và lập bảng kiểm chứng các dịch vụ miễn phí, chi phí vận hành và giới hạn dùng lâu dài.
+- [x] Tái hiện và khắc phục lỗi Trợ lý AI báo “Failed to fetch” trên bản Android mới mà không làm thay đổi lịch sử hoặc giao diện đang hoạt động.
+- [x] Tái hiện và khắc phục lỗi tìm/hiển thị người dùng trên bản Android mới, bảo toàn kết bạn và danh bạ hiện có.
+- [x] Xác minh URL HTTPS công khai của backend ChatPHT đang hoạt động và cấu hình trực tiếp làm `EXPO_PUBLIC_API_BASE_URL` cho APK Android.
+- [x] Chặn crash Android `getNetworkStats` khi LiveKit client chưa sẵn sàng trong lúc nhận cuộc gọi video.
+- [x] Cải thiện audio gọi 1:1: tránh vang, giữ route loa/tai nghe nhất quán và báo trạng thái mạng rõ ràng.
+- [x] Rà soát thông báo FCM khi ứng dụng bị vuốt đóng, bao gồm payload cuộc gọi/tin nhắn và cấu hình Android cần thiết.
+- [x] Khắc phục luồng gọi thoại/video nhóm LiveKit tối đa 8 người và thông báo hướng dẫn chính xác khi đang ở hội thoại riêng.
+- [x] Ổn định hiển thị avatar, ảnh và video bằng cache/URL capability bền trong phiên, tránh nháy hoặc tải lại không cần thiết.
+- [x] Bổ sung trình xem album toàn màn hình có thể vuốt ảnh/video trước–sau thay vì phải đóng từng mục.
+- [ ] Nghiệm thu APK sửa lỗi trên hai Android: nhận video 1:1, thoại không vang, gọi nhóm, push khi vuốt ứng dụng và album vuốt; lưu log nếu còn lỗi.

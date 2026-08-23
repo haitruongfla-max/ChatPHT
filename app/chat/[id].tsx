@@ -204,6 +204,22 @@ export default function ChatScreen() {
   );
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [preview, setPreview] = useState<ChatMediaPreview | null>(null);
+  const [previewItems, setPreviewItems] = useState<ChatMediaPreview[]>([]);
+  const openMediaPreview = (entries: ChatMessage[], selectedId: number) => {
+    const media = entries.flatMap((entry) => {
+      if (!entry.mediaUrl || (entry.contentType !== "image" && entry.contentType !== "video")) return [];
+      return [{
+        id: entry.id,
+        uri: entry.mediaUrl,
+        type: entry.contentType,
+        name: entry.mediaName,
+        cacheKey: entry.mediaCacheKey,
+      } satisfies ChatMediaPreview];
+    });
+    if (!media.length) return;
+    setPreviewItems(media);
+    setPreview(media.find((entry) => entry.id === selectedId) ?? media[0]);
+  };
   const utils = trpc.useUtils();
   const messages = trpc.messages.list.useQuery(
     { conversationId },
@@ -830,24 +846,12 @@ export default function ChatScreen() {
                         {item.albumItems && item.albumItems.length > 1 ? (
                           <ChatMediaGrid
                             items={item.albumItems}
-                            onOpen={(media) =>
-                              setPreview({
-                                uri: media.mediaUrl as string,
-                                type: media.contentType === "video" ? "video" : "image",
-                                name: media.mediaName,
-                              })
-                            }
+                            onOpen={(media) => openMediaPreview(item.albumItems ?? [], media.id)}
                           />
                         ) : null}
                         {(!item.albumItems || item.albumItems.length === 1) && item.contentType === "image" && item.mediaUrl ? (
                           <Pressable
-                            onPress={() =>
-                              setPreview({
-                                uri: item.mediaUrl as string,
-                                type: "image",
-                                name: item.mediaName,
-                              })
-                            }
+                            onPress={() => openMediaPreview([item], item.id)}
                             accessibilityRole="button"
                             accessibilityLabel="Mở ảnh toàn màn hình"
                           >
@@ -867,13 +871,7 @@ export default function ChatScreen() {
                         {(!item.albumItems || item.albumItems.length === 1) && item.contentType === "video" && item.mediaUrl ? (
                           <VideoBubble
                             uri={item.mediaUrl}
-                            onOpen={() =>
-                              setPreview({
-                                uri: item.mediaUrl as string,
-                                type: "video",
-                                name: item.mediaName,
-                              })
-                            }
+                            onOpen={() => openMediaPreview([item], item.id)}
                           />
                         ) : null}
                         {item.mediaCleanedAt ? <View style={[styles.mediaCleaned, mine && styles.mineMediaCleaned]}><MaterialIcons name="auto-delete" size={16} color={mine ? "#D9E5FF" : "#64748B"} /><Text style={[styles.mediaCleanedText, mine && styles.mineMediaCleanedText]}>File đã được tự động dọn dẹp để tiết kiệm dung lượng</Text></View> : null}
@@ -1075,7 +1073,7 @@ export default function ChatScreen() {
             </Pressable>
           </View>
         </View>
-        <ChatMediaViewer item={preview} onClose={() => setPreview(null)} />
+        <ChatMediaViewer item={preview} items={previewItems} onClose={() => { setPreview(null); setPreviewItems([]); }} />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

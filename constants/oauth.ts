@@ -13,7 +13,11 @@ const env = {
   appId: process.env.EXPO_PUBLIC_APP_ID ?? "",
   ownerId: process.env.EXPO_PUBLIC_OWNER_OPEN_ID ?? "",
   ownerName: process.env.EXPO_PUBLIC_OWNER_NAME ?? "",
-  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "",
+  // Android không thể gọi endpoint tương đối. Khi biến build chưa được cung cấp,
+  // dùng domain backend đã triển khai và được kiểm tra tại /api/health.
+  apiBaseUrl:
+    process.env.EXPO_PUBLIC_API_BASE_URL ??
+    "https://swiftchat-lx74vew4.manus.space",
   deepLinkScheme: schemeFromBundleId,
 };
 
@@ -45,8 +49,9 @@ export function getApiBaseUrl(): string {
     }
   }
 
-  // Fallback to empty (will use relative URL)
-  return "";
+  // Native đã có fallback HTTPS ở trên; nhánh này chỉ là phương án dự phòng
+  // an toàn nếu cấu hình bị thay đổi về sau.
+  return "https://swiftchat-lx74vew4.manus.space";
 }
 
 export const SESSION_TOKEN_KEY = "app_session_token";

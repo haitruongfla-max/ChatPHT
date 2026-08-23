@@ -5,6 +5,8 @@ import {
   RTCSessionDescription,
   type MediaStreamTrack,
 } from "@livekit/react-native-webrtc";
+import { AndroidAudioTypePresets, AudioSession } from "@livekit/react-native";
+import { Platform } from "react-native";
 
 export type P2pSignalType = "offer" | "answer" | "ice";
 export type P2pSignal = { type: P2pSignalType; payload: string };
@@ -37,8 +39,16 @@ export class P2pCall {
     this.options = options;
     options.onState("connecting");
 
+    await this.configureAudio();
+
+    const audioProcessingConstraints = {
+      echoCancellation: true,
+      noiseSuppression: true,
+    };
     const stream = await mediaDevices.getUserMedia({
-      audio: true,
+      // Request the platform's WebRTC audio processing for the direct path as
+      // well. The LiveKit fallback already requests equivalent constraints.
+      audio: audioProcessingConstraints as unknown as boolean,
       video: options.kind === "video" ? { facingMode: "user", frameRate: 30, width: 1280, height: 720 } : false,
     });
     this.localStream = stream;
@@ -115,6 +125,17 @@ export class P2pCall {
     this.localStream?.getAudioTracks().forEach((track) => { track.enabled = enabled; });
   }
 
+  async setSpeakerEnabled(enabled: boolean) {
+    if (Platform.OS === "ios") {
+      await AudioSession.selectAudioOutput(enabled ? "force_speaker" : "default");
+      return;
+    }
+    const outputs = await AudioSession.getAudioOutputs();
+    const preferred = enabled ? "speaker" : "earpiece";
+    const selected = outputs.includes(preferred) ? preferred : outputs.includes("speaker") ? "speaker" : outputs[0];
+    if (selected) await AudioSession.selectAudioOutput(selected);
+  }
+
   async setCameraEnabled(enabled: boolean) {
     this.localStream?.getVideoTracks().forEach((track) => { track.enabled = enabled; });
   }
@@ -140,5 +161,18 @@ export class P2pCall {
     this.options?.onRemoteStream(null);
     this.options?.onState("closed");
     this.options = null;
+    await AudioSession.stopAudioSession().catch(() => undefined);
+  }
+
+  private async configureAudio() {
+    await AudioSession.configureAudio({
+      android: {
+        preferredOutputList: ["speaker", "bluetooth", "headset", "earpiece"],
+        audioTypeOptions: { ...AndroidAudioTypePresets.communication, forceHandleAudioRouting: true },
+      },
+      ios: { defaultOutput: "speaker" },
+    });
+    await AudioSession.setDefaultRemoteAudioTrackVolume(1);
+    await AudioSession.startAudioSession();
   }
 }

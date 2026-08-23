@@ -30,7 +30,15 @@ export function IncomingCallWatcher() {
     }
     if (handledId.current === call?.id) return;
     handledId.current = call?.id ?? null;
-    router.push({ pathname: "/call", params: { callId: call?.id ?? "", kind: call?.kind, direction: "incoming" } });
+    router.push({
+      pathname: "/call",
+      params: {
+        callId: call?.id ?? "",
+        kind: call?.kind,
+        direction: "incoming",
+        group: call?.isGroup ? "1" : "0",
+      },
+    });
   }, [incoming.data]);
 
   useEffect(() => {
