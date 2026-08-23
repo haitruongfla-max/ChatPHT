@@ -241,5 +241,5 @@
 - [x] Hiển thị đúng tên và avatar người gọi trên màn hình gọi đến/cuộc gọi thay cho tên mặc định.
 - [x] Khắc phục chia sẻ màn hình LiveKit Android: xác thực MediaProjection/service, timeout publish có retry và không làm kết thúc cuộc gọi.
 - [x] Thêm card Cập nhật ứng dụng trong tab Tôi, kiểm tra GitHub Release, tải APK có tiến trình và mở trình cài đặt Android an toàn.
-- [ ] Kiểm thử, checkpoint, đồng bộ GitHub và phát hành APK 1.0.16 sửa lỗi với tag phát hành riêng.
-- [ ] Tiếp tục đợt sửa lỗi Android theo phản hồi thiết bị thực tế: camera quay video, LiveKit fallback, tên người gọi, screen share và card cập nhật GitHub.
+- [x] Kiểm thử, checkpoint, đồng bộ GitHub và phát hành APK 1.0.16 sửa lỗi với tag phát hành riêng.
+- [x] Tiếp tục đợt sửa lỗi Android theo phản hồi thiết bị thực tế: camera quay video, LiveKit fallback, tên người gọi, screen share và card cập nhật GitHub.
