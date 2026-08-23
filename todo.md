@@ -199,3 +199,4 @@
 - [x] Hoàn thiện màn quản trị nhóm: đổi tên/avatar, thêm/xóa thành viên và owner cấp hoặc thu quyền quản trị viên.
 - [x] Thêm signaling P2P chỉ giữa hai thành viên, STUN Google, timeout fallback LiveKit 5 giây và hồi quy quyền/token dự phòng.
 - [ ] Cấu hình TURN với thông tin đã xác thực và nghiệm thu P2P/LiveKit trên tối thiểu hai Android qua các mạng khác nhau; không dùng OpenRelay công khai làm hạ tầng production.
+- [x] Tổng hợp prompt nâng cấp ChatPHT đầy đủ và lập bảng kiểm chứng các dịch vụ miễn phí, chi phí vận hành và giới hạn dùng lâu dài.
