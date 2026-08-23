@@ -31,14 +31,19 @@ type StartOptions = {
 export class P2pCall {
   private peer: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
+  private remoteStream: MediaStream | null = null;
   private options: StartOptions | null = null;
   private connected = false;
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
   private recoveryInProgress = false;
+  private remoteDescriptionReady = false;
+  private pendingRemoteCandidates: Record<string, unknown>[] = [];
 
   async start(options: StartOptions) {
     await this.disconnect();
     this.options = options;
+    this.remoteDescriptionReady = false;
+    this.pendingRemoteCandidates = [];
     options.onState("connecting");
 
     await this.configureAudio();
@@ -68,7 +73,10 @@ export class P2pCall {
     };
     peer.ontrack = (event) => {
       const remote = (event as unknown as { streams?: MediaStream[] }).streams?.[0] ?? null;
-      options.onRemoteStream(remote);
+      if (remote) {
+        this.remoteStream = remote;
+        options.onRemoteStream(remote);
+      }
     };
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState;
@@ -101,6 +109,8 @@ export class P2pCall {
     if (signal.type === "offer") {
       if (options.isCaller) return;
       await peer.setRemoteDescription(new RTCSessionDescription(payload as { type: string; sdp: string }));
+      this.remoteDescriptionReady = true;
+      await this.applyPendingIceCandidates();
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       await options.onSignal({ type: "answer", payload: JSON.stringify(answer) });
@@ -109,6 +119,12 @@ export class P2pCall {
     if (signal.type === "answer") {
       if (!options.isCaller) return;
       await peer.setRemoteDescription(new RTCSessionDescription(payload as { type: string; sdp: string }));
+      this.remoteDescriptionReady = true;
+      await this.applyPendingIceCandidates();
+      return;
+    }
+    if (!this.remoteDescriptionReady) {
+      this.pendingRemoteCandidates.push(payload);
       return;
     }
     await peer.addIceCandidate(payload);
@@ -119,7 +135,7 @@ export class P2pCall {
   }
 
   getRemoteStream() {
-    return null;
+    return this.remoteStream;
   }
 
   getLocalStream() {
@@ -164,6 +180,9 @@ export class P2pCall {
     this.recoveryTimer = null;
     this.peer?.close();
     this.peer = null;
+    this.remoteDescriptionReady = false;
+    this.pendingRemoteCandidates = [];
+    this.remoteStream = null;
     this.localStream?.getTracks().forEach((track) => track.stop());
     this.localStream = null;
     this.options?.onRemoteStream(null);
@@ -209,6 +228,16 @@ export class P2pCall {
     } catch {
       this.recoveryInProgress = false;
       options.onState("failed");
+    }
+  }
+
+  private async applyPendingIceCandidates() {
+    const peer = this.peer;
+    if (!peer || !this.remoteDescriptionReady || this.pendingRemoteCandidates.length === 0) return;
+    const candidates = this.pendingRemoteCandidates;
+    this.pendingRemoteCandidates = [];
+    for (const candidate of candidates) {
+      await peer.addIceCandidate(candidate);
     }
   }
 }

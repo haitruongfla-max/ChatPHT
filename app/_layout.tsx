@@ -24,6 +24,7 @@ import { BackgroundCallPermission } from "@/components/background-call-permissio
 import { IncomingCallWatcher } from "@/components/incoming-call-watcher";
 import { CallMiniOverlay } from "@/components/call-mini-overlay";
 import { PushNotificationManager } from "@/components/push-notification-manager";
+import { OtaUpdateManager } from "@/components/ota-update-manager";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -102,6 +103,7 @@ export default function RootLayout() {
           </Stack>
           <IncomingCallWatcher />
           <PushNotificationManager />
+          <OtaUpdateManager />
           <BackgroundCallPermission />
           <CallMiniOverlay />
           <AppLockGate />

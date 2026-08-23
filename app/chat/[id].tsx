@@ -6,6 +6,15 @@ import {
 } from "@/components/chat-media-viewer";
 import { ChatMediaGrid } from "@/components/chat-media-grid";
 import {
+  ChatCameraCapture,
+  type CapturedChatMedia,
+  type ChatCameraCaptureMode,
+} from "@/components/chat-camera-capture";
+import {
+  buildChatMediaCandidate,
+  type ChatMediaUploadCandidate,
+} from "@/lib/chat-media-candidates";
+import {
   resolveMediaUploadUri,
   uploadMediaDirectly,
 } from "@/lib/direct-media-upload";
@@ -67,15 +76,6 @@ type TimelineMessage = ChatMessage & { albumItems?: ChatMessage[] };
 type TimelineItem =
   | (TimelineMessage & { entryType: "message" })
   | (CallHistory & { entryType: "call" });
-
-type UploadCandidate = {
-  id: string;
-  uri: string;
-  assetId?: string | null;
-  fileName: string;
-  size: number;
-  mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "video/mp4" | "video/quicktime";
-};
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
 
@@ -204,6 +204,7 @@ export default function ChatScreen() {
     null,
   );
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
+  const [captureMode, setCaptureMode] = useState<ChatCameraCaptureMode | null>(null);
   const [preview, setPreview] = useState<ChatMediaPreview | null>(null);
   const [previewItems, setPreviewItems] = useState<ChatMediaPreview[]>([]);
   const openMediaPreview = (entries: ChatMessage[], selectedId: number) => {
@@ -488,58 +489,8 @@ export default function ChatScreen() {
       ],
     );
 
-  const chooseMedia = async () => {
-    if (uploading) return;
-    if (replyTarget) {
-      Alert.alert("Đang trả lời tin nhắn", "Hãy gửi nội dung chữ cho phản hồi này hoặc bấm dấu X để bỏ trạng thái trả lời trước khi gửi media.");
-      return;
-    }
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Cần quyền thư viện", "Hãy cho phép ChatPHT truy cập thư viện ảnh và video để gửi tệp.");
-      return;
-    }
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
-      allowsMultipleSelection: true,
-      selectionLimit: 50,
-      allowsEditing: false,
-      quality: 1,
-    });
-    if (picked.canceled || picked.assets.length === 0) return;
-
-    const supportedMimeTypes = new Set<UploadCandidate["mimeType"]>([
-      "image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/quicktime",
-    ]);
-    const candidates: UploadCandidate[] = [];
-    for (const [index, asset] of picked.assets.slice(0, 50).entries()) {
-      const isVideo = asset.type === "video";
-      const fileSize = asset.fileSize;
-      const mimeType = asset.mimeType ?? (isVideo ? "video/mp4" : "image/jpeg");
-      if (!fileSize) {
-        Alert.alert("Không đọc được dung lượng", "Hãy chọn lại media để ChatPHT kiểm tra giới hạn an toàn.");
-        return;
-      }
-      if (!supportedMimeTypes.has(mimeType as UploadCandidate["mimeType"])) {
-        Alert.alert("Định dạng chưa hỗ trợ", "Hãy chọn ảnh JPEG/PNG/WEBP/GIF hoặc video MP4/MOV.");
-        return;
-      }
-      const maxBytes = isVideo ? 1024 * 1024 * 1024 : 20 * 1024 * 1024;
-      if (fileSize > maxBytes) {
-        Alert.alert("Tệp quá lớn", isVideo ? "Video tối đa 1GB." : "Ảnh tối đa 20 MB.");
-        return;
-      }
-      candidates.push({
-        id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
-        uri: asset.uri,
-        assetId: asset.assetId,
-        fileName: asset.fileName ?? `chatpht-${Date.now()}-${index}.${isVideo ? "mp4" : "jpg"}`,
-        size: fileSize,
-        mimeType: mimeType as UploadCandidate["mimeType"],
-      });
-    }
-    if (candidates.length === 0) return;
-
+  const uploadCandidates = async (candidates: ChatMediaUploadCandidate[]) => {
+    if (!candidates.length || uploading) return;
     setUploading(true);
     setUploadProgress(0);
     setUploadLabel(`Đang gửi 0/${candidates.length}...`);
@@ -596,6 +547,100 @@ export default function ChatScreen() {
       setUploadProgress(null);
       setUploadLabel("Đang tải lên");
     }
+  };
+
+  const validateMediaAssets = (
+    assets: {
+      uri: string;
+      assetId?: string | null;
+      fileName?: string | null;
+      fileSize?: number | null;
+      mimeType?: string | null;
+      type?: string | null;
+    }[],
+  ) => {
+    const candidates: ChatMediaUploadCandidate[] = [];
+    const now = Date.now();
+    for (const [index, asset] of assets.entries()) {
+      const result = buildChatMediaCandidate(asset, index, now);
+      if (!result.ok) {
+        Alert.alert(result.title, result.message);
+        return null;
+      }
+      candidates.push(result.candidate);
+    }
+    return candidates;
+  };
+
+  const canStartMediaUpload = () => {
+    if (uploading) return false;
+    if (!replyTarget) return true;
+    Alert.alert("Đang trả lời tin nhắn", "Hãy gửi nội dung chữ cho phản hồi này hoặc bấm dấu X để bỏ trạng thái trả lời trước khi gửi media.");
+    return false;
+  };
+
+  const chooseMedia = async () => {
+    if (!canStartMediaUpload()) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Cần quyền thư viện", "Hãy cho phép ChatPHT truy cập thư viện ảnh và video để gửi tệp.");
+      return;
+    }
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      allowsMultipleSelection: true,
+      selectionLimit: 50,
+      allowsEditing: false,
+      quality: 1,
+    });
+    if (picked.canceled || picked.assets.length === 0) return;
+    const candidates = validateMediaAssets(picked.assets.slice(0, 50));
+    if (candidates) await uploadCandidates(candidates);
+  };
+
+  const uploadCapturedMedia = async ({ uri, type }: CapturedChatMedia) => {
+    try {
+      let preparedUri = uri;
+      let mimeType: "image/jpeg" | "video/mp4" = type === "video" ? "video/mp4" : "image/jpeg";
+      if (type === "image") {
+        const context = ImageManipulator.manipulate(uri);
+        context.resize({ width: 1920 });
+        const rendered = await context.renderAsync();
+        const normalized = await rendered.saveAsync({ compress: 0.82, format: SaveFormat.JPEG });
+        preparedUri = normalized.uri;
+      }
+      const info = await FileSystem.getInfoAsync(preparedUri);
+      const fileSize = info.exists && "size" in info && typeof info.size === "number" ? info.size : 0;
+      const candidates = validateMediaAssets([{
+        uri: preparedUri,
+        type,
+        fileSize,
+        mimeType,
+        fileName: `chatpht-${type === "video" ? "video" : "photo"}-${Date.now()}.${type === "video" ? "mp4" : "jpg"}`,
+      }]);
+      if (candidates) await uploadCandidates(candidates);
+    } catch (error) {
+      Alert.alert("Không thể chuẩn bị media", error instanceof Error ? error.message : "Vui lòng thử lại.");
+    }
+  };
+
+  const handleCapturedMedia = (media: CapturedChatMedia) => {
+    setCaptureMode(null);
+    void uploadCapturedMedia(media);
+  };
+
+  const openCameraMenu = () => {
+    if (!canStartMediaUpload()) return;
+    Alert.alert(
+      "Gửi ảnh hoặc video",
+      "Ảnh và video được mã hóa đường dẫn, gửi qua kho riêng tư của cuộc trò chuyện và tính vào quota chung.",
+      [
+        { text: "Hủy", style: "cancel" },
+        { text: "Chọn từ thư viện", onPress: () => void chooseMedia() },
+        { text: "Quay video", onPress: () => setCaptureMode("video") },
+        { text: "Chụp ảnh", onPress: () => setCaptureMode("image") },
+      ],
+    );
   };
 
   const remove = async () => {
@@ -1037,6 +1082,18 @@ export default function ChatScreen() {
           <View style={styles.composerRow}>
             <Pressable
               disabled={uploading}
+              onPress={openCameraMenu}
+              style={({ pressed }) => [
+                styles.cameraButton,
+                (pressed || uploading) && styles.pressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Mở camera: chụp ảnh, quay video hoặc chọn thư viện"
+            >
+              <MaterialIcons name="photo-camera" size={22} color="#2563EB" />
+            </Pressable>
+            <Pressable
+              disabled={uploading}
               onPress={() => void chooseMedia()}
               style={({ pressed }) => [
                 styles.attach,
@@ -1084,6 +1141,11 @@ export default function ChatScreen() {
           </View>
         </View>
         <ChatMediaViewer item={preview} items={previewItems} onClose={() => { setPreview(null); setPreviewItems([]); }} />
+        <ChatCameraCapture
+          mode={captureMode}
+          onClose={() => setCaptureMode(null)}
+          onCaptured={handleCapturedMedia}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1380,6 +1442,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF",
   },
   composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
+  cameraButton: {
+    height: 42,
+    width: 42,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EAF2FF",
+  },
   uploadStatus: { paddingHorizontal: 2, paddingBottom: 9 },
   uploadLabelRow: {
     flexDirection: "row",

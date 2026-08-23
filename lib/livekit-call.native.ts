@@ -80,9 +80,18 @@ export class LiveKitCall {
   }
 
   async setScreenShareEnabled(enabled: boolean) {
-    await this.room.localParticipant.setScreenShareEnabled(enabled);
-    if (enabled && !this.room.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track) {
-      throw new Error("Không thể bắt đầu chia sẻ màn hình. Hãy cho phép Android ghi lại màn hình rồi thử lại.");
+    try {
+      await this.room.localParticipant.setScreenShareEnabled(enabled);
+      if (enabled && !this.room.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track) {
+        throw new Error("Không thể bắt đầu chia sẻ màn hình. Hãy cho phép Android ghi lại màn hình rồi thử lại.");
+      }
+    } catch (error) {
+      if (enabled) {
+        // MediaProjection can be denied or rejected by OEM policy. Unpublish any partial track
+        // before reporting the error so the room, microphone and camera remain connected.
+        await this.room.localParticipant.setScreenShareEnabled(false).catch(() => undefined);
+      }
+      throw error;
     }
   }
 

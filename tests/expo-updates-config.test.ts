@@ -14,8 +14,9 @@ describe("Cấu hình APK nền OTA", () => {
     expect(configSource).toContain("fallbackToCacheTimeout: 30_000");
   });
 
-  it("tăng versionCode cho APK nền OTA nhưng giữ phiên bản hiển thị 1.0.15", () => {
-    expect(configSource).toContain('version: "1.0.15"');
-    expect(configSource).toContain("versionCode: 16");
+  it("tăng versionCode cho APK nền OTA 1.0.16 và khai báo MediaProjection Android", () => {
+    expect(configSource).toContain('version: "1.0.16"');
+    expect(configSource).toContain("versionCode: 17");
+    expect(configSource).toContain('"FOREGROUND_SERVICE_MEDIA_PROJECTION"');
   });
 });

@@ -37,6 +37,7 @@ export default function CallScreen() {
   const [speaker, setSpeaker] = useState(resumed?.speaker ?? kind === "video");
   const [cameraOn, setCameraOn] = useState(resumed?.cameraOn ?? kind === "video");
   const [screenSharing, setScreenSharing] = useState(false);
+  const [screenShareStarting, setScreenShareStarting] = useState(false);
   const [isFrontCamera, setIsFrontCamera] = useState(resumed?.isFrontCamera ?? true);
   const [videoQuality, setVideoQuality] = useState<VideoQualityMode>(resumed?.videoQuality ?? "hd");
   const [seconds, setSeconds] = useState(resumed?.seconds ?? 0);
@@ -238,9 +239,9 @@ export default function CallScreen() {
     });
   }
 
-  async function switchToLiveKit() {
-    if (isGroup || transport === "livekit") return;
-    if (liveKitTransitioning.current) return;
+  async function switchToLiveKit(): Promise<boolean> {
+    if (isGroup || transport === "livekit") return true;
+    if (liveKitTransitioning.current) return false;
     liveKitTransitioning.current = true;
     try {
       setIsConnecting(true);
@@ -252,8 +253,10 @@ export default function CallScreen() {
       await call.connect(result.session, kind);
       setConnected(true);
       publishActiveState({ seconds: 0 });
+      return true;
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : "Không thể chuyển sang LiveKit.");
+      return false;
     } finally {
       setIsConnecting(false);
       liveKitTransitioning.current = false;
@@ -440,12 +443,16 @@ export default function CallScreen() {
   }
 
   async function toggleScreenShare() {
+    if (screenShareStarting) return;
     const next = !screenSharing;
+    setScreenShareStarting(true);
     try {
+      if (next && !connected) throw new Error("Cuộc gọi chưa sẵn sàng để chia sẻ màn hình.");
       if (next && transport === "p2p") {
         // A direct call remains P2P by default. Screen capture is a deliberate
         // transition to the LiveKit room because P2P has no SFU room to publish into.
-        await switchToLiveKit();
+        const transitioned = await switchToLiveKit();
+        if (!transitioned) throw new Error("Không thể chuyển cuộc gọi sang phòng chia sẻ màn hình.");
       }
       await call.setScreenShareEnabled(next);
       setScreenSharing(next);
@@ -453,7 +460,16 @@ export default function CallScreen() {
         Alert.alert("Đang chia sẻ màn hình", "Micro vẫn hoạt động. Thu nhỏ cuộc gọi để mở chat; bong bóng cuộc gọi sẽ giữ phiên đang chia sẻ.");
       }
     } catch (error) {
-      Alert.alert("Chưa thể chia sẻ màn hình", error instanceof Error ? error.message : "Hãy thử lại sau giây lát.");
+      // Always keep the existing audio/video room alive if Android or an OEM rejects MediaProjection.
+      await call.setScreenShareEnabled(false).catch(() => undefined);
+      setScreenSharing(false);
+      const detail = error instanceof Error ? error.message : "Hãy thử lại sau giây lát.";
+      Alert.alert(
+        "Chưa thể chia sẻ màn hình",
+        `Cuộc gọi vẫn đang tiếp tục. ${detail}\n\nTrên Xiaomi/MIUI, hãy cho phép hộp thoại ghi màn hình của Android, tắt hạn chế pin cho ChatPHT nếu cần, rồi thử lại. ChatPHT không thể tự cấp các quyền hệ thống này.`,
+      );
+    } finally {
+      setScreenShareStarting(false);
     }
   }
 
@@ -524,7 +540,7 @@ export default function CallScreen() {
         </View> : null}
         {showCallChrome ? <View style={[styles.identity, isFullVideo && styles.videoIdentity]}><View style={[styles.avatar, styles.callAvatar, isFullVideo && styles.videoAvatar]}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></View><Text style={[styles.name, isFullVideo && styles.videoText]}>{name}</Text>{connected ? <><Text style={[styles.mutedText, isFullVideo && styles.videoSubtext]}>{subtitle}</Text><Text style={[styles.quality, isFullVideo && styles.videoQuality]}>{isGroup ? "Phòng nhóm LiveKit tối đa 8 người" : transport === "p2p" ? `P2P trực tiếp · ${videoQuality.toUpperCase()}` : "LiveKit · kết nối dự phòng"}</Text>{transport === "livekit" ? <NetworkQualityBadge quality={networkQuality} inverse={isFullVideo} /> : null}</> : <ConnectionStatus status={connectionStatus} />}</View> : null}
         {showCallChrome ? <View style={[styles.controls, isFullVideo && styles.videoControls]}>
-          {connected ? <><View style={styles.controlRow}><Control label={muted ? "Bật micro" : "Tắt micro"} icon={muted ? "mic-off" : "mic"} active={muted} inverse={isFullVideo} onPress={() => void toggleMicrophone()} /><Control label={speaker ? "Loa ngoài" : "Tai nghe"} icon={speaker ? "volume-up" : "hearing"} active={speaker} inverse={isFullVideo} onPress={() => void toggleSpeaker()} />{kind === "video" ? <Control label={cameraOn ? "Tắt camera" : "Bật camera"} icon={cameraOn ? "videocam" : "videocam-off"} active={!cameraOn} inverse={isFullVideo} onPress={() => void toggleCamera()} /> : null}</View><View style={styles.secondaryControls}>{kind === "video" && cameraOn ? <><Control label={isFrontCamera ? "Camera trước" : "Camera sau"} icon="flip-camera-android" active={false} inverse={isFullVideo} onPress={() => void switchCamera()} /><Control label={videoQuality === "hd" ? "HD" : "SD"} icon="high-quality" active={videoQuality === "hd"} inverse={isFullVideo} onPress={() => void toggleVideoQuality()} /></> : null}<Control label={screenSharing ? "Dừng chia sẻ" : "Chia sẻ màn hình"} icon={screenSharing ? "stop-screen-share" : "screen-share"} active={screenSharing} inverse={isFullVideo} onPress={() => void toggleScreenShare()} /></View><RoundAction label={isGroup && !isCaller ? "Rời nhóm" : "Kết thúc"} icon="call-end" color="#E8505B" inverse={isFullVideo} onPress={() => void finish("ended")} /></> : <View style={styles.pending}><RoundAction label={isGroup ? "Rời nhóm" : "Hủy cuộc gọi"} icon="call-end" color="#E8505B" onPress={() => void finish("ended")} /></View>}
+          {connected ? <><View style={styles.controlRow}><Control label={muted ? "Bật micro" : "Tắt micro"} icon={muted ? "mic-off" : "mic"} active={muted} inverse={isFullVideo} onPress={() => void toggleMicrophone()} /><Control label={speaker ? "Loa ngoài" : "Tai nghe"} icon={speaker ? "volume-up" : "hearing"} active={speaker} inverse={isFullVideo} onPress={() => void toggleSpeaker()} />{kind === "video" ? <Control label={cameraOn ? "Tắt camera" : "Bật camera"} icon={cameraOn ? "videocam" : "videocam-off"} active={!cameraOn} inverse={isFullVideo} onPress={() => void toggleCamera()} /> : null}</View><View style={styles.secondaryControls}>{kind === "video" && cameraOn ? <><Control label={isFrontCamera ? "Camera trước" : "Camera sau"} icon="flip-camera-android" active={false} inverse={isFullVideo} onPress={() => void switchCamera()} /><Control label={videoQuality === "hd" ? "HD" : "SD"} icon="high-quality" active={videoQuality === "hd"} inverse={isFullVideo} onPress={() => void toggleVideoQuality()} /></> : null}<Control label={screenShareStarting ? "Đang chuẩn bị" : screenSharing ? "Dừng chia sẻ" : "Chia sẻ màn hình"} icon={screenSharing ? "stop-screen-share" : "screen-share"} active={screenSharing} inverse={isFullVideo} disabled={screenShareStarting} onPress={() => void toggleScreenShare()} /></View><RoundAction label={isGroup && !isCaller ? "Rời nhóm" : "Kết thúc"} icon="call-end" color="#E8505B" inverse={isFullVideo} onPress={() => void finish("ended")} /></> : <View style={styles.pending}><RoundAction label={isGroup ? "Rời nhóm" : "Hủy cuộc gọi"} icon="call-end" color="#E8505B" onPress={() => void finish("ended")} /></View>}
         </View> : null}
       </View>
     </SafeAreaView>
@@ -572,8 +588,8 @@ function NetworkQualityBadge({ quality, inverse }: { quality: ReturnType<typeof 
   return <View style={[styles.networkBadge, inverse && styles.networkBadgeInverse]} accessibilityLabel={`${quality.label}. ${quality.detail}`}><MaterialIcons name={quality.icon} size={16} color={quality.color} /><Text style={[styles.networkLabel, inverse && styles.networkLabelInverse, { color: inverse ? "#E5F0FF" : quality.color }]}>{quality.label}</Text><Text style={[styles.networkDetail, inverse && styles.networkDetailInverse]}>{quality.detail}</Text></View>;
 }
 
-function Control({ label, icon, active, inverse, onPress }: { label: string; icon: React.ComponentProps<typeof MaterialIcons>["name"]; active: boolean; inverse?: boolean; onPress: () => void }) {
-  return <Pressable onPress={onPress} style={({ pressed }) => [styles.control, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label}><View style={[styles.controlIcon, active && styles.controlActive, inverse && styles.inverseControlIcon]}><MaterialIcons name={icon} size={22} color={active ? "#FFFFFF" : inverse ? "#FFFFFF" : "#1D4ED8"} /></View><Text style={[styles.controlLabel, inverse && styles.inverseLabel]}>{label}</Text></Pressable>;
+function Control({ label, icon, active, inverse, disabled = false, onPress }: { label: string; icon: React.ComponentProps<typeof MaterialIcons>["name"]; active: boolean; inverse?: boolean; disabled?: boolean; onPress: () => void }) {
+  return <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.control, disabled && styles.controlDisabled, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }}><View style={[styles.controlIcon, active && styles.controlActive, inverse && styles.inverseControlIcon]}><MaterialIcons name={icon} size={22} color={active ? "#FFFFFF" : inverse ? "#FFFFFF" : "#1D4ED8"} /></View><Text style={[styles.controlLabel, inverse && styles.inverseLabel]}>{label}</Text></Pressable>;
 }
 
 function RoundAction({ label, icon, color, inverse, disabled = false, onPress }: { label: string; icon: React.ComponentProps<typeof MaterialIcons>["name"]; color: string; inverse?: boolean; disabled?: boolean; onPress: () => void }) {
@@ -631,6 +647,7 @@ const styles = StyleSheet.create({
   controlRow: { flexDirection: "row", gap: 20 },
   secondaryControls: { flexDirection: "row", justifyContent: "center", gap: 20, marginTop: -4 },
   control: { width: 78, alignItems: "center" },
+  controlDisabled: { opacity: 0.55 },
   controlIcon: { width: 56, height: 56, borderRadius: 28, justifyContent: "center", alignItems: "center", backgroundColor: "#E7F0FF" },
   inverseControlIcon: { backgroundColor: "rgba(255,255,255,0.2)" },
   controlActive: { backgroundColor: "#60718F" },

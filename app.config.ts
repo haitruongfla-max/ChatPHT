@@ -45,7 +45,7 @@ const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
   owner: "truongbbbs-team",
-  version: "1.0.15",
+  version: "1.0.16",
   runtimeVersion: {
     // Bất kỳ thay đổi native nào sẽ có runtime mới, chặn OTA không tương thích.
     policy: "fingerprint",
@@ -82,9 +82,9 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
     googleServicesFile: "./google-services.json",
-    // Giữ version hiển thị 1.0.15, nhưng lớn hơn bản 1.0.15 cũ để Android cho phép cập nhật đè.
-    versionCode: 16,
-    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE", "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"],
+    // Cao hơn OTA base 1.0.15 để Android cho phép cập nhật đè bản có native MediaProjection mới.
+    versionCode: 17,
+    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE", "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PROJECTION"],
     intentFilters: [
       {
         action: "VIEW",
@@ -123,8 +123,9 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "ChatPHT cần camera để bạn thực hiện cuộc gọi video riêng tư.",
-        microphonePermission: "ChatPHT cần micro để bạn thực hiện cuộc gọi thoại và video riêng tư.",
+        cameraPermission: "ChatPHT cần camera để bạn gọi video, chụp ảnh và quay video gửi trong hội thoại riêng tư.",
+        microphonePermission: "ChatPHT cần micro để bạn gọi thoại, gọi video và quay video có tiếng.",
+        recordAudioAndroid: true,
       },
     ],
     [

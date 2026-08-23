@@ -228,6 +228,11 @@
 - [x] Nâng Android versionCode cho APK nền OTA để có thể cập nhật đè mọi bản 1.0.15 hiện có.
 - [x] Xác minh cấu hình OTA, Android export và workflow trước khi phát hành APK nền OTA.
 - [x] Tạo chuỗi Base64 của `google-services.json` để người dùng đặt GitHub Secret `GOOGLE_SERVICES_JSON_BASE64` cho workflow APK nền OTA.
-- [ ] Kết nối repository `haitruongfla-max/ChatPHT`, đẩy mã ChatPHT hiện tại và kích hoạt workflow `build-ota-base-apk` đã được người dùng xác nhận.
-- [ ] Xác minh GitHub Actions hoàn tất, GitHub Release có APK nền OTA và bàn giao liên kết tải trực tiếp.
-- [ ] Tăng bộ nhớ Gradle có kiểm soát cho runner GitHub sau lỗi `OutOfMemoryError` ở Android lint, rồi chạy lại workflow APK nền OTA.
+- [x] Kết nối repository `haitruongfla-max/ChatPHT`, đẩy mã ChatPHT hiện tại và kích hoạt workflow `build-ota-base-apk` đã được người dùng xác nhận.
+- [x] Xác minh GitHub Actions hoàn tất, GitHub Release có APK nền OTA và bàn giao liên kết tải trực tiếp.
+- [x] Tăng bộ nhớ Gradle có kiểm soát cho runner GitHub sau lỗi `OutOfMemoryError` ở Android lint, rồi chạy lại workflow APK nền OTA.
+- [x] Rà soát và bổ sung thao tác chụp ảnh/quay video ngay trong chat riêng và nhóm, dùng kho media riêng có quota 200GB thay vì làm lộ media qua Firebase Storage.
+- [x] Khắc phục chia sẻ màn hình Android: quyền foreground/media projection, xử lý lỗi không crash và hướng dẫn quyền MIUI phù hợp.
+- [x] Rà soát và sửa luồng gọi video 1:1 gồm quyền camera/micro, RTCView, signaling/ICE, STUN/TURN và điều khiển camera/micro.
+- [x] Bổ sung kiểm tra OTA có kiểm soát khi mở app/trở lại foreground, chỉ dùng bundle tương thích native và không phụ thuộc Firestore.
+- [ ] Nâng APK nền OTA lên version 1.0.16 với Android versionCode mới, kiểm thử và build GitHub Release.
