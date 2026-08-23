@@ -10,7 +10,7 @@ import { Platform } from "react-native";
 
 export type P2pSignalType = "offer" | "answer" | "ice";
 export type P2pSignal = { type: P2pSignalType; payload: string };
-export type P2pConnectionState = "idle" | "connecting" | "connected" | "failed" | "closed";
+export type P2pConnectionState = "idle" | "connecting" | "recovering" | "connected" | "failed" | "closed";
 export type P2pIceServer = { urls: string[]; username?: string; credential?: string };
 
 type StartOptions = {
@@ -33,6 +33,8 @@ export class P2pCall {
   private localStream: MediaStream | null = null;
   private options: StartOptions | null = null;
   private connected = false;
+  private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  private recoveryInProgress = false;
 
   async start(options: StartOptions) {
     await this.disconnect();
@@ -72,10 +74,13 @@ export class P2pCall {
       const state = peer.connectionState;
       if (state === "connected") {
         this.connected = true;
+        this.recoveryInProgress = false;
+        if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+        this.recoveryTimer = null;
         options.onState("connected");
       } else if (state === "failed" || state === "disconnected") {
         this.connected = false;
-        options.onState("failed");
+        void this.recoverIceOrFail();
       } else if (state === "closed") {
         options.onState("closed");
       }
@@ -154,6 +159,9 @@ export class P2pCall {
 
   async disconnect() {
     this.connected = false;
+    this.recoveryInProgress = false;
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = null;
     this.peer?.close();
     this.peer = null;
     this.localStream?.getTracks().forEach((track) => track.stop());
@@ -174,5 +182,33 @@ export class P2pCall {
     });
     await AudioSession.setDefaultRemoteAudioTrackVolume(1);
     await AudioSession.startAudioSession();
+  }
+
+  private async recoverIceOrFail() {
+    const peer = this.peer;
+    const options = this.options;
+    if (!peer || !options || this.recoveryInProgress) return;
+    this.recoveryInProgress = true;
+    options.onState("recovering");
+    try {
+      // The caller renews ICE candidates and renegotiates. The callee accepts
+      // this standard offer via the existing protected signaling channel.
+      if (options.isCaller) {
+        const restartable = peer as RTCPeerConnection & { restartIce?: () => void };
+        restartable.restartIce?.();
+        const offer = await peer.createOffer({ iceRestart: true });
+        await peer.setLocalDescription(offer);
+        await options.onSignal({ type: "offer", payload: JSON.stringify(offer) });
+      }
+      this.recoveryTimer = setTimeout(() => {
+        if (!this.connected) {
+          this.recoveryInProgress = false;
+          options.onState("failed");
+        }
+      }, 6_000);
+    } catch {
+      this.recoveryInProgress = false;
+      options.onState("failed");
+    }
   }
 }

@@ -16,6 +16,9 @@ export class LiveKitCall {
 
   async setMicrophoneEnabled(_enabled: boolean) {}
   async setCameraEnabled(_enabled: boolean) {}
+  async setScreenShareEnabled(_enabled: boolean) {
+    throw new Error("Chia sẻ màn hình chỉ khả dụng trên ứng dụng ChatPHT dành cho iOS và Android.");
+  }
   async setSpeakerEnabled(_enabled: boolean) {}
   async setVideoQuality(_mode: VideoQualityMode) {
     throw new Error("Tính năng gọi chỉ khả dụng trên ứng dụng ChatPHT dành cho iOS và Android.");
@@ -28,6 +31,9 @@ export class LiveKitCall {
   }
   getNetworkStats() {
     return { pingMs: null, connectionQuality: "unknown" as const };
+  }
+  async adaptVideoForNetwork(_stats: ReturnType<LiveKitCall["getNetworkStats"]>) {
+    return "sd" as const;
   }
   async disconnect() {}
 }

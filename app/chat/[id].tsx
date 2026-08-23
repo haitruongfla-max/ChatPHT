@@ -10,6 +10,7 @@ import {
   uploadMediaDirectly,
 } from "@/lib/direct-media-upload";
 import { runMediaUploadQueue } from "@/lib/media-upload-queue";
+import { subscribeToConversationBackground } from "@/lib/conversation-background-realtime.native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
@@ -246,6 +247,12 @@ export default function ChatScreen() {
     { conversationId },
     { enabled: Boolean(user) && Number.isInteger(conversationId) },
   );
+  useEffect(() => {
+    if (!user || !Number.isInteger(conversationId)) return;
+    return subscribeToConversationBackground(conversationId, () => {
+      void utils.conversations.wallpaper.invalidate({ conversationId });
+    });
+  }, [conversationId, user, utils]);
   const groupDetails = trpc.conversations.groupDetails.useQuery(
     { conversationId },
     { enabled: Boolean(user) && isGroup && Number.isInteger(conversationId), refetchInterval: 3000 },
@@ -419,7 +426,7 @@ export default function ChatScreen() {
     if (wallpaperProgress !== null || requestWallpaperUpload.isPending || setWallpaper.isPending) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("Cần quyền thư viện ảnh", "Hãy cho phép ChatPHT truy cập ảnh để đặt nền riêng cho cuộc trò chuyện.");
+      Alert.alert("Cần quyền thư viện ảnh", "Hãy cho phép ChatPHT truy cập ảnh để đặt nền chung cho cuộc trò chuyện.");
       return;
     }
     const picked = await ImagePicker.launchImageLibraryAsync({
@@ -441,15 +448,18 @@ export default function ChatScreen() {
       const info = await FileSystem.getInfoAsync(normalized.uri);
       const size = info.exists && "size" in info && typeof info.size === "number" ? info.size : 0;
       if (!size) throw new Error("Không thể chuẩn bị ảnh nền từ thư viện.");
-      if (size > 8 * 1024 * 1024) throw new Error("Ảnh nền sau khi tối ưu vẫn vượt quá 8 MB.");
+      if (size > 6 * 1024 * 1024) throw new Error("Ảnh nền sau khi tối ưu vẫn vượt quá 6 MB.");
       const upload = await requestWallpaperUpload.mutateAsync({ conversationId, mimeType: "image/jpeg", size });
+      if (upload.nearQuota) {
+        Alert.alert("Kho gần đầy", "Ảnh nền này được tính vào quota 200GB. Hệ thống sẽ tự dọn media tin nhắn cũ nhất theo chính sách hiện có khi cần.");
+      }
       await uploadMediaDirectly({
         uri: normalized.uri,
         uploadUrl: upload.uploadUrl,
         mimeType: "image/jpeg",
         onProgress: setWallpaperProgress,
       });
-      await setWallpaper.mutateAsync({ conversationId, wallpaperKey: upload.key });
+      await setWallpaper.mutateAsync({ conversationId, wallpaperKey: upload.key, size });
       await utils.conversations.wallpaper.invalidate({ conversationId });
     } catch (error) {
       Alert.alert("Không thể đặt ảnh nền", error instanceof Error ? error.message : "Vui lòng chọn ảnh khác và thử lại.");
@@ -470,7 +480,7 @@ export default function ChatScreen() {
   const openWallpaperMenu = () =>
     Alert.alert(
       "Ảnh nền cuộc trò chuyện",
-      "Ảnh nền này chỉ hiển thị với bạn, không thay đổi giao diện của người kia.",
+      "Ảnh nền này hiển thị chung cho mọi thành viên trong cuộc trò chuyện và được tính vào quota lưu trữ chung.",
       [
         { text: "Hủy", style: "cancel" },
         ...(wallpaper.data?.url ? [{ text: "Xóa ảnh nền", style: "destructive" as const, onPress: () => void clearWallpaper() }] : []),

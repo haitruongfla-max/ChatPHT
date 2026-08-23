@@ -45,7 +45,7 @@ const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
   owner: "truongbbbs-team",
-  version: "1.0.14",
+  version: "1.0.15",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
@@ -73,7 +73,7 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
     googleServicesFile: "./google-services.json",
-    versionCode: 14,
+    versionCode: 15,
     permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE", "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"],
     intentFilters: [
       {

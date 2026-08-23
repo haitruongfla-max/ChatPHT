@@ -11,6 +11,7 @@ import { runMediaCleanup } from "./media-cleanup";
 import { createLiveKitCallToken } from "./call-token";
 import { dispatchIncomingCallPushNotification, dispatchNewMessagePushNotifications } from "./push";
 import { createMediaAccessUrl } from "./media-access";
+import { emitConversationBackgroundUpdated } from "./_core/realtime";
 import { createOpaqueStorageKey, storageCreateUploadUrl, storageDelete, storagePut } from "./storage";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { ENV } from "./_core/env";
@@ -579,6 +580,8 @@ export const appRouter = router({
             key: wallpaper.wallpaperKey,
             url: wallpaper.wallpaperKey ? await createMediaAccessUrl(ctx.req, ctx.user, wallpaper.wallpaperKey) : null,
             opacity: wallpaper.wallpaperOpacity,
+            size: wallpaper.wallpaperSize,
+            updatedAt: wallpaper.backgroundUpdatedAt,
           };
         } catch (error) {
           return appError(error, "Không thể tải ảnh nền hội thoại.");
@@ -588,29 +591,43 @@ export const appRouter = router({
       .input(z.object({ conversationId: z.number().int().positive(), mimeType: avatarMimeSchema, size: z.number().int().positive().max(MAX_WALLPAPER_BYTES) }))
       .mutation(async ({ ctx, input }) => {
         await db.getConversationWallpaperKey(input.conversationId, ctx.user.id);
+        const usage = await db.getStorageUsageSummary();
+        const projectedBytes = usage.usedBytes + input.size;
+        const nearQuota = !usage.unlimited && usage.quotaBytes !== null && projectedBytes >= usage.quotaBytes * 0.9;
         const storage = await storageCreateUploadUrl(
-          createOpaqueStorageKey(`chatpht/wallpapers/${ctx.user.id}/${input.conversationId}`, extensionForMime(input.mimeType)),
+          createOpaqueStorageKey(`chatpht/conversation-backgrounds/${input.conversationId}`, extensionForMime(input.mimeType)),
         );
-        return { ...storage, maximumSize: MAX_WALLPAPER_BYTES };
+        return { ...storage, maximumSize: MAX_WALLPAPER_BYTES, nearQuota, projectedBytes };
       }),
     setWallpaper: protectedProcedure
       .input(z.object({
         conversationId: z.number().int().positive(),
         wallpaperKey: z.string().trim().min(20).max(512).nullable(),
         opacity: z.number().int().min(35).max(90).optional(),
+        size: z.number().int().positive().max(MAX_WALLPAPER_BYTES).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        if (input.wallpaperKey && !input.wallpaperKey.startsWith(`chatpht/wallpapers/${ctx.user.id}/${input.conversationId}/`)) {
+        const sharedPrefix = `chatpht/conversation-backgrounds/${input.conversationId}/`;
+        const legacyPrefix = `chatpht/wallpapers/${ctx.user.id}/${input.conversationId}/`;
+        if (input.wallpaperKey && !input.wallpaperKey.startsWith(sharedPrefix) && !input.wallpaperKey.startsWith(legacyPrefix)) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Ảnh nền không thuộc về hội thoại này." });
         }
-        const result = await db.setConversationWallpaperKey(input.conversationId, ctx.user.id, input.wallpaperKey, input.opacity);
+        const result = input.size === undefined
+          ? await db.setConversationWallpaperKey(input.conversationId, ctx.user.id, input.wallpaperKey, input.opacity)
+          : await db.setConversationWallpaperKey(input.conversationId, ctx.user.id, input.wallpaperKey, input.opacity, input.size);
         if (result.previousKey && result.previousKey !== input.wallpaperKey) {
           void storageDelete(result.previousKey).catch(() => undefined);
         }
+        emitConversationBackgroundUpdated({
+          conversationId: input.conversationId,
+          updatedAt: result.backgroundUpdatedAt.toISOString(),
+        });
         return {
           key: result.wallpaperKey,
           url: result.wallpaperKey ? await createMediaAccessUrl(ctx.req, ctx.user, result.wallpaperKey) : null,
           opacity: result.wallpaperOpacity,
+          size: result.wallpaperSize,
+          updatedAt: result.backgroundUpdatedAt,
         };
       }),
     markAllDelivered: protectedProcedure.mutation(async ({ ctx }) => {

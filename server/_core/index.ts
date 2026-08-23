@@ -9,6 +9,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { scheduledMediaCleanupHandler } from "../scheduled-media-cleanup";
 import { mediaDownloadHandler } from "../media-access";
+import { registerRealtime } from "./realtime";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -32,6 +33,7 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  registerRealtime(server);
   // Media bytes use presigned PUT URLs and bypass Express. Keep the control-plane
   // request window at ten minutes so slow mobile networks can finish their upload flow.
   server.requestTimeout = 10 * 60 * 1000;

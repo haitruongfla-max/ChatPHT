@@ -130,16 +130,17 @@ describe("chat media access controls", () => {
     expect(db.hideConversationForUser).toHaveBeenCalledWith(18, 7);
   });
 
-  it("issues a private wallpaper upload URL only after validating the requesting member", async () => {
-    vi.mocked(db.getConversationWallpaperKey).mockResolvedValue({ wallpaperKey: null, wallpaperOpacity: 60 });
+  it("issues a shared-background upload URL only after validating the requesting member", async () => {
+    vi.mocked(db.getConversationWallpaperKey).mockResolvedValue({ wallpaperKey: null, wallpaperSize: null, wallpaperOpacity: 60, backgroundUpdatedAt: null });
+    vi.mocked(db.getStorageUsageSummary).mockResolvedValue({ usedBytes: 0, quotaBytes: 200 * 1024 * 1024 * 1024, unlimited: false, mediaCount: 0, recentMedia: [] } as any);
     vi.mocked(storage.storageCreateUploadUrl).mockResolvedValue({
-      key: "chatpht/wallpapers/7/18/opaque-object.jpg",
+      key: "chatpht/conversation-backgrounds/18/opaque-object.jpg",
       uploadUrl: "https://upload.example/wallpaper.jpg",
     } as any);
 
     await expect(
       callerFor(7).conversations.requestWallpaperUpload({ conversationId: 18, mimeType: "image/jpeg", size: 1024 }),
-    ).resolves.toMatchObject({ key: "chatpht/wallpapers/7/18/opaque-object.jpg" });
+    ).resolves.toMatchObject({ key: "chatpht/conversation-backgrounds/18/opaque-object.jpg" });
     expect(db.getConversationWallpaperKey).toHaveBeenCalledWith(18, 7);
   });
 
@@ -207,10 +208,10 @@ describe("chat media access controls", () => {
     expect(db.setConversationWallpaperKey).not.toHaveBeenCalled();
   });
 
-  it("replaces only the caller's wallpaper and deletes the old private asset", async () => {
-    const oldKey = "chatpht/wallpapers/7/18/old-wallpaper.jpg";
-    const nextKey = "chatpht/wallpapers/7/18/new-wallpaper.jpg";
-    vi.mocked(db.setConversationWallpaperKey).mockResolvedValue({ previousKey: oldKey, wallpaperKey: nextKey, wallpaperOpacity: 58 });
+  it("replaces the conversation background and deletes the previous private asset", async () => {
+    const oldKey = "chatpht/conversation-backgrounds/18/old-wallpaper.jpg";
+    const nextKey = "chatpht/conversation-backgrounds/18/new-wallpaper.jpg";
+    vi.mocked(db.setConversationWallpaperKey).mockResolvedValue({ previousKey: oldKey, wallpaperKey: nextKey, wallpaperSize: 1024, wallpaperOpacity: 58, backgroundUpdatedAt: new Date() });
     vi.mocked(storage.storageDelete).mockResolvedValue(undefined);
 
     await expect(callerFor(7).conversations.setWallpaper({ conversationId: 18, wallpaperKey: nextKey, opacity: 58 })).resolves.toMatchObject({

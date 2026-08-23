@@ -1,4 +1,4 @@
-export const P2P_FALLBACK_TIMEOUT_MS = 5_000;
+export const P2P_FALLBACK_TIMEOUT_MS = 6_000;
 
 export type CallTransport = "p2p" | "livekit";
 export type CallTransportDecision =

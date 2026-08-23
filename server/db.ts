@@ -248,13 +248,20 @@ const activeMediaFilter = and(
 export async function getStorageUsageSummary() {
   const db = requireDb(await getDb());
   const settings = await getStorageQuotaSettings();
-  const [aggregate] = await db
+  const [mediaAggregate] = await db
     .select({
       usedBytes: sql<number>`coalesce(sum(${messages.mediaSize}), 0)`,
       mediaCount: sql<number>`count(${messages.id})`,
     })
     .from(messages)
     .where(activeMediaFilter);
+  const [backgroundAggregate] = await db
+    .select({
+      usedBytes: sql<number>`coalesce(sum(${conversations.backgroundSize}), 0)`,
+      mediaCount: sql<number>`count(${conversations.id})`,
+    })
+    .from(conversations)
+    .where(isNotNull(conversations.backgroundKey));
   const recentMedia = await db
     .select({
       id: messages.id,
@@ -272,8 +279,8 @@ export async function getStorageUsageSummary() {
     .limit(5);
 
   return {
-    usedBytes: Number(aggregate?.usedBytes ?? 0),
-    mediaCount: Number(aggregate?.mediaCount ?? 0),
+    usedBytes: Number(mediaAggregate?.usedBytes ?? 0) + Number(backgroundAggregate?.usedBytes ?? 0),
+    mediaCount: Number(mediaAggregate?.mediaCount ?? 0) + Number(backgroundAggregate?.mediaCount ?? 0),
     quotaGb: settings.quotaGb,
     quotaBytes: settings.unlimited ? null : quotaGbToBytes(settings.quotaGb),
     unlimited: settings.unlimited,
@@ -702,10 +709,27 @@ export async function getConversationTypingStatus(conversationId: number, userId
   return { isTyping: Boolean(typingUntil), typingUntil };
 }
 
-/** Returns the requesting member's private wallpaper key for one conversation. */
+/** Returns the shared conversation background after verifying current membership. */
 export async function getConversationWallpaperKey(conversationId: number, userId: number) {
   const db = requireDb(await getDb());
-  const membership = await db
+  if (!(await isConversationMember(conversationId, userId))) {
+    throw new Error("Bạn không có quyền truy cập hội thoại này.");
+  }
+  const conversation = await db
+    .select({
+      wallpaperKey: conversations.backgroundKey,
+      wallpaperSize: conversations.backgroundSize,
+      wallpaperOpacity: conversations.backgroundOpacity,
+      backgroundUpdatedAt: conversations.backgroundUpdatedAt,
+    })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+  if (!conversation[0]) throw new Error("Hội thoại không còn tồn tại.");
+  // A non-null timestamp means this conversation has explicitly opted into the
+  // shared model, even when the current shared background was cleared.
+  if (conversation[0].backgroundUpdatedAt) return conversation[0];
+  const [legacyMemberBackground] = await db
     .select({
       wallpaperKey: conversationMembers.wallpaperKey,
       wallpaperOpacity: conversationMembers.wallpaperOpacity,
@@ -713,25 +737,42 @@ export async function getConversationWallpaperKey(conversationId: number, userId
     .from(conversationMembers)
     .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)))
     .limit(1);
-  if (!membership[0]) throw new Error("Bạn không có quyền truy cập hội thoại này.");
-  return membership[0];
+  if (!legacyMemberBackground?.wallpaperKey) return conversation[0];
+  return {
+    wallpaperKey: legacyMemberBackground.wallpaperKey,
+    wallpaperSize: null,
+    wallpaperOpacity: legacyMemberBackground.wallpaperOpacity,
+    backgroundUpdatedAt: null,
+  };
 }
 
-/** Stores a wallpaper only for the authenticated member, never for the other participant. */
+/** Stores one shared background for every current member of the conversation. */
 export async function setConversationWallpaperKey(
   conversationId: number,
   userId: number,
   wallpaperKey: string | null,
   wallpaperOpacity?: number,
+  wallpaperSize?: number,
 ) {
   const db = requireDb(await getDb());
   const previous = await getConversationWallpaperKey(conversationId, userId);
   const nextOpacity = wallpaperOpacity ?? previous.wallpaperOpacity;
   await db
-    .update(conversationMembers)
-    .set({ wallpaperKey, wallpaperOpacity: nextOpacity })
-    .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
-  return { previousKey: previous.wallpaperKey, wallpaperKey, wallpaperOpacity: nextOpacity };
+    .update(conversations)
+    .set({
+      backgroundKey: wallpaperKey,
+      backgroundSize: wallpaperKey ? wallpaperSize ?? 0 : null,
+      backgroundOpacity: nextOpacity,
+      backgroundUpdatedAt: new Date(),
+    })
+    .where(eq(conversations.id, conversationId));
+  return {
+    previousKey: previous.wallpaperKey,
+    wallpaperKey,
+    wallpaperSize: wallpaperKey ? wallpaperSize ?? 0 : null,
+    wallpaperOpacity: nextOpacity,
+    backgroundUpdatedAt: new Date(),
+  };
 }
 
 export async function isConversationMember(conversationId: number, userId: number) {
@@ -758,9 +799,17 @@ export async function findAuthorizedConversationMedia(mediaKey: string, userId: 
   return { mediaMime: message.mediaMime ?? "application/octet-stream" };
 }
 
-/** Ảnh nền là riêng theo thành viên; chỉ thành viên sở hữu ảnh nền được tải lại. */
+/** Shared backgrounds are accessible to every active member; legacy member backgrounds remain readable during upgrade. */
 export async function findAuthorizedWallpaper(mediaKey: string, userId: number) {
   const db = requireDb(await getDb());
+  const [sharedBackground] = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(eq(conversations.backgroundKey, mediaKey))
+    .limit(1);
+  if (sharedBackground && await isConversationMember(sharedBackground.id, userId)) {
+    return { mediaMime: "image/jpeg" };
+  }
   const wallpaper = await db
     .select({ id: conversationMembers.id })
     .from(conversationMembers)

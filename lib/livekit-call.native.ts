@@ -17,6 +17,7 @@ export type LiveKitNetworkStats = {
 };
 
 export type VideoQualityMode = "sd" | "hd";
+type AppliedVideoQuality = VideoQualityMode | "low";
 
 type SwitchableMediaStreamTrack = {
   _switchCamera?: () => void | Promise<void>;
@@ -25,7 +26,8 @@ type SwitchableMediaStreamTrack = {
 export class LiveKitCall {
   private room = new Room({ adaptiveStream: true, dynacast: true });
   private isFrontCamera = true;
-  private videoQuality: VideoQualityMode = "hd";
+  private videoQuality: VideoQualityMode = "sd";
+  private appliedVideoQuality: AppliedVideoQuality = "sd";
 
   async connect(session: LiveKitSession, kind: "audio" | "video") {
     ensureLiveKitGlobals();
@@ -70,10 +72,17 @@ export class LiveKitCall {
     if (enabled) await this.requestMediaPermissions("video");
     await this.room.localParticipant.setCameraEnabled(enabled, enabled ? {
       facingMode: this.isFrontCamera ? "user" : "environment",
-      resolution: this.videoQuality === "hd" ? { width: 1280, height: 720 } : { width: 640, height: 360 },
+      resolution: this.getResolution(this.appliedVideoQuality),
     } : undefined);
     if (enabled && !this.room.localParticipant.getTrackPublication(Track.Source.Camera)?.track) {
       throw new Error("Không tạo được track camera. Hãy kiểm tra quyền camera của ChatPHT trong Cài đặt Android.");
+    }
+  }
+
+  async setScreenShareEnabled(enabled: boolean) {
+    await this.room.localParticipant.setScreenShareEnabled(enabled);
+    if (enabled && !this.room.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track) {
+      throw new Error("Không thể bắt đầu chia sẻ màn hình. Hãy cho phép Android ghi lại màn hình rồi thử lại.");
     }
   }
 
@@ -109,12 +118,33 @@ export class LiveKitCall {
 
   async setVideoQuality(mode: VideoQualityMode) {
     this.videoQuality = mode;
+    this.appliedVideoQuality = mode;
+    await this.restartCameraWithQuality(mode);
+  }
+
+  /** Keeps voice intact; only video is reduced while the LiveKit SFU reports a weak path. */
+  async adaptVideoForNetwork(stats: LiveKitNetworkStats) {
+    const shouldUseLow = stats.pingMs !== null && stats.pingMs >= 250;
+    const target: AppliedVideoQuality = shouldUseLow ? "low" : this.videoQuality;
+    if (target === this.appliedVideoQuality) return target;
+    this.appliedVideoQuality = target;
+    await this.restartCameraWithQuality(target);
+    return target;
+  }
+
+  private async restartCameraWithQuality(mode: AppliedVideoQuality) {
     const track = this.room.localParticipant.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
     if (!track) return;
     await track.restartTrack({
       facingMode: this.isFrontCamera ? "user" : "environment",
-      resolution: mode === "hd" ? { width: 1280, height: 720 } : { width: 640, height: 360 },
+      resolution: this.getResolution(mode),
     });
+  }
+
+  private getResolution(mode: AppliedVideoQuality) {
+    if (mode === "hd") return { width: 1280, height: 720 };
+    if (mode === "low") return { width: 640, height: 360 };
+    return { width: 854, height: 480 };
   }
 
   getRoom() {
@@ -133,7 +163,8 @@ export class LiveKitCall {
   async disconnect() {
     this.room.disconnect();
     this.isFrontCamera = true;
-    this.videoQuality = "hd";
+    this.videoQuality = "sd";
+    this.appliedVideoQuality = "sd";
     await AudioSession.stopAudioSession();
   }
 

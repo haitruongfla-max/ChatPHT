@@ -36,6 +36,7 @@ export default function CallScreen() {
   const [muted, setMuted] = useState(resumed?.muted ?? false);
   const [speaker, setSpeaker] = useState(resumed?.speaker ?? kind === "video");
   const [cameraOn, setCameraOn] = useState(resumed?.cameraOn ?? kind === "video");
+  const [screenSharing, setScreenSharing] = useState(false);
   const [isFrontCamera, setIsFrontCamera] = useState(resumed?.isFrontCamera ?? true);
   const [videoQuality, setVideoQuality] = useState<VideoQualityMode>(resumed?.videoQuality ?? "hd");
   const [seconds, setSeconds] = useState(resumed?.seconds ?? 0);
@@ -53,6 +54,7 @@ export default function CallScreen() {
   const ringbackTone = useRef<Awaited<ReturnType<typeof createCallTonePlayer>> | null>(null);
   const started = useRef(Boolean(resumed?.connected));
   const finalized = useRef(false);
+  const liveKitTransitioning = useRef(false);
   const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: 900 });
   const answer = trpc.calls.answer.useMutation();
   const join = trpc.calls.join.useMutation();
@@ -122,6 +124,32 @@ export default function CallScreen() {
   }, [call, callId, details.data?.status]);
 
   useEffect(() => {
+    const shouldJoinFallbackRoom = !isGroup && connected && isAnswered && transport === "p2p" && details.data?.provider === "livekit";
+    if (!shouldJoinFallbackRoom || liveKitTransitioning.current) return;
+    liveKitTransitioning.current = true;
+    void (async () => {
+      try {
+        setIsConnecting(true);
+        const session = await join.mutateAsync({ callId });
+        await p2p.disconnect();
+        setP2pRemoteStream(null);
+        setP2pLocalStream(null);
+        setTransport("livekit");
+        await call.connect(session, kind);
+        setConnected(true);
+        publishActiveState();
+      } catch (error) {
+        setConnectionError(error instanceof Error ? error.message : "Không thể chuyển sang đường truyền LiveKit.");
+      } finally {
+        setIsConnecting(false);
+        liveKitTransitioning.current = false;
+      }
+    })();
+    // The remote participant joins only after the server has marked the shared call as LiveKit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [call, callId, connected, details.data?.provider, isAnswered, isGroup, kind, transport]);
+
+  useEffect(() => {
     if (connected && isAnswered && answeredAt) {
       const updateDuration = () => {
         const next = Math.max(0, Math.floor((Date.now() - answeredAt) / 1000));
@@ -150,6 +178,7 @@ export default function CallScreen() {
     const refreshNetworkStats = () => {
       try {
         const stats = call.getNetworkStats();
+        if (isGroup && kind === "video") void call.adaptVideoForNetwork(stats).catch(() => undefined);
         if (active) setNetworkStats(stats);
       } catch {
         // A room can disconnect while the interval is queued; never crash the incoming-call screen.
@@ -159,7 +188,7 @@ export default function CallScreen() {
     refreshNetworkStats();
     const timer = setInterval(refreshNetworkStats, 3000);
     return () => { active = false; clearInterval(timer); };
-  }, [call, connected, transport]);
+  }, [call, connected, isGroup, kind, transport]);
 
   useEffect(() => {
     if (Platform.OS !== "android" || kind !== "video" || !connected || !ExpoPip.isAvailable()) return;
@@ -211,6 +240,8 @@ export default function CallScreen() {
 
   async function switchToLiveKit() {
     if (isGroup || transport === "livekit") return;
+    if (liveKitTransitioning.current) return;
+    liveKitTransitioning.current = true;
     try {
       setIsConnecting(true);
       const result = await fallbackToLiveKit.mutateAsync({ callId });
@@ -225,6 +256,7 @@ export default function CallScreen() {
       setConnectionError(error instanceof Error ? error.message : "Không thể chuyển sang LiveKit.");
     } finally {
       setIsConnecting(false);
+      liveKitTransitioning.current = false;
     }
   }
 
@@ -407,6 +439,24 @@ export default function CallScreen() {
     }
   }
 
+  async function toggleScreenShare() {
+    const next = !screenSharing;
+    try {
+      if (next && transport === "p2p") {
+        // A direct call remains P2P by default. Screen capture is a deliberate
+        // transition to the LiveKit room because P2P has no SFU room to publish into.
+        await switchToLiveKit();
+      }
+      await call.setScreenShareEnabled(next);
+      setScreenSharing(next);
+      if (next) {
+        Alert.alert("Đang chia sẻ màn hình", "Micro vẫn hoạt động. Thu nhỏ cuộc gọi để mở chat; bong bóng cuộc gọi sẽ giữ phiên đang chia sẻ.");
+      }
+    } catch (error) {
+      Alert.alert("Chưa thể chia sẻ màn hình", error instanceof Error ? error.message : "Hãy thử lại sau giây lát.");
+    }
+  }
+
   async function switchCamera() {
     try {
       const nextIsFrontCamera = transport === "p2p" ? !isFrontCamera : await call.switchCamera();
@@ -474,7 +524,7 @@ export default function CallScreen() {
         </View> : null}
         {showCallChrome ? <View style={[styles.identity, isFullVideo && styles.videoIdentity]}><View style={[styles.avatar, styles.callAvatar, isFullVideo && styles.videoAvatar]}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></View><Text style={[styles.name, isFullVideo && styles.videoText]}>{name}</Text>{connected ? <><Text style={[styles.mutedText, isFullVideo && styles.videoSubtext]}>{subtitle}</Text><Text style={[styles.quality, isFullVideo && styles.videoQuality]}>{isGroup ? "Phòng nhóm LiveKit tối đa 8 người" : transport === "p2p" ? `P2P trực tiếp · ${videoQuality.toUpperCase()}` : "LiveKit · kết nối dự phòng"}</Text>{transport === "livekit" ? <NetworkQualityBadge quality={networkQuality} inverse={isFullVideo} /> : null}</> : <ConnectionStatus status={connectionStatus} />}</View> : null}
         {showCallChrome ? <View style={[styles.controls, isFullVideo && styles.videoControls]}>
-          {connected ? <><View style={styles.controlRow}><Control label={muted ? "Bật micro" : "Tắt micro"} icon={muted ? "mic-off" : "mic"} active={muted} inverse={isFullVideo} onPress={() => void toggleMicrophone()} /><Control label={speaker ? "Loa ngoài" : "Tai nghe"} icon={speaker ? "volume-up" : "hearing"} active={speaker} inverse={isFullVideo} onPress={() => void toggleSpeaker()} />{kind === "video" ? <Control label={cameraOn ? "Tắt camera" : "Bật camera"} icon={cameraOn ? "videocam" : "videocam-off"} active={!cameraOn} inverse={isFullVideo} onPress={() => void toggleCamera()} /> : null}</View>{kind === "video" && cameraOn ? <View style={styles.secondaryControls}><Control label={isFrontCamera ? "Camera trước" : "Camera sau"} icon="flip-camera-android" active={false} inverse={isFullVideo} onPress={() => void switchCamera()} /><Control label={videoQuality === "hd" ? "HD" : "SD"} icon="high-quality" active={videoQuality === "hd"} inverse={isFullVideo} onPress={() => void toggleVideoQuality()} /></View> : null}<RoundAction label={isGroup && !isCaller ? "Rời nhóm" : "Kết thúc"} icon="call-end" color="#E8505B" inverse={isFullVideo} onPress={() => void finish("ended")} /></> : <View style={styles.pending}><RoundAction label={isGroup ? "Rời nhóm" : "Hủy cuộc gọi"} icon="call-end" color="#E8505B" onPress={() => void finish("ended")} /></View>}
+          {connected ? <><View style={styles.controlRow}><Control label={muted ? "Bật micro" : "Tắt micro"} icon={muted ? "mic-off" : "mic"} active={muted} inverse={isFullVideo} onPress={() => void toggleMicrophone()} /><Control label={speaker ? "Loa ngoài" : "Tai nghe"} icon={speaker ? "volume-up" : "hearing"} active={speaker} inverse={isFullVideo} onPress={() => void toggleSpeaker()} />{kind === "video" ? <Control label={cameraOn ? "Tắt camera" : "Bật camera"} icon={cameraOn ? "videocam" : "videocam-off"} active={!cameraOn} inverse={isFullVideo} onPress={() => void toggleCamera()} /> : null}</View><View style={styles.secondaryControls}>{kind === "video" && cameraOn ? <><Control label={isFrontCamera ? "Camera trước" : "Camera sau"} icon="flip-camera-android" active={false} inverse={isFullVideo} onPress={() => void switchCamera()} /><Control label={videoQuality === "hd" ? "HD" : "SD"} icon="high-quality" active={videoQuality === "hd"} inverse={isFullVideo} onPress={() => void toggleVideoQuality()} /></> : null}<Control label={screenSharing ? "Dừng chia sẻ" : "Chia sẻ màn hình"} icon={screenSharing ? "stop-screen-share" : "screen-share"} active={screenSharing} inverse={isFullVideo} onPress={() => void toggleScreenShare()} /></View><RoundAction label={isGroup && !isCaller ? "Rời nhóm" : "Kết thúc"} icon="call-end" color="#E8505B" inverse={isFullVideo} onPress={() => void finish("ended")} /></> : <View style={styles.pending}><RoundAction label={isGroup ? "Rời nhóm" : "Hủy cuộc gọi"} icon="call-end" color="#E8505B" onPress={() => void finish("ended")} /></View>}
         </View> : null}
       </View>
     </SafeAreaView>
@@ -491,12 +541,17 @@ function P2pVideoStage({ localStream, remoteStream }: { localStream: MediaStream
 }
 
 function VideoStage({ room, isGroup }: { room: Room; isGroup: boolean }) {
-  const tracks = useTracks([Track.Source.Camera], { room, onlySubscribed: false });
+  const tracks = useTracks([Track.Source.Camera, Track.Source.ScreenShare], { room, onlySubscribed: false });
   const speakers = useSpeakingParticipants({ room });
   const speakingIdentities = new Set(speakers.map((participant) => participant.identity));
-  const videoTracks = tracks.filter((item) => item.publication?.track).slice(0, 8);
+  const screenTracks = tracks.filter((item) => item.source === Track.Source.ScreenShare && item.publication?.track);
+  const screenTrack = screenTracks.find((item) => !item.participant.isLocal) ?? screenTracks[0];
+  const videoTracks = tracks.filter((item) => item.source === Track.Source.Camera && item.publication?.track).slice(0, 8);
   const remoteTrack = videoTracks.find((item) => !item.participant.isLocal);
   const localTrack = videoTracks.find((item) => item.participant.isLocal);
+  if (screenTrack) {
+    return <View style={styles.video}><VideoTrack trackRef={screenTrack} style={styles.screenShareTrack} mirror={false} zOrder={0} /><View style={styles.screenShareBadge}><MaterialIcons name="screen-share" size={15} color="#E7F0FF" /><Text style={styles.screenShareBadgeText}>{screenTrack.participant.isLocal ? "Bạn đang chia sẻ màn hình" : `${screenTrack.participant.name || screenTrack.participant.identity} đang chia sẻ`}</Text></View><View style={styles.screenShareStrip}>{videoTracks.map((item) => <View key={`${item.participant.identity}-${item.source}`} style={styles.screenShareThumbnail}><VideoTrack trackRef={item} style={styles.videoTrack} mirror={item.participant.isLocal} zOrder={1} /></View>)}</View></View>;
+  }
   if (isGroup) {
     return <View style={styles.video}><View style={styles.groupVideoGrid}>{videoTracks.length ? videoTracks.map((item) => <View key={`${item.participant.identity}-${item.source}`} style={[styles.groupTile, speakingIdentities.has(item.participant.identity) && styles.groupTileSpeaking]}><VideoTrack trackRef={item} style={styles.videoTrack} mirror={item.participant.isLocal} zOrder={0} /><View style={styles.groupTileLabel}><MaterialIcons name={speakingIdentities.has(item.participant.identity) ? "graphic-eq" : "person"} size={13} color="#F5FAFF" /><Text numberOfLines={1} style={styles.groupTileName}>{item.participant.name || item.participant.identity}</Text></View></View>) : <View style={styles.videoWaiting}><MaterialIcons name="groups" size={32} color="#D9E6FF" /><Text style={styles.videoWaitingText}>Đang chờ thành viên bật camera…</Text></View>}</View><Text style={styles.groupCapacity}>{videoTracks.length}/8 camera đang hiển thị</Text></View>;
   }
@@ -590,6 +645,11 @@ const styles = StyleSheet.create({
   videoTapArea: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
   video: { ...StyleSheet.absoluteFillObject, overflow: "hidden", backgroundColor: "#0D1B33", alignItems: "center", justifyContent: "center" },
   videoTrack: { flex: 1, width: "100%" },
+  screenShareTrack: { width: "100%", height: "100%" },
+  screenShareBadge: { position: "absolute", top: 70, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 14, backgroundColor: "rgba(8, 20, 42, 0.78)" },
+  screenShareBadgeText: { color: "#E7F0FF", fontSize: 11, fontWeight: "800" },
+  screenShareStrip: { position: "absolute", top: 112, left: 10, right: 10, flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 6 },
+  screenShareThumbnail: { width: 52, height: 72, borderRadius: 10, overflow: "hidden", backgroundColor: "#1B2E50", borderWidth: 1, borderColor: "rgba(214, 231, 255, 0.72)" },
   groupVideoGrid: { flex: 1, width: "100%", flexDirection: "row", flexWrap: "wrap", alignContent: "center", justifyContent: "center", gap: 4, padding: 4 },
   groupTile: { width: "49%", aspectRatio: 0.74, overflow: "hidden", backgroundColor: "#1B2E50", borderWidth: 2, borderColor: "transparent" },
   groupTileSpeaking: { borderColor: "#4DE0A2", shadowColor: "#4DE0A2", shadowOpacity: 0.55, shadowRadius: 8, elevation: 5 },

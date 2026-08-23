@@ -211,3 +211,10 @@
 - [x] Bổ sung trình xem album toàn màn hình có thể vuốt ảnh/video trước–sau thay vì phải đóng từng mục.
 - [ ] Nghiệm thu APK sửa lỗi trên hai Android: nhận video 1:1, thoại không vang, gọi nhóm, push khi vuốt ứng dụng và album vuốt; lưu log nếu còn lỗi.
 - [x] Nâng phiên bản Android lên 1.0.14 và `versionCode` 14 để APK sửa lỗi cập nhật được lên bản 1.0.13 hiện có.
+- [x] Thiết kế và chuyển nền hội thoại từ thiết lập riêng theo thành viên sang nền chung theo `conversation_id`, có phân quyền, quota và đồng bộ cho mọi thành viên.
+- [x] Triển khai migration/API/giao diện cho nền chung, tải ảnh nền an toàn và làm mới tức thời giữa các thiết bị đang mở hội thoại.
+- [x] Nâng gọi 1:1 ưu tiên P2P với thời hạn fallback 6 giây, phục hồi ICE khi rớt mạng và không làm ảnh hưởng gọi nhóm LiveKit.
+- [x] Tối ưu gọi nhóm LiveKit 3–8 người với adaptive stream, dynacast, simulcast, SD 480p mặc định, HD theo yêu cầu và hạ chất lượng video khi mạng yếu.
+- [x] Tích hợp chia sẻ màn hình Android qua MediaProjection/LiveKit, bảo đảm vẫn giữ micro, có thao tác dừng rõ ràng và hiển thị track màn hình hợp lý.
+- [ ] Hoàn thiện bố cục cuộc gọi toàn màn hình, hình trong hình, bong bóng khi thu nhỏ và thao tác xóa sạch nội dung an toàn mà không xóa tài khoản/thành viên.
+- [ ] Kiểm thử hồi quy API, migration, gọi P2P/LiveKit, chia sẻ màn hình và nghiệm thu thực tế trên hai Android trước khi đóng gói APK mới.
