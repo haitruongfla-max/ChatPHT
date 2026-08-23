@@ -1,4 +1,13 @@
 import { useAuth } from "@/hooks/use-auth";
+import {
+  downloadReleaseApk,
+  getInstalledBuildCode,
+  getInstalledAppVersion,
+  getLatestChatPHTRelease,
+  isReleaseNewer,
+  openAndroidPackageInstaller,
+  type ChatPHTRelease,
+} from "@/lib/github-release-update";
 import { trpc } from "@/lib/trpc";
 import {
   clearStoredPushToken,
@@ -6,7 +15,7 @@ import {
 } from "@/lib/push-notifications";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Redirect, router, useFocusEffect } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +32,10 @@ export default function ProfileScreen() {
   const { user, loading, logout, refresh } = useAuth();
   const serverLogout = trpc.auth.logout.useMutation();
   const unregisterDevice = trpc.notifications.unregisterDevice.useMutation();
+  const [release, setRelease] = useState<ChatPHTRelease | null>(null);
+  const [updateState, setUpdateState] = useState<"idle" | "checking" | "ready" | "downloading" | "installing">("idle");
+  const [updateNote, setUpdateNote] = useState(`Bản đang cài: ${getInstalledAppVersion()}${getInstalledBuildCode() ? ` (mã ${getInstalledBuildCode()})` : ""}`);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   useFocusEffect(
     useCallback(() => {
       void refresh();
@@ -54,6 +67,42 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  const checkForUpdate = async () => {
+    setUpdateState("checking");
+    setDownloadProgress(null);
+    try {
+      const latest = await getLatestChatPHTRelease();
+      setRelease(latest);
+      if (isReleaseNewer(latest.version, latest.buildCode)) {
+        setUpdateState("ready");
+        setUpdateNote(`Có bản ${latest.version}${latest.buildCode ? ` (mã ${latest.buildCode})` : ""} — ${latest.assetName}`);
+      } else {
+        setUpdateState("idle");
+        setUpdateNote(`Bạn đang dùng bản mới nhất (${getInstalledAppVersion()}${getInstalledBuildCode() ? ` · mã ${getInstalledBuildCode()}` : ""}).`);
+      }
+    } catch (error) {
+      setUpdateState("idle");
+      setUpdateNote("Chưa kiểm tra được bản mới. Hãy kiểm tra kết nối rồi thử lại.");
+      Alert.alert("Không thể kiểm tra cập nhật", error instanceof Error ? error.message : "Vui lòng thử lại.");
+    }
+  };
+  const installUpdate = async () => {
+    if (!release || updateState === "downloading" || updateState === "installing") return;
+    setUpdateState("downloading");
+    setDownloadProgress(0);
+    try {
+      const apkUri = await downloadReleaseApk(release, ({ receivedBytes, totalBytes }) => {
+        setDownloadProgress(totalBytes ? Math.min(1, receivedBytes / totalBytes) : null);
+      });
+      setUpdateState("installing");
+      setUpdateNote("Đã tải xong. Android sẽ yêu cầu bạn xác nhận cài đặt.");
+      await openAndroidPackageInstaller(apkUri);
+    } catch (error) {
+      setUpdateState("ready");
+      setUpdateNote("Tải hoặc mở trình cài đặt chưa thành công. Bạn có thể thử lại hoặc tải APK từ GitHub Release.");
+      Alert.alert("Không thể cập nhật", error instanceof Error ? error.message : "Vui lòng thử lại.");
+    }
+  };
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-[#EDF6FF]">
       <ScrollView
@@ -119,6 +168,27 @@ export default function ProfileScreen() {
               Bạn bè đã chấp nhận mới có thể nhắn tin với bạn.
             </Text>
           </View>
+        </View>
+        <View style={styles.updateCard}>
+          <View style={styles.updateIcon}><MaterialIcons name="system-update-alt" size={21} color="#0F766E" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.infoTitle}>Cập nhật ứng dụng</Text>
+            <Text style={styles.infoText}>{updateNote}</Text>
+            {updateState === "downloading" ? (
+              <View style={styles.progressTrack} accessibilityLabel="Tiến trình tải APK">
+                <View style={[styles.progressFill, { width: `${Math.round((downloadProgress ?? 0) * 100)}%` }]} />
+              </View>
+            ) : null}
+          </View>
+          {updateState === "ready" ? (
+            <Pressable onPress={() => void installUpdate()} style={({ pressed }) => [styles.updateAction, pressed && styles.pressed]} accessibilityLabel="Tải và cài bản cập nhật">
+              <Text style={styles.updateActionText}>Cập nhật</Text>
+            </Pressable>
+          ) : (
+            <Pressable onPress={() => void checkForUpdate()} disabled={updateState === "checking" || updateState === "downloading" || updateState === "installing"} style={({ pressed }) => [styles.updateCheck, pressed && styles.pressed]} accessibilityLabel="Kiểm tra bản cập nhật">
+              {updateState === "checking" || updateState === "downloading" || updateState === "installing" ? <ActivityIndicator size="small" color="#0F766E" /> : <MaterialIcons name="refresh" size={20} color="#0F766E" />}
+            </Pressable>
+          )}
         </View>
         <View style={styles.about}>
           <View style={styles.aboutIcon}>
@@ -213,6 +283,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
   },
+  updateCard: {
+    marginHorizontal: 18,
+    marginTop: 13,
+    padding: 16,
+    borderRadius: 19,
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#C8F0DD",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  updateIcon: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#D1FAE5" },
+  updateCheck: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#D1FAE5" },
+  updateAction: { minHeight: 34, borderRadius: 11, paddingHorizontal: 10, alignItems: "center", justifyContent: "center", backgroundColor: "#0F766E" },
+  updateActionText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
+  progressTrack: { height: 5, marginTop: 8, borderRadius: 3, overflow: "hidden", backgroundColor: "#BBF7D0" },
+  progressFill: { height: "100%", borderRadius: 3, backgroundColor: "#0F766E" },
   settings: {
     marginHorizontal: 18,
     marginTop: 13,

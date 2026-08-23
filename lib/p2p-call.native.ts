@@ -173,7 +173,7 @@ export class P2pCall {
     await track.applyConstraints(quality === "hd" ? { width: 1280, height: 720, frameRate: 30 } : { width: 640, height: 360, frameRate: 20 });
   }
 
-  async disconnect() {
+  async disconnect(options: { preserveAudioSession?: boolean } = {}) {
     this.connected = false;
     this.recoveryInProgress = false;
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
@@ -188,7 +188,13 @@ export class P2pCall {
     this.options?.onRemoteStream(null);
     this.options?.onState("closed");
     this.options = null;
-    await AudioSession.stopAudioSession().catch(() => undefined);
+    if (!options.preserveAudioSession) await AudioSession.stopAudioSession().catch(() => undefined);
+  }
+
+  /** Restores routing after an attempted LiveKit handoff fails while P2P is still live. */
+  async restoreAudioSession() {
+    if (!this.localStream) return;
+    await this.configureAudio();
   }
 
   private async configureAudio() {

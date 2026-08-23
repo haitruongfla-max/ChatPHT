@@ -37,6 +37,8 @@ export function IncomingCallWatcher() {
         kind: call?.kind,
         direction: "incoming",
         group: call?.isGroup ? "1" : "0",
+        name: call?.peer?.displayName ?? call?.group?.title ?? "Người dùng ChatPHT",
+        avatar: call?.peer?.avatarUrl ?? "",
       },
     });
   }, [incoming.data]);

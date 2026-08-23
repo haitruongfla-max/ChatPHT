@@ -3,7 +3,7 @@ import { Camera } from "expo-camera";
 import ExpoPip from "expo-pip";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Platform, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Image, Platform, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { LiveKitRoom, useSpeakingParticipants, useTracks, VideoTrack } from "@livekit/react-native";
 import { Room, Track } from "livekit-client";
 import { RTCView, type MediaStream } from "@livekit/react-native-webrtc";
@@ -13,7 +13,7 @@ import { getCallConnectionStatus, type CallConnectionStatus } from "@/lib/call-c
 import { getCallNetworkQuality, type LiveKitConnectionQuality } from "@/lib/call-network-quality";
 import { createCallTonePlayer, stopAllCallAlerts, stopCallTone } from "@/lib/call-sounds";
 import { P2P_FALLBACK_TIMEOUT_MS, selectInitialCallTransport, shouldFallbackToLiveKit, type CallTransport } from "@/lib/call-transport-policy";
-import { LiveKitCall, type VideoQualityMode } from "@/lib/livekit-call";
+import { LiveKitCall, type LiveKitSession, type VideoQualityMode } from "@/lib/livekit-call";
 import { P2pCall, type P2pConnectionState, type P2pSignal } from "@/lib/p2p-call";
 import { trpc } from "@/lib/trpc";
 
@@ -25,12 +25,20 @@ function callDuration(seconds: number) {
   return `${minutes}:${(seconds % 60).toString().padStart(2, "0")}`;
 }
 
+function CallerAvatar({ name, avatarUrl, style }: { name: string; avatarUrl: string | null; style: StyleProp<ViewStyle> }) {
+  return (
+    <View style={style} accessibilityLabel={`Ảnh đại diện của ${name}`}>
+      <Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text>
+      {avatarUrl ? <Image source={{ uri: avatarUrl }} style={styles.avatarImage} resizeMode="cover" /> : null}
+    </View>
+  );
+}
+
 export default function CallScreen() {
-  const params = useLocalSearchParams<{ callId?: string; kind?: CallKind; direction?: Direction; name?: string; group?: string }>();
+  const params = useLocalSearchParams<{ callId?: string; kind?: CallKind; direction?: Direction; name?: string; avatar?: string; group?: string }>();
   const callId = params.callId ?? "";
   const kind = params.kind === "video" ? "video" : "audio";
   const direction = params.direction === "incoming" ? "incoming" : "outgoing";
-  const name = params.name || "Liên hệ ChatPHT";
   const resumed = activeCall.get(callId);
   const [connected, setConnected] = useState(Boolean(resumed?.connected));
   const [muted, setMuted] = useState(resumed?.muted ?? false);
@@ -56,6 +64,7 @@ export default function CallScreen() {
   const started = useRef(Boolean(resumed?.connected));
   const finalized = useRef(false);
   const liveKitTransitioning = useRef(false);
+  const liveKitRetryNotBefore = useRef(0);
   const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: 900 });
   const answer = trpc.calls.answer.useMutation();
   const join = trpc.calls.join.useMutation();
@@ -66,6 +75,8 @@ export default function CallScreen() {
   const decline = trpc.calls.decline.useMutation();
   const end = trpc.calls.end.useMutation();
   const answeredAt = details.data?.answeredAt ? new Date(details.data.answeredAt).getTime() : null;
+  const name = details.data?.peer?.displayName || details.data?.group?.title || params.name?.trim() || "Người dùng ChatPHT";
+  const avatarUrl = details.data?.peer?.avatarUrl ?? (params.avatar?.trim() || null);
   const isAnswered = details.data?.status === "active";
   const isGroup = params.group === "true" || params.group === "1" || resumed?.isGroup === true || details.data?.isGroup === true;
   const isCaller = details.data?.isCaller === true || direction === "outgoing";
@@ -126,20 +137,16 @@ export default function CallScreen() {
 
   useEffect(() => {
     const shouldJoinFallbackRoom = !isGroup && connected && isAnswered && transport === "p2p" && details.data?.provider === "livekit";
-    if (!shouldJoinFallbackRoom || liveKitTransitioning.current) return;
+    if (!shouldJoinFallbackRoom || liveKitTransitioning.current || Date.now() < liveKitRetryNotBefore.current) return;
     liveKitTransitioning.current = true;
     void (async () => {
       try {
         setIsConnecting(true);
         const session = await join.mutateAsync({ callId });
-        await p2p.disconnect();
-        setP2pRemoteStream(null);
-        setP2pLocalStream(null);
-        setTransport("livekit");
-        await call.connect(session, kind);
-        setConnected(true);
-        publishActiveState();
+        await connectLiveKitWithoutDroppingP2p(session);
       } catch (error) {
+        liveKitRetryNotBefore.current = Date.now() + 5_000;
+        if (p2p.isConnected()) await p2p.restoreAudioSession().catch(() => undefined);
         setConnectionError(error instanceof Error ? error.message : "Không thể chuyển sang đường truyền LiveKit.");
       } finally {
         setIsConnecting(false);
@@ -220,7 +227,7 @@ export default function CallScreen() {
     return true;
   }
 
-  function publishActiveState(next: { muted?: boolean; speaker?: boolean; cameraOn?: boolean; isFrontCamera?: boolean; videoQuality?: VideoQualityMode; seconds?: number } = {}) {
+  function publishActiveState(next: { muted?: boolean; speaker?: boolean; cameraOn?: boolean; isFrontCamera?: boolean; videoQuality?: VideoQualityMode; seconds?: number } = {}, provider: CallTransport = transport) {
     activeCall.activate({
       callId,
       kind,
@@ -235,26 +242,40 @@ export default function CallScreen() {
       videoQuality: next.videoQuality ?? videoQuality,
       seconds: next.seconds ?? seconds,
       isGroup,
-      provider: transport,
+      provider,
     });
   }
 
+  /**
+   * Keep the direct transport alive until LiveKit has authenticated and
+   * published its mandatory microphone/camera tracks. This prevents the old
+   * black screen caused by disconnecting P2P before a fallback room was usable.
+   */
+  async function connectLiveKitWithoutDroppingP2p(session: LiveKitSession) {
+    await call.connect(session, kind);
+    if (!call.isConnected()) throw new Error("Phòng LiveKit chưa sẵn sàng sau khi kết nối.");
+    await p2p.disconnect({ preserveAudioSession: true });
+    setP2pRemoteStream(null);
+    setP2pLocalStream(null);
+    setTransport("livekit");
+    setConnected(true);
+    setConnectionError(null);
+    publishActiveState({ seconds: 0 }, "livekit");
+  }
+
   async function switchToLiveKit(): Promise<boolean> {
-    if (isGroup || transport === "livekit") return true;
+    if (isGroup) return call.isConnected();
+    if (transport === "livekit" && call.isConnected()) return true;
     if (liveKitTransitioning.current) return false;
     liveKitTransitioning.current = true;
     try {
       setIsConnecting(true);
       const result = await fallbackToLiveKit.mutateAsync({ callId });
-      await p2p.disconnect();
-      setP2pRemoteStream(null);
-      setP2pLocalStream(null);
-      setTransport("livekit");
-      await call.connect(result.session, kind);
-      setConnected(true);
-      publishActiveState({ seconds: 0 });
+      await connectLiveKitWithoutDroppingP2p(result.session);
       return true;
     } catch (error) {
+      liveKitRetryNotBefore.current = Date.now() + 5_000;
+      if (p2p.isConnected()) await p2p.restoreAudioSession().catch(() => undefined);
       setConnectionError(error instanceof Error ? error.message : "Không thể chuyển sang LiveKit.");
       return false;
     } finally {
@@ -520,7 +541,7 @@ export default function CallScreen() {
           <View style={styles.incomingGlowOne} /><View style={styles.incomingGlowTwo} />
           <View style={[styles.brandPill, styles.incomingBrandPill]}><MaterialIcons name="lock" size={14} color="#D7E8FF" /><Text style={styles.incomingBrandPillText}>{isGroup ? "NHÓM · LIVEKIT" : "KẾT NỐI RIÊNG TƯ"}</Text></View>
           <Text style={styles.eyebrow}>{isGroup ? (kind === "video" ? "CUỘC GỌI VIDEO NHÓM" : "CUỘC GỌI THOẠI NHÓM") : (kind === "video" ? "CUỘC GỌI VIDEO ĐẾN" : "CUỘC GỌI THOẠI ĐẾN")}</Text>
-          <Animated.View style={[styles.avatar, { transform: [{ scale: ringingScale }] }]}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></Animated.View>
+          <Animated.View style={[styles.avatar, { transform: [{ scale: ringingScale }] }]}><CallerAvatar name={name} avatarUrl={avatarUrl} style={styles.avatar} /></Animated.View>
           <Text style={[styles.name, styles.incomingName]}>{name}</Text>{isConnecting || connectionError ? <ConnectionStatus status={connectionStatus} /> : <Text style={[styles.mutedText, styles.incomingSubtext]}>{subtitle}</Text>}
           <View style={styles.incomingActions}><RoundAction label="Từ chối" icon="call-end" color="#E8505B" inverse onPress={() => void finish("declined")} /><RoundAction label={isConnecting ? "Đang kết nối" : "Nhận"} icon={kind === "video" ? "videocam" : "phone"} color="#20A86B" inverse disabled={isConnecting} onPress={() => void enterCall(true)} /></View>
         </View>
@@ -538,7 +559,7 @@ export default function CallScreen() {
           <Pressable onPress={minimize} style={({ pressed }) => [styles.dismiss, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={connected && kind === "video" && Platform.OS === "android" ? "Thu nhỏ thành cửa sổ PiP" : connected ? "Thu nhỏ cuộc gọi" : "Hủy cuộc gọi"}><MaterialIcons name={connected ? "keyboard-arrow-down" : "close"} size={28} color={isFullVideo ? "#FFFFFF" : "#183053"} /></Pressable>
           <View style={[styles.secure, isFullVideo && styles.videoSecure]}><MaterialIcons name="lock" size={13} color={isFullVideo ? "#D8E7FF" : "#2563EB"} /><Text style={[styles.secureText, isFullVideo && styles.videoSecureText]}>{isGroup ? "Nhóm · LiveKit" : transport === "p2p" ? "P2P · bảo mật" : "LiveKit · bảo mật"}</Text></View><View style={styles.dismissPlaceholder} />
         </View> : null}
-        {showCallChrome ? <View style={[styles.identity, isFullVideo && styles.videoIdentity]}><View style={[styles.avatar, styles.callAvatar, isFullVideo && styles.videoAvatar]}><Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text></View><Text style={[styles.name, isFullVideo && styles.videoText]}>{name}</Text>{connected ? <><Text style={[styles.mutedText, isFullVideo && styles.videoSubtext]}>{subtitle}</Text><Text style={[styles.quality, isFullVideo && styles.videoQuality]}>{isGroup ? "Phòng nhóm LiveKit tối đa 8 người" : transport === "p2p" ? `P2P trực tiếp · ${videoQuality.toUpperCase()}` : "LiveKit · kết nối dự phòng"}</Text>{transport === "livekit" ? <NetworkQualityBadge quality={networkQuality} inverse={isFullVideo} /> : null}</> : <ConnectionStatus status={connectionStatus} />}</View> : null}
+        {showCallChrome ? <View style={[styles.identity, isFullVideo && styles.videoIdentity]}><CallerAvatar name={name} avatarUrl={avatarUrl} style={[styles.avatar, styles.callAvatar, isFullVideo && styles.videoAvatar]} /><Text style={[styles.name, isFullVideo && styles.videoText]}>{name}</Text>{connected ? <><Text style={[styles.mutedText, isFullVideo && styles.videoSubtext]}>{subtitle}</Text><Text style={[styles.quality, isFullVideo && styles.videoQuality]}>{isGroup ? "Phòng nhóm LiveKit tối đa 8 người" : transport === "p2p" ? `P2P trực tiếp · ${videoQuality.toUpperCase()}` : "LiveKit · kết nối dự phòng"}</Text>{transport === "livekit" ? <NetworkQualityBadge quality={networkQuality} inverse={isFullVideo} /> : null}</> : <ConnectionStatus status={connectionStatus} />}</View> : null}
         {showCallChrome ? <View style={[styles.controls, isFullVideo && styles.videoControls]}>
           {connected ? <><View style={styles.controlRow}><Control label={muted ? "Bật micro" : "Tắt micro"} icon={muted ? "mic-off" : "mic"} active={muted} inverse={isFullVideo} onPress={() => void toggleMicrophone()} /><Control label={speaker ? "Loa ngoài" : "Tai nghe"} icon={speaker ? "volume-up" : "hearing"} active={speaker} inverse={isFullVideo} onPress={() => void toggleSpeaker()} />{kind === "video" ? <Control label={cameraOn ? "Tắt camera" : "Bật camera"} icon={cameraOn ? "videocam" : "videocam-off"} active={!cameraOn} inverse={isFullVideo} onPress={() => void toggleCamera()} /> : null}</View><View style={styles.secondaryControls}>{kind === "video" && cameraOn ? <><Control label={isFrontCamera ? "Camera trước" : "Camera sau"} icon="flip-camera-android" active={false} inverse={isFullVideo} onPress={() => void switchCamera()} /><Control label={videoQuality === "hd" ? "HD" : "SD"} icon="high-quality" active={videoQuality === "hd"} inverse={isFullVideo} onPress={() => void toggleVideoQuality()} /></> : null}<Control label={screenShareStarting ? "Đang chuẩn bị" : screenSharing ? "Dừng chia sẻ" : "Chia sẻ màn hình"} icon={screenSharing ? "stop-screen-share" : "screen-share"} active={screenSharing} inverse={isFullVideo} disabled={screenShareStarting} onPress={() => void toggleScreenShare()} /></View><RoundAction label={isGroup && !isCaller ? "Rời nhóm" : "Kết thúc"} icon="call-end" color="#E8505B" inverse={isFullVideo} onPress={() => void finish("ended")} /></> : <View style={styles.pending}><RoundAction label={isGroup ? "Rời nhóm" : "Hủy cuộc gọi"} icon="call-end" color="#E8505B" onPress={() => void finish("ended")} /></View>}
         </View> : null}
@@ -557,7 +578,7 @@ function P2pVideoStage({ localStream, remoteStream }: { localStream: MediaStream
 }
 
 function VideoStage({ room, isGroup }: { room: Room; isGroup: boolean }) {
-  const tracks = useTracks([Track.Source.Camera, Track.Source.ScreenShare], { room, onlySubscribed: false });
+  const tracks = useTracks([Track.Source.Camera, Track.Source.ScreenShare], { room, onlySubscribed: true });
   const speakers = useSpeakingParticipants({ room });
   const speakingIdentities = new Set(speakers.map((participant) => participant.identity));
   const screenTracks = tracks.filter((item) => item.source === Track.Source.ScreenShare && item.publication?.track);
@@ -609,7 +630,8 @@ const styles = StyleSheet.create({
   incomingBrandPill: { backgroundColor: "rgba(214, 231, 255, 0.14)" },
   incomingBrandPillText: { color: "#D7E8FF", fontSize: 11, fontWeight: "800", letterSpacing: 0.7 },
   eyebrow: { color: "#2563EB", fontSize: 12, fontWeight: "800", letterSpacing: 1.05, marginBottom: 30 },
-  avatar: { width: 132, height: 132, borderRadius: 66, alignItems: "center", justifyContent: "center", backgroundColor: "#3775E8", shadowColor: "#2563EB", shadowOpacity: 0.24, shadowRadius: 20, elevation: 6 },
+  avatar: { width: 132, height: 132, borderRadius: 66, alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: "#3775E8", shadowColor: "#2563EB", shadowOpacity: 0.24, shadowRadius: 20, elevation: 6 },
+  avatarImage: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
   callAvatar: { width: 96, height: 96, borderRadius: 48, shadowOpacity: 0.16, shadowRadius: 14 },
   videoAvatar: { width: 58, height: 58, borderRadius: 29, shadowOpacity: 0 },
   avatarText: { color: "#FFF", fontSize: 48, fontWeight: "800" },

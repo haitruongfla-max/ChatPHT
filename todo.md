@@ -236,3 +236,10 @@
 - [x] Rà soát và sửa luồng gọi video 1:1 gồm quyền camera/micro, RTCView, signaling/ICE, STUN/TURN và điều khiển camera/micro.
 - [x] Bổ sung kiểm tra OTA có kiểm soát khi mở app/trở lại foreground, chỉ dùng bundle tương thích native và không phụ thuộc Firestore.
 - [x] Nâng APK nền OTA lên version 1.0.16 với Android versionCode mới, kiểm thử và build GitHub Release.
+- [x] Khắc phục quay video camera trong chat Android: timer, quyền micro/camera, dừng quay sau tối thiểu hai giây và chỉ upload tệp có dữ liệu qua kho private hiện hữu.
+- [x] Khắc phục fallback gọi video P2P sang LiveKit: bảo toàn audio/video, track subscribe và đường lui an toàn nếu LiveKit không kết nối được.
+- [x] Hiển thị đúng tên và avatar người gọi trên màn hình gọi đến/cuộc gọi thay cho tên mặc định.
+- [x] Khắc phục chia sẻ màn hình LiveKit Android: xác thực MediaProjection/service, timeout publish có retry và không làm kết thúc cuộc gọi.
+- [x] Thêm card Cập nhật ứng dụng trong tab Tôi, kiểm tra GitHub Release, tải APK có tiến trình và mở trình cài đặt Android an toàn.
+- [ ] Kiểm thử, checkpoint, đồng bộ GitHub và phát hành APK 1.0.16 sửa lỗi với tag phát hành riêng.
+- [ ] Tiếp tục đợt sửa lỗi Android theo phản hồi thiết bị thực tế: camera quay video, LiveKit fallback, tên người gọi, screen share và card cập nhật GitHub.

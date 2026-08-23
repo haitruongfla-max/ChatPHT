@@ -6,7 +6,7 @@ on:
       release_tag:
         description: "GitHub Release tag cho APK nền OTA"
         required: true
-        default: "v1.0.16-ota-base"
+        default: "v1.0.16-ota-base-fix"
 
 # GitHub Release cần quyền ghi nội dung; workflow không sử dụng Expo cloud build.
 permissions:
@@ -20,7 +20,7 @@ jobs:
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
-      APK_OUTPUT: ./ChatPHT-1.0.16-OTA-Base.apk
+      APK_OUTPUT: ./ChatPHT-1.0.16-OTA-Base-Fix-vc18.apk
       # LiveKit và Expo Android lint cần nhiều heap hơn mức mặc định của Gradle.
       # Chạy một worker để không vượt bộ nhớ runner GitHub tiêu chuẩn.
       GRADLE_OPTS: >-
@@ -75,7 +75,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ChatPHT-APK
-          path: ./ChatPHT-1.0.16-OTA-Base.apk
+          path: ./ChatPHT-1.0.16-OTA-Base-Fix-vc18.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -83,15 +83,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
-          APK_OUTPUT: ./ChatPHT-1.0.16-OTA-Base.apk
+          APK_OUTPUT: ./ChatPHT-1.0.16-OTA-Base-Fix-vc18.apk
         shell: bash
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$APK_OUTPUT#ChatPHT-1.0.16-OTA-Base.apk" --clobber
+            gh release upload "$RELEASE_TAG" "$APK_OUTPUT#ChatPHT-1.0.16-OTA-Base-Fix-vc18.apk" --clobber
           else
-            gh release create "$RELEASE_TAG" "$APK_OUTPUT#ChatPHT-1.0.16-OTA-Base.apk" \
-              --title "ChatPHT 1.0.16 — OTA Base" \
+            gh release create "$RELEASE_TAG" "$APK_OUTPUT#ChatPHT-1.0.16-OTA-Base-Fix-vc18.apk" \
+              --title "ChatPHT 1.0.16 — Android Fix (versionCode 18)" \
               --generate-notes \
               --target "$GITHUB_SHA"
           fi

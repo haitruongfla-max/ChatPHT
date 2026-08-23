@@ -24,5 +24,6 @@ export class P2pCall {
   async setCameraEnabled(_enabled: boolean) { return unavailable(); }
   async switchCamera() { return unavailable(); }
   async setVideoQuality(_quality: "sd" | "hd") { return unavailable(); }
-  async disconnect() { return undefined; }
+  async disconnect(_options: { preserveAudioSession?: boolean } = {}) { return undefined; }
+  async restoreAudioSession() { return unavailable(); }
 }

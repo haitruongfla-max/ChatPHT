@@ -1,8 +1,9 @@
 import { AndroidAudioTypePresets, AudioSession } from "@livekit/react-native";
-import { ConnectionQuality, LocalVideoTrack, Room, Track } from "livekit-client";
+import { ConnectionQuality, ConnectionState, LocalVideoTrack, Room, Track } from "livekit-client";
 import { PermissionsAndroid, Platform } from "react-native";
 
 import { ensureLiveKitGlobals } from "@/lib/livekit-bootstrap";
+import { shouldRetryScreenSharePublication } from "@/lib/livekit-screen-share-policy";
 
 ensureLiveKitGlobals();
 
@@ -80,18 +81,41 @@ export class LiveKitCall {
   }
 
   async setScreenShareEnabled(enabled: boolean) {
-    try {
-      await this.room.localParticipant.setScreenShareEnabled(enabled);
-      if (enabled && !this.room.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track) {
-        throw new Error("Không thể bắt đầu chia sẻ màn hình. Hãy cho phép Android ghi lại màn hình rồi thử lại.");
-      }
-    } catch (error) {
-      if (enabled) {
+    if (!enabled) {
+      await this.room.localParticipant.setScreenShareEnabled(false);
+      return;
+    }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await this.publishScreenShareOnce();
+        return;
+      } catch (error) {
         // MediaProjection can be denied or rejected by OEM policy. Unpublish any partial track
         // before reporting the error so the room, microphone and camera remain connected.
         await this.room.localParticipant.setScreenShareEnabled(false).catch(() => undefined);
+        if (!shouldRetryScreenSharePublication(error, attempt)) throw error;
+        // Give the SDK a short moment to complete the unpublish before re-requesting its publication acknowledgement.
+        await new Promise<void>((resolve) => setTimeout(resolve, 700));
       }
-      throw error;
+    }
+  }
+
+  private async publishScreenShareOnce() {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const publication = this.room.localParticipant.setScreenShareEnabled(true);
+      await Promise.race([
+        publication,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("Android không phản hồi việc phát track màn hình. Hãy thử lại sau khi cho phép ghi màn hình.")), 15_000);
+        }),
+      ]);
+      if (!this.room.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track) {
+        throw new Error("Không thể bắt đầu chia sẻ màn hình. Hãy cho phép Android ghi lại màn hình rồi thử lại.");
+      }
+    } finally {
+      if (timeout) clearTimeout(timeout);
     }
   }
 
@@ -158,6 +182,10 @@ export class LiveKitCall {
 
   getRoom() {
     return this.room;
+  }
+
+  isConnected() {
+    return this.room.state === ConnectionState.Connected;
   }
 
   getNetworkStats(): LiveKitNetworkStats {

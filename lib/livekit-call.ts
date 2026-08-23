@@ -29,6 +29,9 @@ export class LiveKitCall {
   getRoom() {
     return undefined;
   }
+  isConnected() {
+    return false;
+  }
   getNetworkStats() {
     return { pingMs: null, connectionQuality: "unknown" as const };
   }

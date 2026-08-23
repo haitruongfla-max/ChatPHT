@@ -4,6 +4,7 @@ import {
   useCameraPermissions,
   useMicrophonePermissions,
 } from "expo-camera";
+import * as FileSystem from "expo-file-system/legacy";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,11 +34,16 @@ type ChatCameraCaptureProps = {
 /** Full-screen camera used only while the user explicitly captures chat media. */
 export function ChatCameraCapture({ mode, onClose, onCaptured }: ChatCameraCaptureProps) {
   const cameraRef = useRef<CameraView>(null);
+  const recordingStartedAt = useRef<number | null>(null);
+  const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closing = useRef(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
   const [facing, setFacing] = useState<"back" | "front">("back");
   const [preparing, setPreparing] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
 
   const requiresMicrophone = mode === "video";
   const hasPermissions = Boolean(cameraPermission?.granted && (!requiresMicrophone || microphonePermission?.granted));
@@ -55,11 +61,23 @@ export function ChatCameraCapture({ mode, onClose, onCaptured }: ChatCameraCaptu
     })();
   }, [cameraPermission, microphonePermission, mode, requestCameraPermission, requestMicrophonePermission]);
 
-  useEffect(() => () => cameraRef.current?.stopRecording(), []);
+  useEffect(() => {
+    if (!recording || recordingStartedAt.current === null) return;
+    const interval = setInterval(() => {
+      setRecordingSeconds(Math.floor((Date.now() - (recordingStartedAt.current ?? Date.now())) / 1000));
+    }, 250);
+    return () => clearInterval(interval);
+  }, [recording]);
+
+  useEffect(() => () => {
+    if (stopTimer.current) clearTimeout(stopTimer.current);
+    cameraRef.current?.stopRecording();
+  }, []);
 
   if (!mode) return null;
 
   const close = () => {
+    closing.current = true;
     if (recording) cameraRef.current?.stopRecording();
     onClose();
   };
@@ -91,23 +109,53 @@ export function ChatCameraCapture({ mode, onClose, onCaptured }: ChatCameraCaptu
     }
   };
 
+  const stopRecordingWhenReady = () => {
+    if (!cameraRef.current || !recording) return;
+    const elapsed = Date.now() - (recordingStartedAt.current ?? Date.now());
+    // Android camera encoders need a brief keyframe window. Stopping earlier produces an empty MP4 on some Xiaomi builds.
+    const remaining = Math.max(0, 1200 - elapsed);
+    if (remaining > 0) {
+      if (!stopTimer.current) {
+        stopTimer.current = setTimeout(() => {
+          stopTimer.current = null;
+          cameraRef.current?.stopRecording();
+        }, remaining);
+      }
+      return;
+    }
+    cameraRef.current.stopRecording();
+  };
+
   const toggleRecording = async () => {
-    if (!cameraRef.current || preparing) return;
+    if (!cameraRef.current || preparing || !cameraReady) return;
     if (recording) {
-      cameraRef.current.stopRecording();
+      stopRecordingWhenReady();
       return;
     }
 
     try {
+      closing.current = false;
+      recordingStartedAt.current = Date.now();
+      setRecordingSeconds(0);
       setRecording(true);
       const video = await cameraRef.current.recordAsync({
         maxDuration: 300,
       });
-      if (video?.uri) await completeCapture({ uri: video.uri, type: "video" });
+      if (!video?.uri) throw new Error("Camera không trả về tệp video hợp lệ.");
+      const info = await FileSystem.getInfoAsync(video.uri);
+      const byteSize = info.exists && "size" in info ? info.size : 0;
+      if (!byteSize || byteSize < 2048) {
+        throw new Error("Video chưa kịp tạo dữ liệu. Vui lòng quay ít nhất vài giây rồi dừng.");
+      }
+      if (!closing.current) await completeCapture({ uri: video.uri, type: "video" });
     } catch (error) {
-      Alert.alert("Không thể quay video", error instanceof Error ? error.message : "Vui lòng thử lại.");
+      if (!closing.current) Alert.alert("Không thể quay video", error instanceof Error ? error.message : "Vui lòng thử lại.");
     } finally {
+      recordingStartedAt.current = null;
+      if (stopTimer.current) clearTimeout(stopTimer.current);
+      stopTimer.current = null;
       setRecording(false);
+      setRecordingSeconds(0);
     }
   };
 
@@ -120,7 +168,7 @@ export function ChatCameraCapture({ mode, onClose, onCaptured }: ChatCameraCaptu
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={close}>
       <View style={styles.root}>
         {hasPermissions ? (
-          <CameraView ref={cameraRef} style={styles.camera} facing={facing} />
+          <CameraView ref={cameraRef} style={styles.camera} facing={facing} onCameraReady={() => setCameraReady(true)} />
         ) : (
           <View style={styles.permissionCard}>
             <MaterialIcons name="camera-alt" size={36} color="#BFDBFE" />
@@ -148,11 +196,11 @@ export function ChatCameraCapture({ mode, onClose, onCaptured }: ChatCameraCaptu
               <Pressable onPress={() => setFacing((current) => current === "back" ? "front" : "back")} disabled={preparing || recording} style={({ pressed }) => [styles.roundButton, pressed && styles.pressed]} accessibilityLabel="Đổi camera trước hoặc sau">
                 <MaterialIcons name="flip-camera-android" size={25} color="#FFFFFF" />
               </Pressable>
-              <Pressable onPress={() => void (mode === "video" ? toggleRecording() : takePhoto())} disabled={preparing} style={({ pressed }) => [styles.captureButton, mode === "video" && recording && styles.captureButtonRecording, pressed && styles.pressed]} accessibilityLabel={mode === "video" ? (recording ? "Dừng quay video" : "Bắt đầu quay video") : "Chụp ảnh"}>
+              <Pressable onPress={() => void (mode === "video" ? toggleRecording() : takePhoto())} disabled={preparing || !cameraReady} style={({ pressed }) => [styles.captureButton, mode === "video" && recording && styles.captureButtonRecording, (!cameraReady || preparing) && styles.captureButtonDisabled, pressed && styles.pressed]} accessibilityLabel={mode === "video" ? (recording ? "Dừng quay video" : "Bắt đầu quay video") : "Chụp ảnh"}>
                 {preparing ? <ActivityIndicator color="#FFFFFF" /> : <View style={[styles.captureCenter, mode === "video" && recording && styles.captureCenterRecording]} />}
               </Pressable>
               <View style={styles.roundButton} pointerEvents="none">
-                {mode === "video" && recording ? <Text style={styles.recordingText}>REC</Text> : <MaterialIcons name="hd" size={22} color="#FFFFFF" />}
+                {mode === "video" && recording ? <Text style={styles.recordingText}>{`REC ${String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:${String(recordingSeconds % 60).padStart(2, "0")}`}</Text> : <MaterialIcons name="hd" size={22} color="#FFFFFF" />}
               </View>
             </View>
           ) : null}
@@ -173,6 +221,7 @@ const styles = StyleSheet.create({
   modeText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
   captureButton: { height: 74, width: 74, borderRadius: 37, padding: 5, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.95)" },
   captureButtonRecording: { backgroundColor: "#FEE2E2" },
+  captureButtonDisabled: { opacity: 0.55 },
   captureCenter: { width: 58, height: 58, borderRadius: 29, backgroundColor: "#FFFFFF", borderWidth: 3, borderColor: "#2563EB" },
   captureCenterRecording: { width: 28, height: 28, borderRadius: 6, backgroundColor: "#DC2626", borderWidth: 0 },
   recordingText: { color: "#FECACA", fontSize: 10, fontWeight: "900" },

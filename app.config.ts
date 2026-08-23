@@ -82,8 +82,8 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
     googleServicesFile: "./google-services.json",
-    // Cao hơn OTA base 1.0.15 để Android cho phép cập nhật đè bản có native MediaProjection mới.
-    versionCode: 17,
+    // APK sửa lỗi cần cao hơn code 17 của OTA base 1.0.16 để Android cho phép cập nhật đè.
+    versionCode: 18,
     permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE", "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PROJECTION"],
     intentFilters: [
       {
