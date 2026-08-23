@@ -235,4 +235,4 @@
 - [x] Khắc phục chia sẻ màn hình Android: quyền foreground/media projection, xử lý lỗi không crash và hướng dẫn quyền MIUI phù hợp.
 - [x] Rà soát và sửa luồng gọi video 1:1 gồm quyền camera/micro, RTCView, signaling/ICE, STUN/TURN và điều khiển camera/micro.
 - [x] Bổ sung kiểm tra OTA có kiểm soát khi mở app/trở lại foreground, chỉ dùng bundle tương thích native và không phụ thuộc Firestore.
-- [ ] Nâng APK nền OTA lên version 1.0.16 với Android versionCode mới, kiểm thử và build GitHub Release.
+- [x] Nâng APK nền OTA lên version 1.0.16 với Android versionCode mới, kiểm thử và build GitHub Release.
