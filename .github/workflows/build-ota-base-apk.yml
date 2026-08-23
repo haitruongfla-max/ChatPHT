@@ -21,6 +21,11 @@ jobs:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
       APK_OUTPUT: ./ChatPHT-1.0.15-OTA-Base.apk
+      # LiveKit và Expo Android lint cần nhiều heap hơn mức mặc định của Gradle.
+      # Chạy một worker để không vượt bộ nhớ runner GitHub tiêu chuẩn.
+      GRADLE_OPTS: >-
+        -Dorg.gradle.jvmargs=-Xmx3g
+        -Dorg.gradle.workers.max=1
 
     steps:
       - name: Checkout source

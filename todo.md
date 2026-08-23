@@ -230,3 +230,4 @@
 - [x] Tạo chuỗi Base64 của `google-services.json` để người dùng đặt GitHub Secret `GOOGLE_SERVICES_JSON_BASE64` cho workflow APK nền OTA.
 - [ ] Kết nối repository `haitruongfla-max/ChatPHT`, đẩy mã ChatPHT hiện tại và kích hoạt workflow `build-ota-base-apk` đã được người dùng xác nhận.
 - [ ] Xác minh GitHub Actions hoàn tất, GitHub Release có APK nền OTA và bàn giao liên kết tải trực tiếp.
+- [ ] Tăng bộ nhớ Gradle có kiểm soát cho runner GitHub sau lỗi `OutOfMemoryError` ở Android lint, rồi chạy lại workflow APK nền OTA.
