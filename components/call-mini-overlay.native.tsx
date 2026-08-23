@@ -17,6 +17,7 @@ export function CallMiniOverlay() {
   const insets = useSafeAreaInsets();
   const [snapshot, setSnapshot] = useState<ActiveCallSnapshot | null>(() => activeCall.get());
   const end = trpc.calls.end.useMutation();
+  const leaveGroup = trpc.calls.leaveGroup.useMutation();
 
   useEffect(() => {
     const unsubscribe = activeCall.subscribe(setSnapshot);
@@ -45,13 +46,15 @@ export function CallMiniOverlay() {
         kind: snapshot.kind,
         direction: snapshot.direction,
         name: snapshot.name,
+        group: snapshot.isGroup ? "true" : "false",
       },
     });
   };
 
   const finish = async () => {
     try {
-      await end.mutateAsync({ callId: snapshot.callId });
+      if (snapshot.isGroup) await leaveGroup.mutateAsync({ callId: snapshot.callId });
+      else await end.mutateAsync({ callId: snapshot.callId });
     } catch {
       // Always release local media even if the status request has timed out.
     } finally {
@@ -73,16 +76,16 @@ export function CallMiniOverlay() {
         </View>
         <View style={styles.texts}>
           <Text numberOfLines={1} style={styles.name}>{snapshot.name}</Text>
-          <Text style={styles.status}>Đang gọi · {formatDuration(snapshot.seconds)}</Text>
+        <Text style={styles.status}>{snapshot.isGroup ? "Nhóm · LiveKit" : snapshot.provider === "p2p" ? "P2P" : "LiveKit"} · {formatDuration(snapshot.seconds)}</Text>
         </View>
         <MaterialIcons name="open-in-full" size={18} color="#AAC9FF" />
       </Pressable>
       <Pressable
         onPress={() => void finish()}
-        disabled={end.isPending}
-        style={({ pressed }) => [styles.end, (pressed || end.isPending) && styles.pressed]}
+        disabled={end.isPending || leaveGroup.isPending}
+        style={({ pressed }) => [styles.end, (pressed || end.isPending || leaveGroup.isPending) && styles.pressed]}
         accessibilityRole="button"
-        accessibilityLabel="Kết thúc cuộc gọi"
+        accessibilityLabel={snapshot.isGroup ? "Rời cuộc gọi nhóm" : "Kết thúc cuộc gọi"}
       >
         <MaterialIcons name="call-end" size={21} color="#FFFFFF" />
       </Pressable>

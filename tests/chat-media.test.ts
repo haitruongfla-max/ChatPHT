@@ -96,6 +96,33 @@ describe("chat media access controls", () => {
     expect(storage.storagePut).toHaveBeenCalledWith("chatpht/media/18/7/opaque-object.jpg", expect.any(Buffer), "image/jpeg");
   });
 
+  it("chuyển tham chiếu reply hợp lệ cho tầng dữ liệu khi gửi tin nhắn chữ", async () => {
+    vi.mocked(db.createMessage).mockResolvedValue({
+      id: 56,
+      conversationId: 18,
+      senderId: 7,
+      body: "Tôi đồng ý",
+      contentType: "text",
+      mediaKey: null,
+      mediaMime: null,
+      mediaName: null,
+      mediaSize: null,
+      mediaBatchId: null,
+      replyToMessageId: 41,
+      createdAt: new Date("2026-08-22T00:00:00.000Z"),
+    } as any);
+
+    await expect(callerFor(7).messages.sendText({ conversationId: 18, body: "Tôi đồng ý", replyToMessageId: 41 }))
+      .resolves.toMatchObject({ id: 56, replyToMessageId: 41, replyTo: null });
+    expect(db.createMessage).toHaveBeenCalledWith({
+      conversationId: 18,
+      senderId: 7,
+      body: "Tôi đồng ý",
+      contentType: "text",
+      replyToMessageId: 41,
+    });
+  });
+
   it("hides a conversation only for the requesting account", async () => {
     vi.mocked(db.hideConversationForUser).mockResolvedValue(undefined);
 

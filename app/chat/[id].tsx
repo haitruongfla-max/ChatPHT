@@ -40,6 +40,8 @@ type ChatMessage = {
   mediaCacheKey: string | null;
   mediaName: string | null;
   mediaBatchId: string | null;
+  replyToMessageId: number | null;
+  replyTo: { id: number; senderId: number; body: string | null; contentType: "text" | "image" | "video"; mediaName: string | null; recalledAt: Date | null } | null;
   mediaCleanedAt: Date | null;
   recalledAt: Date | null;
   recalledBy: number | null;
@@ -186,8 +188,10 @@ function CallHistoryItem({ call }: { call: CallHistory }) {
 export default function ChatScreen() {
   const { user, loading } = useAuth();
   const userId = user?.id;
-  const rawId = useLocalSearchParams<{ id: string }>().id;
+  const routeParams = useLocalSearchParams<{ id: string; group?: string }>();
+  const rawId = routeParams.id;
   const conversationId = Number(rawId);
+  const isGroup = routeParams.group === "1";
   const listRef = useRef<FlatList<TimelineItem>>(null);
   const lastTypingHeartbeatAt = useRef(0);
   const [draft, setDraft] = useState("");
@@ -198,6 +202,7 @@ export default function ChatScreen() {
   const [reactionPickerFor, setReactionPickerFor] = useState<number | null>(
     null,
   );
+  const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [preview, setPreview] = useState<ChatMediaPreview | null>(null);
   const utils = trpc.useUtils();
   const messages = trpc.messages.list.useQuery(
@@ -225,6 +230,14 @@ export default function ChatScreen() {
     { conversationId },
     { enabled: Boolean(user) && Number.isInteger(conversationId) },
   );
+  const groupDetails = trpc.conversations.groupDetails.useQuery(
+    { conversationId },
+    { enabled: Boolean(user) && isGroup && Number.isInteger(conversationId), refetchInterval: 3000 },
+  );
+  const groupMembers = trpc.conversations.groupMembers.useQuery(
+    { conversationId },
+    { enabled: Boolean(user) && isGroup && Number.isInteger(conversationId) },
+  );
   const messageCount = messages.data?.length ?? 0;
   const sendText = trpc.messages.sendText.useMutation();
   const requestMediaUpload = trpc.messages.requestMediaUpload.useMutation();
@@ -239,12 +252,21 @@ export default function ChatScreen() {
   const requestWallpaperUpload = trpc.conversations.requestWallpaperUpload.useMutation();
   const setWallpaper = trpc.conversations.setWallpaper.useMutation();
   const startCall = trpc.calls.start.useMutation();
+  const startGroupCall = trpc.calls.startGroup.useMutation();
+  const pinGroupMessage = trpc.conversations.pinGroupMessage.useMutation();
+  const group = groupDetails.data;
+  const isGroupAdmin = Boolean(
+    groupMembers.data?.some((member) => member.id === userId && (member.groupRole === "owner" || member.groupRole === "admin")),
+  );
+  const isStartingCall = startCall.isPending || startGroupCall.isPending;
   const header = useMemo(
     () => ({
-      title: "Hội thoại riêng tư",
-      subtitle: "Chỉ thành viên có thể xem tin nhắn",
+      title: isGroup ? group?.title ?? "Nhóm chat" : "Hội thoại riêng tư",
+      subtitle: isGroup
+        ? group ? `${group.memberCount} thành viên · Chỉ thành viên có thể xem tin nhắn` : "Đang tải thông tin nhóm"
+        : "Chỉ thành viên có thể xem tin nhắn",
     }),
-    [],
+    [group, isGroup],
   );
   const timeline = useMemo<TimelineItem[]>(() => {
     const sourceMessages = (messages.data ?? []) as ChatMessage[];
@@ -259,6 +281,23 @@ export default function ChatScreen() {
     const callItems = ((callHistory.data ?? []) as CallHistory[]).map((call) => ({ ...call, entryType: "call" as const }));
     return [...messageItems, ...callItems].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
   }, [callHistory.data, messages.data]);
+  const pinnedMessage = useMemo(
+    () => group?.pinnedMessageId
+      ? ((messages.data ?? []) as ChatMessage[]).find((message) => message.id === group.pinnedMessageId) ?? null
+      : null,
+    [group?.pinnedMessageId, messages.data],
+  );
+  const mentionQuery = useMemo(() => {
+    if (!isGroup) return null;
+    const match = draft.match(/(?:^|\s)@([^\s@]*)$/);
+    return match ? match[1].toLocaleLowerCase("vi-VN") : null;
+  }, [draft, isGroup]);
+  const mentionCandidates = useMemo(() => {
+    if (mentionQuery === null) return [];
+    return (groupMembers.data ?? []).filter((member) =>
+      member.id !== userId && (member.username.toLocaleLowerCase("vi-VN").includes(mentionQuery) || member.displayName.toLocaleLowerCase("vi-VN").includes(mentionQuery)),
+    ).slice(0, 5);
+  }, [groupMembers.data, mentionQuery, userId]);
 
   useEffect(() => {
     if (timeline.length)
@@ -287,13 +326,19 @@ export default function ChatScreen() {
     void utils.messages.list.invalidate({ conversationId });
     void utils.calls.listByConversation.invalidate({ conversationId, limit: 60 });
     void utils.conversations.list.invalidate();
+    if (isGroup) {
+      void utils.conversations.groupDetails.invalidate({ conversationId });
+      void utils.conversations.groupMembers.invalidate({ conversationId });
+    }
   };
   const beginCall = async (kind: "audio" | "video") => {
     try {
-      const call = await startCall.mutateAsync({ conversationId, kind });
+      const call = isGroup
+        ? (await startGroupCall.mutateAsync({ conversationId, kind })).call
+        : await startCall.mutateAsync({ conversationId, kind });
       router.push({
         pathname: "/call",
-        params: { callId: call.id, kind, direction: "outgoing", name: header.title },
+        params: { callId: call.id, kind, direction: "outgoing", name: header.title, group: isGroup ? "1" : "0" },
       });
     } catch (error) {
       Alert.alert(
@@ -302,13 +347,34 @@ export default function ChatScreen() {
       );
     }
   };
+  const pinMessage = async (messageId: number | null) => {
+    if (!isGroup || !isGroupAdmin || pinGroupMessage.isPending) return;
+    try {
+      await pinGroupMessage.mutateAsync({ conversationId, messageId });
+      void utils.conversations.groupDetails.invalidate({ conversationId });
+    } catch (error) {
+      Alert.alert("Không thể ghim tin nhắn", error instanceof Error ? error.message : "Vui lòng thử lại.");
+    }
+  };
+  const openMessageActions = (item: TimelineMessage, mine: boolean) => {
+    if (item.recalledAt) return;
+    const isPinned = group?.pinnedMessageId === item.id;
+    const actions: { text: string; style?: "cancel" | "destructive"; onPress?: () => void }[] = [
+      { text: "Trả lời", onPress: () => setReplyTarget(item) },
+    ];
+    if (isGroup && isGroupAdmin) actions.push({ text: isPinned ? "Bỏ ghim" : "Ghim tin nhắn", onPress: () => void pinMessage(isPinned ? null : item.id) });
+    if (mine) actions.push({ text: "Thu hồi", style: "destructive", onPress: () => confirmRecall(item) });
+    actions.push({ text: "Hủy", style: "cancel" });
+    Alert.alert("Tùy chọn tin nhắn", isGroup && isGroupAdmin ? "Quản trị viên có thể ghim tin nhắn quan trọng cho cả nhóm." : "Bạn có thể trả lời trực tiếp tin nhắn này.", actions);
+  };
   const send = async () => {
     const body = draft.trim();
     if (!body || sendText.isPending || uploading) return;
     setDraft("");
     void setTyping({ conversationId, isTyping: false }).catch(() => undefined);
     try {
-      await sendText.mutateAsync({ conversationId, body });
+      await sendText.mutateAsync({ conversationId, body, replyToMessageId: replyTarget?.id ?? null });
+      setReplyTarget(null);
       refresh();
     } catch (error) {
       setDraft(body);
@@ -328,6 +394,9 @@ export default function ChatScreen() {
       lastTypingHeartbeatAt.current = now;
       void setTyping({ conversationId, isTyping }).catch(() => undefined);
     }
+  };
+  const chooseMention = (member: NonNullable<typeof groupMembers.data>[number]) => {
+    changeDraft(draft.replace(/(^|\s)@[^\s@]*$/, `$1@${member.username} `));
   };
 
   const chooseWallpaper = async () => {
@@ -395,6 +464,10 @@ export default function ChatScreen() {
 
   const chooseMedia = async () => {
     if (uploading) return;
+    if (replyTarget) {
+      Alert.alert("Đang trả lời tin nhắn", "Hãy gửi nội dung chữ cho phản hồi này hoặc bấm dấu X để bỏ trạng thái trả lời trước khi gửi media.");
+      return;
+    }
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert("Cần quyền thư viện", "Hãy cho phép ChatPHT truy cập thư viện ảnh và video để gửi tệp.");
@@ -622,7 +695,7 @@ export default function ChatScreen() {
           </View>
           <Pressable
             onPress={() => void beginCall("audio")}
-            disabled={startCall.isPending}
+            disabled={isStartingCall}
             style={({ pressed }) => [styles.callButton, pressed && styles.pressed]}
             accessibilityRole="button"
             accessibilityLabel="Gọi thoại"
@@ -631,41 +704,44 @@ export default function ChatScreen() {
           </Pressable>
           <Pressable
             onPress={() => void beginCall("video")}
-            disabled={startCall.isPending}
+            disabled={isStartingCall}
             style={({ pressed }) => [styles.callButton, pressed && styles.pressed]}
             accessibilityRole="button"
             accessibilityLabel="Gọi video"
           >
             <MaterialIcons name="videocam" size={21} color="#2563EB" />
           </Pressable>
-          <Pressable
-            onPress={confirmRemove}
-            disabled={
-              removeConversation.isPending || clearConversation.isPending
-            }
-            style={({ pressed }) => [
-              styles.deleteConversation,
-              pressed && styles.pressed,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Xóa hội thoại khỏi hộp thư"
-          >
-            <MaterialIcons name="delete-outline" size={21} color="#C2410C" />
-          </Pressable>
-          <Pressable
-            onPress={confirmClearContent}
-            disabled={
-              removeConversation.isPending || clearConversation.isPending
-            }
-            style={({ pressed }) => [
-              styles.clearConversation,
-              pressed && styles.pressed,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Xóa sạch toàn bộ tin nhắn, ảnh và video"
-          >
-            <MaterialIcons name="delete-forever" size={21} color="#B91C1C" />
-          </Pressable>
+          {isGroup ? (
+            <Pressable
+              onPress={() => router.push(`/group/${conversationId}` as never)}
+              style={({ pressed }) => [styles.groupSettingsButton, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Thông tin và quản trị nhóm"
+            >
+              <MaterialIcons name="group" size={21} color="#2563EB" />
+            </Pressable>
+          ) : (
+            <>
+              <Pressable
+                onPress={confirmRemove}
+                disabled={removeConversation.isPending || clearConversation.isPending}
+                style={({ pressed }) => [styles.deleteConversation, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Xóa hội thoại khỏi hộp thư"
+              >
+                <MaterialIcons name="delete-outline" size={21} color="#C2410C" />
+              </Pressable>
+              <Pressable
+                onPress={confirmClearContent}
+                disabled={removeConversation.isPending || clearConversation.isPending}
+                style={({ pressed }) => [styles.clearConversation, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Xóa sạch toàn bộ tin nhắn, ảnh và video"
+              >
+                <MaterialIcons name="delete-forever" size={21} color="#B91C1C" />
+              </Pressable>
+            </>
+          )}
           <Pressable
             onPress={openWallpaperMenu}
             disabled={wallpaperProgress !== null || requestWallpaperUpload.isPending || setWallpaper.isPending}
@@ -676,6 +752,14 @@ export default function ChatScreen() {
             <MaterialIcons name="wallpaper" size={20} color="#2563EB" />
           </Pressable>
         </View>
+        {isGroup && group?.pinnedMessageId ? (
+          <View style={styles.pinnedBanner} accessibilityLabel="Tin nhắn đã ghim trong nhóm">
+            <MaterialIcons name="push-pin" size={16} color="#1D4ED8" />
+            <Text numberOfLines={1} style={styles.pinnedText}>
+              {pinnedMessage?.body?.trim() || "Đã ghim một tin nhắn trong nhóm"}
+            </Text>
+          </View>
+        ) : null}
         <FlatList
           ref={listRef}
           data={timeline}
@@ -710,11 +794,7 @@ export default function ChatScreen() {
               >
                 <View style={styles.messageStack}>
                   <Pressable
-                    onLongPress={
-                      mine && !item.recalledAt
-                        ? () => confirmRecall(item)
-                        : undefined
-                    }
+                    onLongPress={!item.recalledAt ? () => openMessageActions(item, mine) : undefined}
                     delayLongPress={750}
                     style={[
                       styles.bubble,
@@ -739,6 +819,14 @@ export default function ChatScreen() {
                       </View>
                     ) : (
                       <>
+                        {item.replyTo ? (
+                          <View style={[styles.replyPreview, mine && styles.mineReplyPreview]}>
+                            <MaterialIcons name="reply" size={14} color={mine ? "#D9E5FF" : "#4B6584"} />
+                            <Text numberOfLines={2} style={[styles.replyPreviewText, mine && styles.mineReplyPreviewText]}>
+                              {item.replyTo.recalledAt ? "Tin nhắn đã được thu hồi" : item.replyTo.body?.trim() || (item.replyTo.contentType === "video" ? "Video" : "Ảnh")}
+                            </Text>
+                          </View>
+                        ) : null}
                         {item.albumItems && item.albumItems.length > 1 ? (
                           <ChatMediaGrid
                             items={item.albumItems}
@@ -916,6 +1004,28 @@ export default function ChatScreen() {
               </View>
             </View>
           ) : null}
+          {replyTarget ? (
+            <View style={styles.replyComposer} accessibilityLabel="Đang trả lời tin nhắn">
+              <MaterialIcons name="reply" size={18} color="#2563EB" />
+              <View style={styles.replyComposerText}>
+                <Text style={styles.replyComposerLabel}>Đang trả lời</Text>
+                <Text numberOfLines={1} style={styles.replyComposerBody}>{replyTarget.body?.trim() || (replyTarget.contentType === "video" ? "Video" : "Ảnh")}</Text>
+              </View>
+              <Pressable onPress={() => setReplyTarget(null)} style={({ pressed }) => [styles.replyDismiss, pressed && styles.pressed]} accessibilityLabel="Bỏ trả lời">
+                <MaterialIcons name="close" size={19} color="#5D789A" />
+              </Pressable>
+            </View>
+          ) : null}
+          {mentionCandidates.length ? (
+            <View style={styles.mentionSuggestions} accessibilityLabel="Gợi ý nhắc tên thành viên">
+              {mentionCandidates.map((member) => (
+                <Pressable key={member.id} onPress={() => chooseMention(member)} style={({ pressed }) => [styles.mentionRow, pressed && styles.pressed]}>
+                  <MaterialIcons name="alternate-email" size={17} color="#2563EB" />
+                  <Text numberOfLines={1} style={styles.mentionText}>{member.displayName} <Text style={styles.mentionUsername}>@{member.username}</Text></Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           <View style={styles.composerRow}>
             <Pressable
               disabled={uploading}
@@ -1032,6 +1142,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#FEE2E2",
   },
+  groupSettingsButton: {
+    height: 36,
+    width: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#E9EFFD",
+  },
   wallpaperButton: {
     height: 36,
     width: 36,
@@ -1040,6 +1158,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  pinnedBanner: {
+    minHeight: 38,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#EFF6FF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#DBEAFE",
+  },
+  pinnedText: { flex: 1, color: "#1E3A8A", fontSize: 12.5, fontWeight: "700" },
   list: { flex: 1 },
   listContent: {
     paddingHorizontal: 16,
@@ -1087,6 +1217,10 @@ const styles = StyleSheet.create({
   },
   mineBubble: { backgroundColor: "#2563EB", borderBottomRightRadius: 5 },
   theirBubble: { backgroundColor: "#E9EEF8", borderBottomLeftRadius: 5 },
+  replyPreview: { alignItems: "center", backgroundColor: "#E8EEF5", borderLeftColor: "#64748B", borderLeftWidth: 3, borderRadius: 8, flexDirection: "row", gap: 6, marginBottom: 8, paddingHorizontal: 8, paddingVertical: 6 },
+  mineReplyPreview: { backgroundColor: "#315EAB", borderLeftColor: "#D9E5FF" },
+  replyPreviewText: { color: "#4B6584", flex: 1, fontSize: 12, lineHeight: 16 },
+  mineReplyPreviewText: { color: "#E9F1FF" },
   messageText: { color: "#1E293B", fontSize: 15.5, lineHeight: 21 },
   mineText: { color: "#FFF" },
   messageMeta: {
@@ -1221,6 +1355,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#F6F8FC",
   },
   typingText: { color: "#2563EB", fontSize: 12.5, fontWeight: "700" },
+  replyComposer: { alignItems: "center", backgroundColor: "#EAF2FF", borderBottomColor: "#CFE2FF", borderBottomWidth: 1, flexDirection: "row", gap: 9, marginHorizontal: -12, marginTop: -10, paddingHorizontal: 16, paddingVertical: 8 },
+  replyComposerText: { flex: 1, minWidth: 0 },
+  replyComposerLabel: { color: "#2563EB", fontSize: 11, fontWeight: "800" },
+  replyComposerBody: { color: "#4B6584", fontSize: 12.5, marginTop: 1 },
+  replyDismiss: { alignItems: "center", height: 32, justifyContent: "center", width: 32 },
+  mentionSuggestions: { backgroundColor: "#FFFFFF", borderColor: "#D7E4F5", borderRadius: 14, borderWidth: 1, elevation: 3, marginHorizontal: 14, marginTop: 8, overflow: "hidden", shadowColor: "#1E3A5F", shadowOpacity: 0.13, shadowRadius: 8 },
+  mentionRow: { alignItems: "center", flexDirection: "row", gap: 8, minHeight: 42, paddingHorizontal: 12 },
+  mentionText: { color: "#173F6C", flex: 1, fontSize: 13.5, fontWeight: "700" },
+  mentionUsername: { color: "#6A87A5", fontWeight: "500" },
   composer: {
     paddingHorizontal: 12,
     paddingVertical: 10,

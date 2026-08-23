@@ -44,7 +44,22 @@ describe("private chat push dispatch", () => {
         conversationId: 18,
         callId: "d1e8f1a7-440a-4f13-8472-e130e70c5cac",
         kind: "video",
+        group: "0",
       },
+    });
+  });
+
+  it("labels a group call without exposing participant identities and marks its navigation context", () => {
+    expect(buildIncomingCallPushPayload("ExponentPushToken[group-device]", {
+      conversationId: 29,
+      callId: "6134ece2-91c7-4184-a271-fd1f2700bc76",
+      kind: "audio",
+      isGroup: true,
+    })).toMatchObject({
+      title: "Cuộc gọi thoại nhóm",
+      body: "Mở ChatPHT để tham gia phòng gọi nhóm",
+      channelId: "calls",
+      data: { type: "incoming_call", conversationId: 29, group: "1" },
     });
   });
 

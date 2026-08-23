@@ -189,3 +189,13 @@
 - [x] Cho phép chọn tối đa 50 ảnh/video từ thư viện hệ thống, xin quyền cần thiết và xếp hàng 3 tác vụ tải song song.
 - [x] Hiển thị tiến trình tổng, nhóm media dạng lưới sau khi gửi và cảnh báo khi quota gần đầy nhưng vẫn giữ FIFO 02:00.
 - [x] Bổ sung hồi quy upload đa media/quota, kiểm thử toàn bộ và lưu checkpoint nâng cấp.
+- [x] Rà soát mô hình dữ liệu hội thoại, gọi LiveKit và giới hạn nền tảng cho chat nhóm, gọi nhóm và fallback P2P.
+- [x] Bổ sung tạo và quản trị nhóm tối đa 50 thành viên, gồm tên, avatar, vai trò admin, thêm/xóa thành viên và đổi tên.
+- [x] Mở rộng chat nhóm với trả lời, ghim tin nhắn, nhắc tên, album media tối đa 50 tệp và quyền thành viên.
+- [x] Tích hợp gọi nhóm LiveKit tối đa 8 người với chỉ báo người nói, đồng thời giữ ổn định gọi 1:1 hiện có.
+- [x] Thiết kế gọi 1:1 hybrid P2P/LiteKit, TURN dự phòng, chọn SD/HD và trạng thái đường truyền có thể kiểm thử.
+- [x] Thêm thống kê Admin về dung lượng, số cuộc P2P/LiveKit hôm nay và số nhóm đã tạo.
+- [x] Kiểm thử hồi quy, cập nhật TODO, lưu checkpoint và hướng dẫn người dùng xuất bản bản đã kiểm thử.
+- [x] Hoàn thiện màn quản trị nhóm: đổi tên/avatar, thêm/xóa thành viên và owner cấp hoặc thu quyền quản trị viên.
+- [x] Thêm signaling P2P chỉ giữa hai thành viên, STUN Google, timeout fallback LiveKit 5 giây và hồi quy quyền/token dự phòng.
+- [ ] Cấu hình TURN với thông tin đã xác thực và nghiệm thu P2P/LiveKit trên tối thiểu hai Android qua các mạng khác nhau; không dùng OpenRelay công khai làm hạ tầng production.

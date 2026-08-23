@@ -16,6 +16,8 @@ export type LiveKitNetworkStats = {
   connectionQuality: ConnectionQuality;
 };
 
+export type VideoQualityMode = "sd" | "hd";
+
 type SwitchableMediaStreamTrack = {
   _switchCamera?: () => void | Promise<void>;
 };
@@ -23,6 +25,7 @@ type SwitchableMediaStreamTrack = {
 export class LiveKitCall {
   private room = new Room({ adaptiveStream: true, dynacast: true });
   private isFrontCamera = true;
+  private videoQuality: VideoQualityMode = "hd";
 
   async connect(session: LiveKitSession, kind: "audio" | "video") {
     ensureLiveKitGlobals();
@@ -64,6 +67,7 @@ export class LiveKitCall {
     if (enabled) await this.requestMediaPermissions("video");
     await this.room.localParticipant.setCameraEnabled(enabled, enabled ? {
       facingMode: this.isFrontCamera ? "user" : "environment",
+      resolution: this.videoQuality === "hd" ? { width: 1280, height: 720 } : { width: 640, height: 360 },
     } : undefined);
     if (enabled && !this.room.localParticipant.getTrackPublication(Track.Source.Camera)?.track) {
       throw new Error("Không tạo được track camera. Hãy kiểm tra quyền camera của ChatPHT trong Cài đặt Android.");
@@ -100,6 +104,16 @@ export class LiveKitCall {
     if (selected) await AudioSession.selectAudioOutput(selected);
   }
 
+  async setVideoQuality(mode: VideoQualityMode) {
+    this.videoQuality = mode;
+    const track = this.room.localParticipant.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
+    if (!track) return;
+    await track.restartTrack({
+      facingMode: this.isFrontCamera ? "user" : "environment",
+      resolution: mode === "hd" ? { width: 1280, height: 720 } : { width: 640, height: 360 },
+    });
+  }
+
   getRoom() {
     return this.room;
   }
@@ -116,6 +130,7 @@ export class LiveKitCall {
   async disconnect() {
     this.room.disconnect();
     this.isFrontCamera = true;
+    this.videoQuality = "hd";
     await AudioSession.stopAudioSession();
   }
 

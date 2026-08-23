@@ -57,6 +57,9 @@ export default function InboxScreen() {
               <MaterialIcons name="person-add-alt-1" size={20} color="#FFFFFF" />
             {(requests.data?.length ?? 0) > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{requests.data?.length}</Text></View>}
           </Pressable>
+            <Pressable onPress={() => router.push("/group/new" as never)} style={({ pressed }) => [styles.newChat, pressed && styles.pressed]} accessibilityLabel="Tạo nhóm mới">
+              <MaterialIcons name="group-add" size={19} color="#1769D4" />
+            </Pressable>
             <Pressable onPress={() => router.push("/search" as never)} style={({ pressed }) => [styles.newChat, pressed && styles.pressed]} accessibilityLabel="Tạo cuộc trò chuyện mới">
               <MaterialIcons name="add-comment" size={18} color="#1769D4" />
             </Pressable>
@@ -80,24 +83,29 @@ export default function InboxScreen() {
         style={styles.list}
         contentContainerStyle={(conversations.data?.length ?? 0) === 0 ? styles.emptyList : styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refreshInbox()} tintColor="#2563EB" />}
-        renderItem={({ item }) => (
+        renderItem={({ item }) => {
+          const target = item.peer
+            ? { displayName: item.peer.displayName, avatarUrl: item.peer.avatarUrl, isGroup: false, memberCount: 0 }
+            : { displayName: item.group!.title, avatarUrl: item.group!.avatarUrl, isGroup: true, memberCount: item.group!.memberCount };
+          return (
           <Pressable
             onPress={() => router.push(`/chat/${item.id}` as never)}
-            onLongPress={() => confirmClearContent(item.id, item.peer.displayName)}
+            onLongPress={target.isGroup ? undefined : () => confirmClearContent(item.id, target.displayName)}
             delayLongPress={450}
             disabled={clearConversation.isPending}
             style={({ pressed }) => [styles.thread, (pressed || clearConversation.isPending) && styles.threadPressed]}
-            accessibilityLabel={`Mở cuộc trò chuyện với ${item.peer.displayName}`}
-            accessibilityHint="Nhấn giữ để xóa sạch toàn bộ nội dung cuộc trò chuyện"
+            accessibilityLabel={`Mở cuộc trò chuyện với ${target.displayName}`}
+            accessibilityHint={target.isGroup ? "Mở nhóm trò chuyện" : "Nhấn giữ để xóa sạch toàn bộ nội dung cuộc trò chuyện"}
           >
-            <ProfileAvatar name={item.peer.displayName} avatarUrl={item.peer.avatarUrl} size={50} style={styles.avatar} />
+            <ProfileAvatar name={target.displayName} avatarUrl={target.avatarUrl} size={50} style={styles.avatar} />
             <View style={styles.threadBody}>
-              <View style={styles.threadTop}><Text numberOfLines={1} style={styles.threadName}>{item.peer.displayName}</Text><Text style={styles.time}>{item.latestMessage ? new Date(item.latestMessage.createdAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }) : ""}</Text></View>
-              <Text numberOfLines={1} style={styles.preview}>{preview(item.latestMessage)}</Text>
+              <View style={styles.threadTop}><Text numberOfLines={1} style={styles.threadName}>{target.displayName}</Text><Text style={styles.time}>{item.latestMessage ? new Date(item.latestMessage.createdAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }) : ""}</Text></View>
+              <Text numberOfLines={1} style={styles.preview}>{target.isGroup ? `${target.memberCount} thành viên · ${preview(item.latestMessage)}` : preview(item.latestMessage)}</Text>
             </View>
             <MaterialIcons name="chevron-right" size={21} color="#9AB2CE" />
           </Pressable>
-        )}
+          );
+        }}
         ListEmptyComponent={<View style={styles.empty}><View style={styles.emptyIcon}><MaterialIcons name="forum" size={30} color="#2563EB" /></View><Text style={styles.emptyTitle}>Chưa có hội thoại</Text><Text style={styles.emptyBody}>Tìm bạn bằng tên người dùng để bắt đầu nhắn tin riêng tư.</Text><Pressable onPress={() => router.push("/search" as never)} style={({ pressed }) => [styles.emptyButton, pressed && styles.pressed]}><Text style={styles.emptyButtonText}>Tìm bạn</Text></Pressable></View>}
       />
     </ScreenContainer>

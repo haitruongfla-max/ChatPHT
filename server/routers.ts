@@ -13,6 +13,7 @@ import { dispatchIncomingCallPushNotification, dispatchNewMessagePushNotificatio
 import { createMediaAccessUrl } from "./media-access";
 import { createOpaqueStorageKey, storageCreateUploadUrl, storageDelete, storagePut } from "./storage";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { ENV } from "./_core/env";
 
 const credentialsSchema = z.object({
   username: z.string().trim().min(3).max(24),
@@ -64,6 +65,8 @@ function publicMessage(message: Awaited<ReturnType<typeof db.createMessage>> | A
     mediaName: message.mediaName,
     mediaSize: message.mediaSize,
     mediaBatchId: message.mediaBatchId,
+    replyToMessageId: message.replyToMessageId,
+    replyTo: "replyTo" in message ? message.replyTo : null,
     recalledAt: message.recalledAt,
     recalledBy: message.recalledBy,
     createdAt: message.createdAt,
@@ -102,6 +105,14 @@ async function withSecureAvatarUrls<T>(ctx: { req: any; user: any }, value: T): 
     }
   }
   return clone as T;
+}
+
+async function withSecureGroupAvatar<T extends { avatarKey: string | null }>(ctx: { req: any; user: any }, group: T) {
+  const { avatarKey, ...safeGroup } = group;
+  return {
+    ...safeGroup,
+    avatarUrl: avatarKey ? await createMediaAccessUrl(ctx.req, ctx.user, avatarKey) : null,
+  };
 }
 
 async function signInResponse(ctx: { req: any; res: any }, user: Awaited<ReturnType<typeof db.getUserById>>) {
@@ -195,6 +206,7 @@ export const appRouter = router({
   admin: router({
     listUsers: adminProcedure.query(async ({ ctx }) => withSecureAvatarUrls(ctx, await db.listManagedUsers())),
     storageSummary: adminProcedure.query(() => db.getStorageUsageSummary()),
+    operationalStats: adminProcedure.query(() => db.getAdminOperationalStats()),
     updateStorageQuota: adminProcedure
       .input(z.object({ quotaGb: z.union([z.literal(20), z.literal(50), z.literal(100), z.literal(200)]), unlimited: z.boolean() }))
       .mutation(async ({ input }) => {
@@ -292,6 +304,38 @@ export const appRouter = router({
           return appError(error, "Không thể bắt đầu cuộc gọi.");
         }
       }),
+    startGroup: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), kind: z.enum(["audio", "video"]) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const call = await db.createGroupCallSession(input.conversationId, ctx.user.id, input.kind);
+          const session = await createLiveKitCallToken({ room: call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" });
+          void dispatchIncomingCallPushNotification({ conversationId: input.conversationId, senderId: ctx.user.id, callId: call.id, kind: input.kind, isGroup: true });
+          return { call, session };
+        } catch (error) {
+          return appError(error, "Không thể bắt đầu cuộc gọi nhóm.");
+        }
+      }),
+    joinGroup: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const joined = await db.getJoinableGroupCallSession(input.callId, ctx.user.id);
+          const session = await createLiveKitCallToken({ room: joined.call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" });
+          return { ...joined, session };
+        } catch (error) {
+          return appError(error, "Không thể tham gia cuộc gọi nhóm.");
+        }
+      }),
+    leaveGroup: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await db.leaveGroupCallSession(input.callId, ctx.user.id);
+        } catch (error) {
+          return appError(error, "Không thể rời cuộc gọi nhóm.");
+        }
+      }),
     listByConversation: protectedProcedure
       .input(z.object({ conversationId: z.number().int().positive(), limit: z.number().int().min(1).max(100).default(60) }))
       .query(async ({ ctx, input }) => {
@@ -304,13 +348,19 @@ export const appRouter = router({
     incoming: protectedProcedure.query(async ({ ctx }) => withSecureAvatarUrls(ctx, await db.getIncomingCallSession(ctx.user.id))),
     get: protectedProcedure
       .input(z.object({ callId: z.string().uuid() }))
-      .query(async ({ ctx, input }) => withSecureAvatarUrls(ctx, await db.getCallSession(input.callId, ctx.user.id))),
+      .query(async ({ ctx, input }) => {
+        const call = await db.getCallSession(input.callId, ctx.user.id);
+        return call?.peer ? withSecureAvatarUrls(ctx, call) : call;
+      }),
     answer: protectedProcedure
       .input(z.object({ callId: z.string().uuid() }))
       .mutation(async ({ ctx, input }) => {
         try {
           const call = await db.answerCallSession(input.callId, ctx.user.id);
-          return { call, session: await createLiveKitCallToken({ room: call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" }) };
+          const session = call.provider === "livekit"
+            ? await createLiveKitCallToken({ room: call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" })
+            : null;
+          return { call, session };
         } catch (error) {
           return appError(error, "Không thể nhận cuộc gọi.");
         }
@@ -325,6 +375,56 @@ export const appRouter = router({
           return appError(error, "Không thể kết nối cuộc gọi.");
         }
       }),
+    fallbackToLiveKit: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const call = await db.activateLiveKitFallback(input.callId, ctx.user.id);
+          return {
+            call,
+            session: await createLiveKitCallToken({ room: call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" }),
+          };
+        } catch (error) {
+          return appError(error, "Không thể chuyển sang đường truyền LiveKit.");
+        }
+      }),
+    p2pIceConfig: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .query(async ({ ctx, input }) => {
+        try {
+          await db.authorizeP2pIceConfig(input.callId, ctx.user.id);
+          const iceServers: Array<{ urls: string[]; username?: string; credential?: string }> = [
+            { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+          ];
+          const turnUrls = ENV.p2pTurnUrls.split(",").map((url) => url.trim()).filter((url) => /^(turn|turns):/i.test(url));
+          if (turnUrls.length && ENV.p2pTurnUsername && ENV.p2pTurnCredential) {
+            iceServers.push({ urls: turnUrls, username: ENV.p2pTurnUsername, credential: ENV.p2pTurnCredential });
+          }
+          return { iceServers, hasTurn: turnUrls.length > 0 && Boolean(ENV.p2pTurnUsername && ENV.p2pTurnCredential) };
+        } catch (error) {
+          return appError(error, "Không thể lấy cấu hình kết nối P2P.");
+        }
+      }),
+    p2pSignal: router({
+      send: protectedProcedure
+        .input(z.object({ callId: z.string().uuid(), type: z.enum(["offer", "answer", "ice"]), payload: z.string().min(2).max(100_000) }))
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await db.createP2pSignal({ ...input, senderId: ctx.user.id });
+          } catch (error) {
+            return appError(error, "Không thể gửi tín hiệu kết nối riêng tư.");
+          }
+        }),
+      drain: protectedProcedure
+        .input(z.object({ callId: z.string().uuid() }))
+        .query(async ({ ctx, input }) => {
+          try {
+            return await db.drainP2pSignals(input.callId, ctx.user.id);
+          } catch (error) {
+            return appError(error, "Không thể nhận tín hiệu kết nối riêng tư.");
+          }
+        }),
+    }),
     decline: protectedProcedure
       .input(z.object({ callId: z.string().uuid() }))
       .mutation(async ({ ctx, input }) => {
@@ -380,7 +480,96 @@ export const appRouter = router({
       }),
   }),
   conversations: router({
-    list: protectedProcedure.query(async ({ ctx }) => withSecureAvatarUrls(ctx, await db.listConversations(ctx.user.id))),
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const conversations = await db.listConversations(ctx.user.id);
+      return Promise.all(conversations.map(async (item) => item.group
+        ? { ...item, group: await withSecureGroupAvatar(ctx, item.group) }
+        : withSecureAvatarUrls(ctx, item)));
+    }),
+    createGroup: protectedProcedure
+      .input(z.object({ title: z.string().trim().min(1, "Nhập tên nhóm.").max(80), memberIds: z.array(z.number().int().positive()).min(1).max(49) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return withSecureGroupAvatar(ctx, await db.createGroupConversation({ creatorId: ctx.user.id, title: input.title, memberIds: input.memberIds }));
+        } catch (error) {
+          return appError(error, "Không thể tạo nhóm.");
+        }
+      }),
+    groupDetails: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        try {
+          return withSecureGroupAvatar(ctx, await db.getGroupConversationSummary(input.conversationId, ctx.user.id));
+        } catch (error) {
+          return appError(error, "Không thể tải thông tin nhóm.");
+        }
+      }),
+    groupMembers: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        try {
+          return withSecureAvatarUrls(ctx, await db.listGroupMembers(input.conversationId, ctx.user.id));
+        } catch (error) {
+          return appError(error, "Không thể tải thành viên nhóm.");
+        }
+      }),
+    addGroupMembers: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), userIds: z.array(z.number().int().positive()).min(1).max(49) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return withSecureAvatarUrls(ctx, await db.addGroupMembers({ ...input, requesterId: ctx.user.id }));
+        } catch (error) {
+          return appError(error, "Không thể thêm thành viên.");
+        }
+      }),
+    removeGroupMember: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), userId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await db.removeGroupMember({ ...input, requesterId: ctx.user.id });
+        } catch (error) {
+          return appError(error, "Không thể xóa thành viên.");
+        }
+      }),
+    updateGroupMemberRole: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), userId: z.number().int().positive(), role: z.enum(["admin", "member"]) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return withSecureAvatarUrls(ctx, await db.updateGroupMemberRole({ ...input, requesterId: ctx.user.id }));
+        } catch (error) {
+          return appError(error, "Không thể cập nhật quyền quản trị viên.");
+        }
+      }),
+    requestGroupAvatarUpload: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), mimeType: avatarMimeSchema, size: z.number().int().positive().max(MAX_AVATAR_BYTES) }))
+      .mutation(async ({ ctx, input }) => {
+        await db.getGroupConversationSummary(input.conversationId, ctx.user.id);
+        const storage = await storageCreateUploadUrl(
+          createOpaqueStorageKey(`chatpht/group-avatars/${input.conversationId}`, extensionForMime(input.mimeType)),
+        );
+        return { ...storage, maximumSize: MAX_AVATAR_BYTES };
+      }),
+    updateGroup: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), title: z.string().trim().min(1).max(80).optional(), avatarKey: z.string().trim().min(20).max(512).nullable().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        if (input.avatarKey && !input.avatarKey.startsWith(`chatpht/group-avatars/${input.conversationId}/`)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Avatar không thuộc nhóm này." });
+        }
+        try {
+          return withSecureGroupAvatar(ctx, await db.updateGroupConversation({ ...input, requesterId: ctx.user.id }));
+        } catch (error) {
+          return appError(error, "Không thể cập nhật nhóm.");
+        }
+      }),
+    pinGroupMessage: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), messageId: z.number().int().positive().nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return withSecureGroupAvatar(ctx, await db.pinGroupMessage({ ...input, requesterId: ctx.user.id }));
+        } catch (error) {
+          return appError(error, "Không thể ghim tin nhắn.");
+        }
+      }),
     wallpaper: protectedProcedure
       .input(z.object({ conversationId: z.number().int().positive() }))
       .query(async ({ ctx, input }) => {
@@ -508,7 +697,7 @@ export const appRouter = router({
         }
       }),
     sendText: protectedProcedure
-      .input(z.object({ conversationId: z.number().int().positive(), body: z.string().trim().min(1).max(2000) }))
+      .input(z.object({ conversationId: z.number().int().positive(), body: z.string().trim().min(1).max(2000), replyToMessageId: z.number().int().positive().nullable().optional() }))
       .mutation(async ({ ctx, input }) => {
         try {
           const message = await db.createMessage({
@@ -516,6 +705,7 @@ export const appRouter = router({
             senderId: ctx.user.id,
             body: input.body,
             contentType: "text",
+            replyToMessageId: input.replyToMessageId ?? null,
           });
           void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
           return publicMessage(message, null);

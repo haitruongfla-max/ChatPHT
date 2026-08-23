@@ -4,6 +4,7 @@ vi.mock("../server/db", () => ({
   isUserAccessExpired: vi.fn(() => false),
   listManagedUsers: vi.fn(),
   getStorageUsageSummary: vi.fn(),
+  getAdminOperationalStats: vi.fn(),
   updateStorageQuotaSettings: vi.fn(),
   setUserAccessExpiry: vi.fn(),
   deleteManagedUser: vi.fn(),
@@ -38,8 +39,10 @@ describe("admin access controls", () => {
   it("refuses every management action from a standard account", async () => {
     await expect(callerFor("user").admin.listUsers()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(callerFor("user").admin.storageSummary()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(callerFor("user").admin.operationalStats()).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(db.listManagedUsers).not.toHaveBeenCalled();
     expect(db.getStorageUsageSummary).not.toHaveBeenCalled();
+    expect(db.getAdminOperationalStats).not.toHaveBeenCalled();
   });
 
   it("returns the read-only storage summary only to an administrator", async () => {
@@ -55,6 +58,17 @@ describe("admin access controls", () => {
 
     await expect(callerFor("admin").admin.storageSummary()).resolves.toMatchObject({ usedBytes: 823_319, mediaCount: 2 });
     expect(db.getStorageUsageSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns operational call and group counts only to an administrator", async () => {
+    vi.mocked(db.getAdminOperationalStats).mockResolvedValue({
+      storage: { usedBytes: 0, mediaCount: 0, quotaGb: 200, quotaBytes: 200 * 1024 * 1024 * 1024, unlimited: false, lastCleanupAt: null, recentMedia: [] },
+      groupsCreated: 4,
+      callsToday: { p2p: 1, livekit: 3 },
+    });
+
+    await expect(callerFor("admin").admin.operationalStats()).resolves.toMatchObject({ groupsCreated: 4, callsToday: { p2p: 1, livekit: 3 } });
+    expect(db.getAdminOperationalStats).toHaveBeenCalledTimes(1);
   });
 
   it("chỉ cho phép quản trị viên đổi quota trong các mức được hỗ trợ", async () => {

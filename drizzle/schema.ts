@@ -50,7 +50,12 @@ export const conversations = mysqlTable(
   "conversations",
   {
     id: int("id").autoincrement().primaryKey(),
-    directKey: varchar("directKey", { length: 64 }).notNull().unique(),
+    directKey: varchar("directKey", { length: 64 }).unique(),
+    kind: mysqlEnum("kind", ["direct", "group"]).default("direct").notNull(),
+    title: varchar("title", { length: 80 }),
+    avatarKey: varchar("avatarKey", { length: 512 }),
+    createdBy: int("createdBy"),
+    pinnedMessageId: int("pinnedMessageId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
@@ -68,6 +73,7 @@ export const conversationMembers = mysqlTable(
     typingUntil: timestamp("typingUntil"),
     wallpaperKey: varchar("wallpaperKey", { length: 512 }),
     wallpaperOpacity: int("wallpaperOpacity").default(60).notNull(),
+    role: mysqlEnum("role", ["owner", "admin", "member"]).default("member").notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => [
@@ -106,6 +112,7 @@ export const messages = mysqlTable(
     mediaName: varchar("mediaName", { length: 255 }),
     mediaSize: int("mediaSize"),
     mediaBatchId: varchar("mediaBatchId", { length: 80 }),
+    replyToMessageId: int("replyToMessageId"),
     mediaCleanedAt: timestamp("mediaCleanedAt"),
     recalledAt: timestamp("recalledAt"),
     recalledBy: int("recalledBy"),
@@ -114,6 +121,7 @@ export const messages = mysqlTable(
   (table) => [
     index("message_conversation_created_idx").on(table.conversationId, table.createdAt),
     index("message_conversation_batch_idx").on(table.conversationId, table.mediaBatchId, table.createdAt),
+    index("message_reply_idx").on(table.replyToMessageId),
   ],
 );
 
@@ -136,6 +144,8 @@ export const callSessions = mysqlTable(
     recipientId: int("recipientId").notNull(),
     room: varchar("room", { length: 96 }).notNull().unique(),
     kind: mysqlEnum("kind", ["audio", "video"]).notNull(),
+    provider: mysqlEnum("provider", ["livekit", "p2p"]).default("livekit").notNull(),
+    isGroup: boolean("isGroup").default(false).notNull(),
     status: mysqlEnum("status", ["ringing", "active", "declined", "ended", "missed"]).default("ringing").notNull(),
     expiresAt: timestamp("expiresAt").notNull(),
     answeredAt: timestamp("answeredAt"),
@@ -145,6 +155,22 @@ export const callSessions = mysqlTable(
   (table) => [
     index("call_session_recipient_status_idx").on(table.recipientId, table.status, table.expiresAt),
     index("call_session_conversation_created_idx").on(table.conversationId, table.createdAt),
+  ],
+);
+
+export const callParticipants = mysqlTable(
+  "call_participants",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    callId: varchar("callId", { length: 40 }).notNull(),
+    userId: int("userId").notNull(),
+    joinedAt: timestamp("joinedAt"),
+    leftAt: timestamp("leftAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("call_participant_unique_idx").on(table.callId, table.userId),
+    index("call_participant_user_idx").on(table.userId, table.callId),
   ],
 );
 
@@ -163,12 +189,32 @@ export const messageReactions = mysqlTable(
   ],
 );
 
+/** Ephemeral WebRTC signaling for an authorized direct-call pair. Payloads are drained after delivery. */
+export const p2pSignals = mysqlTable(
+  "p2p_signals",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    callId: varchar("callId", { length: 40 }).notNull(),
+    senderId: int("senderId").notNull(),
+    recipientId: int("recipientId").notNull(),
+    type: mysqlEnum("type", ["offer", "answer", "ice"]).notNull(),
+    payload: text("payload").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [
+    index("p2p_signal_recipient_idx").on(table.callId, table.recipientId, table.id),
+    index("p2p_signal_call_idx").on(table.callId, table.createdAt),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type FriendRequest = typeof friendRequests.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type CallSession = typeof callSessions.$inferSelect;
+export type CallParticipant = typeof callParticipants.$inferSelect;
+export type P2pSignal = typeof p2pSignals.$inferSelect;
 export type MessageReaction = typeof messageReactions.$inferSelect;
 export type PushDevice = typeof pushDevices.$inferSelect;
 export type StorageSettings = typeof storageSettings.$inferSelect;

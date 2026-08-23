@@ -67,6 +67,7 @@ export async function mediaDownloadHandler(req: Request, res: Response) {
 
     const media = (await db.findAuthorizedConversationMedia(mediaKey, user.id))
       ?? (await db.findAuthorizedWallpaper(mediaKey, user.id))
+      ?? (await db.findAuthorizedGroupAvatar(mediaKey, user.id))
       ?? (await db.findAuthorizedAvatar(mediaKey));
     if (!media) return res.status(403).json({ error: "media-access-denied" });
 

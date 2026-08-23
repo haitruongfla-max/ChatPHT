@@ -5,6 +5,8 @@ export type ActiveCallSnapshot = {
   kind: "audio" | "video";
   direction: "incoming" | "outgoing";
   name: string;
+  isGroup: boolean;
+  provider: "livekit" | "p2p";
   call: LiveKitCall;
   connected: boolean;
   minimized: boolean;
@@ -12,6 +14,7 @@ export type ActiveCallSnapshot = {
   speaker: boolean;
   cameraOn: boolean;
   isFrontCamera: boolean;
+  videoQuality: "sd" | "hd";
   seconds: number;
 };
 

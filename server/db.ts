@@ -2,12 +2,14 @@ import { and, desc, eq, inArray, isNotNull, isNull, like, lt, ne, or, sql } from
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
+  callParticipants,
   callSessions,
   conversationMembers,
   conversations,
   friendRequests,
   messageReactions,
   messages,
+  p2pSignals,
   pushDevices,
   storageSettings,
   type CallSession,
@@ -29,12 +31,15 @@ export type PublicProfile = {
 
 export type CallKind = "audio" | "video";
 export type CallStatus = "ringing" | "active" | "declined" | "ended" | "missed";
+export type P2pSignalType = "offer" | "answer" | "ice";
 export type CallSessionSummary = Pick<
   CallSession,
-  "id" | "conversationId" | "room" | "kind" | "status" | "expiresAt" | "answeredAt" | "endedAt" | "createdAt"
+  "id" | "conversationId" | "room" | "kind" | "provider" | "isGroup" | "status" | "expiresAt" | "answeredAt" | "endedAt" | "createdAt"
 > & {
   direction: "incoming" | "outgoing";
-  peer: PublicProfile;
+  isCaller: boolean;
+  peer: PublicProfile | null;
+  group: { title: string; participantCount: number } | null;
 };
 
 export function toPublicProfile(user: User): PublicProfile {
@@ -470,6 +475,161 @@ export async function getOrCreateDirectConversation(firstUserId: number, secondU
   return conversation;
 }
 
+export type GroupConversationSummary = {
+  id: number;
+  kind: "group";
+  title: string;
+  avatarKey: string | null;
+  createdBy: number | null;
+  pinnedMessageId: number | null;
+  memberCount: number;
+};
+
+async function requireGroupRole(conversationId: number, userId: number, allowed: Array<"owner" | "admin">) {
+  const db = requireDb(await getDb());
+  const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
+  if (!conversation || conversation.kind !== "group") throw new Error("Không tìm thấy nhóm trò chuyện.");
+  const [membership] = await db
+    .select({ role: conversationMembers.role })
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)))
+    .limit(1);
+  if (!membership || (membership.role !== "owner" && membership.role !== "admin") || !allowed.includes(membership.role)) {
+    throw new Error("Chỉ quản trị viên nhóm mới có quyền thực hiện thao tác này.");
+  }
+  return conversation;
+}
+
+export async function createGroupConversation(input: { creatorId: number; title: string; memberIds: number[]; avatarKey?: string | null }) {
+  const db = requireDb(await getDb());
+  const normalizedIds = Array.from(new Set([input.creatorId, ...input.memberIds]));
+  if (normalizedIds.length < 2) throw new Error("Nhóm cần ít nhất hai thành viên.");
+  if (normalizedIds.length > 50) throw new Error("Mỗi nhóm tối đa 50 thành viên.");
+  const selectedUsers = await db.select({ id: users.id }).from(users).where(inArray(users.id, normalizedIds));
+  if (selectedUsers.length !== normalizedIds.length) throw new Error("Một hoặc nhiều thành viên không còn tồn tại.");
+
+  await db.insert(conversations).values({
+    directKey: null,
+    kind: "group",
+    title: input.title,
+    avatarKey: input.avatarKey ?? null,
+    createdBy: input.creatorId,
+  });
+  const [conversation] = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.createdBy, input.creatorId), eq(conversations.kind, "group"), eq(conversations.title, input.title)))
+    .orderBy(desc(conversations.id))
+    .limit(1);
+  if (!conversation) throw new Error("Không thể tạo nhóm.");
+  await db.insert(conversationMembers).values(
+    normalizedIds.map((userId) => ({
+      conversationId: conversation.id,
+      userId,
+      role: userId === input.creatorId ? "owner" as const : "member" as const,
+    })),
+  );
+  return getGroupConversationSummary(conversation.id, input.creatorId);
+}
+
+export async function getGroupConversationSummary(conversationId: number, userId: number): Promise<GroupConversationSummary> {
+  const db = requireDb(await getDb());
+  const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
+  if (!conversation || conversation.kind !== "group" || !(await isConversationMember(conversationId, userId))) {
+    throw new Error("Bạn không có quyền truy cập nhóm này.");
+  }
+  const members = await db
+    .select({ id: conversationMembers.id })
+    .from(conversationMembers)
+    .where(eq(conversationMembers.conversationId, conversationId));
+  return {
+    id: conversation.id,
+    kind: "group",
+    title: conversation.title ?? "Nhóm ChatPHT",
+    avatarKey: conversation.avatarKey,
+    createdBy: conversation.createdBy,
+    pinnedMessageId: conversation.pinnedMessageId,
+    memberCount: members.length,
+  };
+}
+
+export async function listGroupMembers(conversationId: number, requesterId: number) {
+  const db = requireDb(await getDb());
+  await getGroupConversationSummary(conversationId, requesterId);
+  const rows = await db
+    .select({ userId: conversationMembers.userId, role: conversationMembers.role })
+    .from(conversationMembers)
+    .where(eq(conversationMembers.conversationId, conversationId));
+  const hydrated = await Promise.all(rows.map(async (row) => {
+    const user = await getUserById(row.userId);
+    return user ? { ...toPublicProfile(user), groupRole: row.role } : null;
+  }));
+  return hydrated.filter((member): member is NonNullable<typeof member> => Boolean(member));
+}
+
+export async function updateGroupConversation(input: { conversationId: number; requesterId: number; title?: string; avatarKey?: string | null }) {
+  const db = requireDb(await getDb());
+  await requireGroupRole(input.conversationId, input.requesterId, ["owner", "admin"]);
+  const update: { title?: string; avatarKey?: string | null } = {};
+  if (input.title !== undefined) update.title = input.title;
+  if (input.avatarKey !== undefined) update.avatarKey = input.avatarKey;
+  if (!Object.keys(update).length) throw new Error("Không có thay đổi nào cho nhóm.");
+  await db.update(conversations).set(update).where(eq(conversations.id, input.conversationId));
+  return getGroupConversationSummary(input.conversationId, input.requesterId);
+}
+
+export async function addGroupMembers(input: { conversationId: number; requesterId: number; userIds: number[] }) {
+  const db = requireDb(await getDb());
+  await requireGroupRole(input.conversationId, input.requesterId, ["owner", "admin"]);
+  const userIds = Array.from(new Set(input.userIds)).filter((id) => id !== input.requesterId);
+  if (!userIds.length) throw new Error("Hãy chọn ít nhất một thành viên.");
+  const existing = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(eq(conversationMembers.conversationId, input.conversationId));
+  const existingIds = new Set(existing.map((member) => member.userId));
+  const missingIds = userIds.filter((id) => !existingIds.has(id));
+  if (existing.length + missingIds.length > 50) throw new Error("Mỗi nhóm tối đa 50 thành viên.");
+  const found = missingIds.length ? await db.select({ id: users.id }).from(users).where(inArray(users.id, missingIds)) : [];
+  if (found.length !== missingIds.length) throw new Error("Một hoặc nhiều thành viên không còn tồn tại.");
+  if (missingIds.length) await db.insert(conversationMembers).values(missingIds.map((userId) => ({ conversationId: input.conversationId, userId, role: "member" as const })));
+  return listGroupMembers(input.conversationId, input.requesterId);
+}
+
+export async function removeGroupMember(input: { conversationId: number; requesterId: number; userId: number }) {
+  const db = requireDb(await getDb());
+  await requireGroupRole(input.conversationId, input.requesterId, ["owner", "admin"]);
+  const [target] = await db.select({ role: conversationMembers.role }).from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, input.conversationId), eq(conversationMembers.userId, input.userId))).limit(1);
+  if (!target) throw new Error("Thành viên không còn trong nhóm.");
+  if (target.role === "owner") throw new Error("Không thể xóa người tạo nhóm.");
+  await db.delete(conversationMembers).where(and(eq(conversationMembers.conversationId, input.conversationId), eq(conversationMembers.userId, input.userId)));
+  return { success: true as const };
+}
+
+export async function updateGroupMemberRole(input: { conversationId: number; requesterId: number; userId: number; role: "admin" | "member" }) {
+  const db = requireDb(await getDb());
+  await requireGroupRole(input.conversationId, input.requesterId, ["owner"]);
+  const [target] = await db.select({ role: conversationMembers.role }).from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, input.conversationId), eq(conversationMembers.userId, input.userId))).limit(1);
+  if (!target) throw new Error("Thành viên không còn trong nhóm.");
+  if (target.role === "owner") throw new Error("Không thể thay đổi vai trò người tạo nhóm.");
+  await db.update(conversationMembers).set({ role: input.role }).where(and(
+    eq(conversationMembers.conversationId, input.conversationId),
+    eq(conversationMembers.userId, input.userId),
+  ));
+  return listGroupMembers(input.conversationId, input.requesterId);
+}
+
+export async function pinGroupMessage(input: { conversationId: number; requesterId: number; messageId: number | null }) {
+  const db = requireDb(await getDb());
+  await requireGroupRole(input.conversationId, input.requesterId, ["owner", "admin"]);
+  if (input.messageId !== null) {
+    const [message] = await db.select({ id: messages.id }).from(messages)
+      .where(and(eq(messages.id, input.messageId), eq(messages.conversationId, input.conversationId))).limit(1);
+    if (!message) throw new Error("Tin nhắn không thuộc nhóm này.");
+  }
+  await db.update(conversations).set({ pinnedMessageId: input.messageId }).where(eq(conversations.id, input.conversationId));
+  return getGroupConversationSummary(input.conversationId, input.requesterId);
+}
+
 export async function restoreConversationForUser(conversationId: number, userId: number) {
   const db = requireDb(await getDb());
   await db
@@ -616,6 +776,18 @@ export async function findAuthorizedAvatar(mediaKey: string) {
   return avatar[0] ? { mediaMime: "image/jpeg" } : undefined;
 }
 
+/** Avatar nhóm chỉ hiển thị cho thành viên hiện tại của chính nhóm đó. */
+export async function findAuthorizedGroupAvatar(mediaKey: string, userId: number) {
+  const db = requireDb(await getDb());
+  const [conversation] = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(and(eq(conversations.kind, "group"), eq(conversations.avatarKey, mediaKey)))
+    .limit(1);
+  if (!conversation || !(await isConversationMember(conversation.id, userId))) return undefined;
+  return { mediaMime: "image/jpeg" };
+}
+
 export async function getConversationPeer(conversationId: number, userId: number) {
   const db = requireDb(await getDb());
   const membership = await isConversationMember(conversationId, userId);
@@ -636,27 +808,61 @@ function toCallSessionSummary(call: CallSession, userId: number, peer: PublicPro
     conversationId: call.conversationId,
     room: call.room,
     kind: call.kind,
+    provider: call.provider,
+    isGroup: false,
     status: call.status,
     expiresAt: call.expiresAt,
     answeredAt: call.answeredAt,
     endedAt: call.endedAt,
     createdAt: call.createdAt,
     direction: call.callerId === userId ? "outgoing" : "incoming",
+    isCaller: call.callerId === userId,
     peer,
+    group: null,
   };
 }
 
-async function hydrateCallSession(call: CallSession, userId: number) {
+async function hydrateCallSession(call: CallSession, userId: number): Promise<CallSessionSummary> {
+  if (call.isGroup) {
+    const db = requireDb(await getDb());
+    const [conversation] = await db.select().from(conversations).where(eq(conversations.id, call.conversationId)).limit(1);
+    if (!conversation || conversation.kind !== "group" || !(await isConversationMember(call.conversationId, userId))) {
+      throw new Error("Bạn không có quyền xem cuộc gọi nhóm này.");
+    }
+    const active = await db
+      .select({ id: callParticipants.id })
+      .from(callParticipants)
+      .where(and(eq(callParticipants.callId, call.id), isNull(callParticipants.leftAt)));
+    return {
+      id: call.id,
+      conversationId: call.conversationId,
+      room: call.room,
+      kind: call.kind,
+      provider: call.provider,
+      isGroup: true,
+      status: call.status,
+      expiresAt: call.expiresAt,
+      answeredAt: call.answeredAt,
+      endedAt: call.endedAt,
+      createdAt: call.createdAt,
+      direction: call.callerId === userId ? "outgoing" : "incoming",
+      isCaller: call.callerId === userId,
+      peer: null,
+      group: { title: conversation.title ?? "Nhóm ChatPHT", participantCount: active.length },
+    };
+  }
   const peerUser = await getUserById(call.callerId === userId ? call.recipientId : call.callerId);
   if (!peerUser) throw new Error("Không tìm thấy người dùng của cuộc gọi.");
   return toCallSessionSummary(call, userId, toPublicProfile(peerUser));
 }
 
 export async function createCallSession(conversationId: number, callerId: number, kind: CallKind) {
+  const db = requireDb(await getDb());
+  const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
+  if (!conversation || conversation.kind !== "direct") throw new Error("Hãy dùng cuộc gọi nhóm trong hội thoại nhóm.");
   const peer = await getConversationPeer(conversationId, callerId);
   if (!peer) throw new Error("Bạn không có quyền gọi trong hội thoại này.");
 
-  const db = requireDb(await getDb());
   const now = new Date();
   await db
     .update(callSessions)
@@ -671,6 +877,7 @@ export async function createCallSession(conversationId: number, callerId: number
     recipientId: peer.id,
     room: `chatpht-call-${id}`,
     kind,
+    provider: "p2p",
     status: "ringing",
     expiresAt: new Date(now.getTime() + 60_000),
   });
@@ -679,10 +886,100 @@ export async function createCallSession(conversationId: number, callerId: number
   return toCallSessionSummary(created, callerId, peer);
 }
 
+/** Creates a LiveKit-only room for a group. Direct calls keep the existing 1:1 flow. */
+export async function createGroupCallSession(conversationId: number, callerId: number, kind: CallKind) {
+  const db = requireDb(await getDb());
+  const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
+  if (!conversation || conversation.kind !== "group") throw new Error("Cuộc gọi nhóm chỉ có trong hội thoại nhóm.");
+  if (!(await isConversationMember(conversationId, callerId))) throw new Error("Bạn không có quyền gọi trong nhóm này.");
+
+  const now = new Date();
+  const id = randomUUID();
+  await db.insert(callSessions).values({
+    id,
+    conversationId,
+    callerId,
+    // The existing schema requires a recipient. For group rooms it is the initiator;
+    // membership in call_participants remains the source of join/leave authority.
+    recipientId: callerId,
+    room: `chatpht-group-${id}`,
+    kind,
+    provider: "livekit",
+    isGroup: true,
+    status: "active",
+    expiresAt: new Date(now.getTime() + 12 * 60 * 60 * 1000),
+    answeredAt: now,
+  });
+  await db.insert(callParticipants).values({ callId: id, userId: callerId, joinedAt: now });
+  const [call] = await db.select().from(callSessions).where(eq(callSessions.id, id)).limit(1);
+  if (!call) throw new Error("Không thể tạo phòng gọi nhóm.");
+  return { ...call, participantCount: 1, groupTitle: conversation.title ?? "Nhóm ChatPHT" };
+}
+
+export async function joinGroupCallSession(sessionId: string, userId: number) {
+  const db = requireDb(await getDb());
+  return db.transaction(async (tx) => {
+    // Locking the session row serializes joins for a room, so two simultaneous requests cannot both pass the 8-person check.
+    const [call] = await tx.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1).for("update");
+    if (!call || !call.isGroup || call.status !== "active") throw new Error("Phòng gọi nhóm không còn hoạt động.");
+    if (!(await isConversationMember(call.conversationId, userId))) throw new Error("Bạn không có quyền tham gia cuộc gọi nhóm này.");
+
+    const existing = (await tx.select().from(callParticipants).where(and(eq(callParticipants.callId, sessionId), eq(callParticipants.userId, userId))).limit(1))[0];
+    if (!existing || existing.leftAt) {
+      const active = await tx.select({ id: callParticipants.id }).from(callParticipants).where(and(eq(callParticipants.callId, sessionId), isNull(callParticipants.leftAt)));
+      if (active.length >= 8) throw new Error("Cuộc gọi nhóm đã đủ 8 người.");
+      if (existing) {
+        await tx.update(callParticipants).set({ joinedAt: new Date(), leftAt: null }).where(eq(callParticipants.id, existing.id));
+      } else {
+        await tx.insert(callParticipants).values({ callId: sessionId, userId, joinedAt: new Date() });
+      }
+    }
+    const active = await tx.select({ id: callParticipants.id }).from(callParticipants).where(and(eq(callParticipants.callId, sessionId), isNull(callParticipants.leftAt)));
+    return { call, participantCount: active.length };
+  });
+}
+
+export async function leaveGroupCallSession(sessionId: string, userId: number) {
+  const db = requireDb(await getDb());
+  const [call] = await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1);
+  if (!call || !call.isGroup) throw new Error("Không tìm thấy cuộc gọi nhóm.");
+  if (!(await isConversationMember(call.conversationId, userId))) throw new Error("Bạn không có quyền rời cuộc gọi nhóm này.");
+  await db.update(callParticipants).set({ leftAt: new Date() }).where(and(eq(callParticipants.callId, sessionId), eq(callParticipants.userId, userId), isNull(callParticipants.leftAt)));
+  const active = await db.select({ id: callParticipants.id }).from(callParticipants).where(and(eq(callParticipants.callId, sessionId), isNull(callParticipants.leftAt)));
+  if (!active.length) await db.update(callSessions).set({ status: "ended", endedAt: new Date() }).where(eq(callSessions.id, sessionId));
+  return { participantCount: active.length };
+}
+
+export async function getJoinableGroupCallSession(sessionId: string, userId: number) {
+  const joined = await joinGroupCallSession(sessionId, userId);
+  return joined;
+}
+
+export async function getAdminOperationalStats() {
+  const db = requireDb(await getDb());
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const callRows = await db.select({ provider: callSessions.provider, createdAt: callSessions.createdAt }).from(callSessions);
+  const today = callRows.filter((call) => call.createdAt >= startOfToday);
+  const groupRows = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.kind, "group"));
+  const storage = await getStorageUsageSummary();
+  return {
+    storage,
+    groupsCreated: groupRows.length,
+    callsToday: {
+      p2p: today.filter((call) => call.provider === "p2p").length,
+      livekit: today.filter((call) => call.provider === "livekit").length,
+    },
+  };
+}
+
 export async function getCallSession(sessionId: string, userId: number) {
   const db = requireDb(await getDb());
   const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (!call || (call.callerId !== userId && call.recipientId !== userId)) return undefined;
+  if (!call) return undefined;
+  if (call.isGroup) {
+    if (!(await isConversationMember(call.conversationId, userId))) return undefined;
+  } else if (call.callerId !== userId && call.recipientId !== userId) return undefined;
   return hydrateCallSession(call, userId);
 }
 
@@ -724,7 +1021,7 @@ export async function getIncomingCallSession(userId: number) {
 export async function answerCallSession(sessionId: string, userId: number) {
   const db = requireDb(await getDb());
   const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (!call || call.recipientId !== userId || call.status !== "ringing") throw new Error("Cuộc gọi này không còn chờ phản hồi.");
+  if (!call || call.isGroup || call.recipientId !== userId || call.status !== "ringing") throw new Error("Cuộc gọi này không còn chờ phản hồi.");
   if (call.expiresAt.getTime() <= Date.now()) {
     await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, sessionId));
     throw new Error("Cuộc gọi đã hết thời gian chờ.");
@@ -739,7 +1036,13 @@ export async function answerCallSession(sessionId: string, userId: number) {
 export async function finishCallSession(sessionId: string, userId: number, status: Extract<CallStatus, "declined" | "ended">) {
   const db = requireDb(await getDb());
   const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (!call || (call.callerId !== userId && call.recipientId !== userId)) throw new Error("Bạn không có quyền cập nhật cuộc gọi này.");
+  if (!call) throw new Error("Bạn không có quyền cập nhật cuộc gọi này.");
+  if (call.isGroup) {
+    const [conversation] = await db.select().from(conversations).where(eq(conversations.id, call.conversationId)).limit(1);
+    if (!conversation || !(await isConversationMember(call.conversationId, userId)) || (call.callerId !== userId && conversation.createdBy !== userId)) {
+      throw new Error("Chỉ người tạo cuộc gọi hoặc chủ nhóm mới có thể kết thúc phòng nhóm.");
+    }
+  } else if (call.callerId !== userId && call.recipientId !== userId) throw new Error("Bạn không có quyền cập nhật cuộc gọi này.");
   const finalStatus: CallStatus = status === "ended" && call.status === "ringing" ? "missed" : status;
   await db.update(callSessions).set({ status: finalStatus, endedAt: new Date() }).where(eq(callSessions.id, sessionId));
 }
@@ -747,11 +1050,67 @@ export async function finishCallSession(sessionId: string, userId: number, statu
 export async function getJoinableCallSession(sessionId: string, userId: number) {
   const db = requireDb(await getDb());
   const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
+  if (call?.isGroup) throw new Error("Hãy dùng luồng tham gia cuộc gọi nhóm.");
   if (!call || (call.callerId !== userId && call.recipientId !== userId)) throw new Error("Bạn không có quyền tham gia cuộc gọi này.");
   if (call.status === "ringing" && call.callerId !== userId) throw new Error("Hãy nhận cuộc gọi trước khi tham gia.");
   if (call.status !== "ringing" && call.status !== "active") throw new Error("Cuộc gọi đã kết thúc.");
   if (call.status === "ringing" && call.expiresAt.getTime() <= Date.now()) throw new Error("Cuộc gọi đã hết thời gian chờ.");
   return call;
+}
+
+async function getAuthorizedP2pCall(sessionId: string, userId: number) {
+  const db = requireDb(await getDb());
+  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
+  if (!call || call.isGroup || call.provider !== "p2p" || (call.callerId !== userId && call.recipientId !== userId)) {
+    throw new Error("Bạn không có quyền gửi tín hiệu cho cuộc gọi này.");
+  }
+  if (call.status !== "ringing" && call.status !== "active") throw new Error("Cuộc gọi đã kết thúc.");
+  if (call.status === "ringing" && call.expiresAt.getTime() <= Date.now()) {
+    await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, sessionId));
+    throw new Error("Cuộc gọi đã hết thời gian chờ.");
+  }
+  return call;
+}
+
+export async function authorizeP2pIceConfig(callId: string, userId: number) {
+  await getAuthorizedP2pCall(callId, userId);
+}
+
+export async function createP2pSignal({ callId, senderId, type, payload }: { callId: string; senderId: number; type: P2pSignalType; payload: string }) {
+  const db = requireDb(await getDb());
+  const call = await getAuthorizedP2pCall(callId, senderId);
+  if ((type === "offer" && call.callerId !== senderId) || (type === "answer" && call.recipientId !== senderId)) {
+    throw new Error("Loại tín hiệu không hợp lệ cho vai trò cuộc gọi này.");
+  }
+  const recipientId = call.callerId === senderId ? call.recipientId : call.callerId;
+  await db.delete(p2pSignals).where(lt(p2pSignals.createdAt, new Date(Date.now() - 15 * 60_000)));
+  const [created] = await db.insert(p2pSignals).values({ callId, senderId, recipientId, type, payload }).$returningId();
+  return { id: created?.id ?? null, recipientId };
+}
+
+export async function drainP2pSignals(callId: string, userId: number) {
+  const db = requireDb(await getDb());
+  await getAuthorizedP2pCall(callId, userId);
+  const pending = await db.select().from(p2pSignals).where(and(eq(p2pSignals.callId, callId), eq(p2pSignals.recipientId, userId))).orderBy(p2pSignals.id).limit(100);
+  if (pending.length) await db.delete(p2pSignals).where(inArray(p2pSignals.id, pending.map((signal) => signal.id)));
+  return pending.map((signal) => ({ id: signal.id, senderId: signal.senderId, type: signal.type, payload: signal.payload, createdAt: signal.createdAt }));
+}
+
+export async function activateLiveKitFallback(sessionId: string, userId: number) {
+  const db = requireDb(await getDb());
+  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
+  if (!call || call.isGroup || (call.callerId !== userId && call.recipientId !== userId)) {
+    throw new Error("Bạn không có quyền chuyển đường truyền cuộc gọi này.");
+  }
+  if (call.status !== "ringing" && call.status !== "active") throw new Error("Cuộc gọi đã kết thúc.");
+  if (call.status === "ringing" && call.expiresAt.getTime() <= Date.now()) throw new Error("Cuộc gọi đã hết thời gian chờ.");
+  if (call.provider === "p2p") {
+    await db.update(callSessions).set({ provider: "livekit" }).where(and(eq(callSessions.id, sessionId), eq(callSessions.provider, "p2p")));
+    await db.delete(p2pSignals).where(eq(p2pSignals.callId, sessionId));
+  }
+  const updated = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
+  if (!updated) throw new Error("Không thể chuyển sang LiveKit.");
+  return updated;
 }
 
 export async function listConversations(userId: number) {
@@ -762,6 +1121,8 @@ export async function listConversations(userId: number) {
     .where(eq(conversationMembers.userId, userId));
   const items = await Promise.all(
     memberships.filter((membership) => !membership.hiddenAt).map(async (membership) => {
+      const [conversation] = await db.select().from(conversations).where(eq(conversations.id, membership.conversationId)).limit(1);
+      if (!conversation) return null;
       const peer = await getConversationPeer(membership.conversationId, userId);
       const latestMessage = (
         await db
@@ -771,6 +1132,21 @@ export async function listConversations(userId: number) {
           .orderBy(desc(messages.createdAt))
           .limit(1)
       )[0];
+      if (conversation.kind === "group") {
+        const memberCount = await db
+          .select({ id: conversationMembers.id })
+          .from(conversationMembers)
+          .where(eq(conversationMembers.conversationId, membership.conversationId));
+        return {
+          id: membership.conversationId,
+          group: {
+            title: conversation.title ?? "Nhóm ChatPHT",
+            avatarKey: conversation.avatarKey,
+            memberCount: memberCount.length,
+          },
+          latestMessage: latestMessage ?? null,
+        };
+      }
       return peer
         ? { id: membership.conversationId, peer, latestMessage: latestMessage ?? null }
         : null;
@@ -794,8 +1170,19 @@ export async function listMessages(conversationId: number, userId: number) {
     .orderBy(desc(messages.createdAt))
     .limit(60);
   const messageIds = result.map((message) => message.id);
+  const replyIds = Array.from(new Set(result.map((message) => message.replyToMessageId).filter((id): id is number => typeof id === "number")));
   const reactionRows = messageIds.length
     ? await db.select().from(messageReactions).where(inArray(messageReactions.messageId, messageIds))
+    : [];
+  const replyRows = replyIds.length
+    ? await db.select({
+      id: messages.id,
+      senderId: messages.senderId,
+      body: messages.body,
+      contentType: messages.contentType,
+      mediaName: messages.mediaName,
+      recalledAt: messages.recalledAt,
+    }).from(messages).where(and(eq(messages.conversationId, conversationId), inArray(messages.id, replyIds)))
     : [];
   const members = await db
     .select({
@@ -807,6 +1194,7 @@ export async function listMessages(conversationId: number, userId: number) {
     .where(eq(conversationMembers.conversationId, conversationId));
   const recipient = members.find((member) => member.userId !== userId);
   const reactionsByMessage = new Map<number, Array<{ emoji: string; userId: number }>>();
+  const repliesById = new Map(replyRows.map((message) => [message.id, message]));
   for (const reaction of reactionRows) {
     const existing = reactionsByMessage.get(reaction.messageId) ?? [];
     existing.push({ emoji: reaction.emoji, userId: reaction.userId });
@@ -814,6 +1202,7 @@ export async function listMessages(conversationId: number, userId: number) {
   }
   return result.reverse().map((message) => ({
     ...message,
+    replyTo: message.replyToMessageId ? repliesById.get(message.replyToMessageId) ?? null : null,
     reactions: reactionsByMessage.get(message.id) ?? [],
     recipientDeliveredAt: message.senderId === userId ? recipient?.lastDeliveredAt ?? null : null,
     recipientReadAt: message.senderId === userId ? recipient?.lastReadAt ?? null : null,
@@ -865,10 +1254,18 @@ export async function createMessage(input: {
   mediaName?: string | null;
   mediaSize?: number | null;
   mediaBatchId?: string | null;
+  replyToMessageId?: number | null;
 }) {
   const db = requireDb(await getDb());
   if (!(await isConversationMember(input.conversationId, input.senderId))) {
     throw new Error("Bạn không có quyền gửi tin trong hội thoại này.");
+  }
+  if (input.replyToMessageId) {
+    const [replyTarget] = await db.select({ id: messages.id }).from(messages).where(and(
+      eq(messages.id, input.replyToMessageId),
+      eq(messages.conversationId, input.conversationId),
+    )).limit(1);
+    if (!replyTarget) throw new Error("Tin nhắn được trả lời không thuộc hội thoại này.");
   }
   await db
     .update(conversationMembers)

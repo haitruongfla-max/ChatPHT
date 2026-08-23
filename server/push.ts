@@ -51,16 +51,16 @@ export function buildNewMessagePushPayload(token: string, conversationId: number
   };
 }
 
-export function buildIncomingCallPushPayload(token: string, input: { conversationId: number; callId: string; kind: "audio" | "video" }): PushPayload {
+export function buildIncomingCallPushPayload(token: string, input: { conversationId: number; callId: string; kind: "audio" | "video"; isGroup?: boolean }): PushPayload {
   return {
     to: token,
-    title: input.kind === "video" ? "Cuộc gọi video đến" : "Cuộc gọi thoại đến",
-    body: "Mở ChatPHT để nhận hoặc từ chối cuộc gọi",
+    title: input.isGroup ? (input.kind === "video" ? "Cuộc gọi video nhóm" : "Cuộc gọi thoại nhóm") : (input.kind === "video" ? "Cuộc gọi video đến" : "Cuộc gọi thoại đến"),
+    body: input.isGroup ? "Mở ChatPHT để tham gia phòng gọi nhóm" : "Mở ChatPHT để nhận hoặc từ chối cuộc gọi",
     sound: "default",
     priority: "high",
     ttl: 60,
     channelId: "calls",
-    data: { type: "incoming_call", conversationId: input.conversationId, callId: input.callId, kind: input.kind },
+    data: { type: "incoming_call", conversationId: input.conversationId, callId: input.callId, kind: input.kind, group: input.isGroup ? "1" : "0" },
   };
 }
 
@@ -88,7 +88,7 @@ export async function dispatchNewMessagePushNotifications(input: { conversationI
 }
 
 /** Push errors must never prevent the caller from creating a call session. */
-export async function dispatchIncomingCallPushNotification(input: { conversationId: number; senderId: number; callId: string; kind: "audio" | "video" }) {
+export async function dispatchIncomingCallPushNotification(input: { conversationId: number; senderId: number; callId: string; kind: "audio" | "video"; isGroup?: boolean }) {
   try {
     const devices = await db.listConversationRecipientDevices(input.conversationId, input.senderId);
     const tokens = [...new Set(devices.map((device) => device.token).filter(isExpoPushToken))];

@@ -27,7 +27,8 @@ function openNotification(data: unknown) {
     const callId = typeof payload.callId === "string" ? payload.callId : null;
     const kind = payload.kind === "video" ? "video" : "audio";
     if (payload.type === "incoming_call" && callId) {
-      router.push({ pathname: "/call", params: { callId, kind, direction: "incoming" } });
+      const group = payload.group === "1" || payload.group === true ? "1" : "0";
+      router.push({ pathname: "/call", params: { callId, kind, direction: "incoming", group } });
       return;
     }
   }
