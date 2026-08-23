@@ -210,3 +210,4 @@
 - [x] Ổn định hiển thị avatar, ảnh và video bằng cache/URL capability bền trong phiên, tránh nháy hoặc tải lại không cần thiết.
 - [x] Bổ sung trình xem album toàn màn hình có thể vuốt ảnh/video trước–sau thay vì phải đóng từng mục.
 - [ ] Nghiệm thu APK sửa lỗi trên hai Android: nhận video 1:1, thoại không vang, gọi nhóm, push khi vuốt ứng dụng và album vuốt; lưu log nếu còn lỗi.
+- [x] Nâng phiên bản Android lên 1.0.14 và `versionCode` 14 để APK sửa lỗi cập nhật được lên bản 1.0.13 hiện có.
