@@ -251,7 +251,7 @@
 - [x] Thêm tRPC cấp token LiveKit theo phiên chia sẻ và kiểm tra quyền thành viên trước mọi thao tác.
 - [x] Thêm tin mời screen share cùng màn hình xem/tham gia độc lập ngoài cuộc gọi trên Android.
 - [x] Nâng recordAsync camera lên quality 720p, tối đa 300 giây, lưu tạm cache riêng và tạo thumbnail video cục bộ trước khi upload kho private.
-- [ ] Deploy backend Live đã được phê duyệt, build APK signed versionCode 19 và phát hành GitHub Release.
+- [x] Deploy backend Live đã được phê duyệt, build APK signed versionCode 19 và phát hành GitHub Release.
 - [x] Gỡ nút và publication chia sẻ màn hình khỏi màn hình cuộc gọi để không còn kích hoạt luồng MediaProjection lỗi cũ.
 - [x] Cho phép thành viên chat riêng/nhóm tham gia phiên screen share độc lập với vai trò viewer subscribe-only, có mic hỏi và giới hạn an toàn.
 - [x] Gửi tin nhắn hệ thống screen_share_invite có nút Xem màn hình trong đúng hội thoại sau khi host publish thành công.
