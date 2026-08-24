@@ -280,3 +280,6 @@
 - [x] Lập ma trận đối chiếu đầy đủ toàn bộ tệp P2P người dùng cung cấp với mã MySQL/tRPC hiện tại, phân loại từng cơ chế theo khả năng tích hợp không phá vỡ ứng dụng.
 - [x] Tích hợp mọi cơ chế P2P còn tương thích và có lợi từ tệp cung cấp, chỉ dùng adapter cho tRPC/MySQL thay vì Firebase/Firestore hoặc LiveKit cũ.
 - [x] Xác nhận bằng hồi quy rằng giao diện, chat, media riêng tư, quota và signaling hiện có không thay đổi ngoài các nâng cấp P2P đã chọn.
+- [x] Đánh giá gói `ChatPHT_V109_SCREEN_SHARE_LIVEKIT.zip`, lập ma trận so sánh với chia sẻ màn hình P2P 1:1 hiện tại và loại trừ thành phần làm giảm bảo mật hoặc xung đột kiến trúc.
+- [x] Tích hợp chọn lọc chỉ các cải tiến chia sẻ màn hình vượt trội, tương thích với Android/P2P/MySQL/tRPC mà không ảnh hưởng giao diện, chat/media riêng tư hoặc quota.
+- [x] Bổ sung hồi quy, kiểm tra toàn diện và checkpoint riêng cho đợt nâng cấp chia sẻ màn hình nếu có thay đổi mã nguồn an toàn.

@@ -23,4 +23,11 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain('direction === "incoming" && !isAnswered');
     expect(callScreen).toContain('if (state === "recovering") setConnectionError(null);');
   });
+
+  it("gives screen sharing a focused stage in voice or video calls without mirroring the local display stream", () => {
+    expect(callScreen).toContain('kind === "video" || Boolean(localScreenStream) || Boolean(remoteScreenStream)');
+    expect(callScreen).toContain('const main = remoteScreenStream ?? (localScreenSharing ? null : remoteStream);');
+    expect(callScreen).toContain("Bản xem trước được ẩn để tránh hiệu ứng lặp.");
+    expect(callScreen).toContain('const corner = localStream;');
+  });
 });
