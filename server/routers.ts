@@ -338,6 +338,7 @@ export const appRouter = router({
           await db.authorizeP2pIceConfig(input.callId, ctx.user.id);
           return getP2pIceConfiguration({
             turnUrls: ENV.p2pTurnUrls,
+            turnAuthMode: ENV.p2pTurnAuthMode,
             turnSharedSecret: ENV.p2pTurnSharedSecret,
             turnUsername: ENV.p2pTurnUsername,
             turnCredential: ENV.p2pTurnCredential,
@@ -353,6 +354,7 @@ export const appRouter = router({
           await db.authorizeP2pIceConfig(input.callId, ctx.user.id);
           const configuration = getP2pIceConfiguration({
             turnUrls: ENV.p2pTurnUrls,
+            turnAuthMode: ENV.p2pTurnAuthMode,
             turnSharedSecret: ENV.p2pTurnSharedSecret,
             turnUsername: ENV.p2pTurnUsername,
             turnCredential: ENV.p2pTurnCredential,

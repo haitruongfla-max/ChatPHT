@@ -266,3 +266,6 @@
 - [x] Tách chắc camera chat khỏi camera WebRTC, thêm debounce 300 ms và hoàn thiện audio echo cancellation, noise suppression, auto gain cùng chuyển loa/tai nghe.
 - [ ] Áp dụng migration 0021 lên backend Live, kiểm thử P2P/TURN và cập nhật checklist Wi‑Fi/4G cho Xiaomi, Samsung và Oppo.
 - [ ] Lưu checkpoint, triển khai backend Live và build/phát hành APK signed versionCode 19 sau khi các kiểm tra nguồn đạt.
+- [x] Xác minh TURN OpenRelay dùng danh sách sáu URL UDP/TCP/TLS đã đặt trong secrets và chọn chế độ credential tĩnh tương thích với openrelayproject.
+- [x] Nâng Android lên versionCode 20, giữ versionName hiện hành có ghi chú P2P và chạy lại quality gate phát hành.
+- [ ] Đồng bộ GitHub, chạy workflow signed Android, tạo release mới với asset app-release.apk versionCode 20 và xác minh SHA-256/link tải.

@@ -34,6 +34,7 @@ describe("P2P TURN credentials", () => {
     const username = createTurnUsername(7, callId, expiresAt);
     const turn = getTurnCredential({
       turnUrls: "turn:relay.chatpht.example:3478?transport=udp,turns:relay.chatpht.example:443?transport=tcp",
+      turnAuthMode: "auto",
       turnSharedSecret: sharedSecret,
       turnUsername: "legacy-user",
       turnCredential: "legacy-credential",
@@ -49,20 +50,21 @@ describe("P2P TURN credentials", () => {
     });
   });
 
-  it("uses the static credential only when no shared secret is configured", () => {
+  it("uses an explicitly selected static credential for OpenRelay even if an old shared secret exists", () => {
     const configuration = getP2pIceConfiguration({
       turnUrls: "turns:relay.chatpht.example:443?transport=tcp",
-      turnSharedSecret: "",
-      turnUsername: "legacy-user",
-      turnCredential: "legacy-credential",
+      turnAuthMode: "static",
+      turnSharedSecret: sharedSecret,
+      turnUsername: "openrelayproject",
+      turnCredential: "openrelayproject",
     }, { userId: 7, callId }, now);
 
     expect(configuration).toMatchObject({
       hasTurn: true,
-      turn: { authMode: "static", username: "legacy-user", expiresAt: 0 },
+      turn: { authMode: "static", username: "openrelayproject", expiresAt: 0 },
       iceServers: [
         { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
-        { urls: ["turns:relay.chatpht.example:443?transport=tcp"], username: "legacy-user", credential: "legacy-credential" },
+        { urls: ["turns:relay.chatpht.example:443?transport=tcp"], username: "openrelayproject", credential: "openrelayproject" },
       ],
     });
   });
@@ -70,6 +72,7 @@ describe("P2P TURN credentials", () => {
   it("does not return a TURN credential when relay URLs or credentials are unavailable", () => {
     expect(getP2pIceConfiguration({
       turnUrls: "turn:relay.chatpht.example:3478?transport=sctp",
+      turnAuthMode: "auto",
       turnSharedSecret: "",
       turnUsername: "",
       turnCredential: "",
@@ -80,9 +83,10 @@ describe("P2P TURN credentials", () => {
     });
   });
 
-  it.runIf(Boolean(ENV.p2pTurnSharedSecret && ENV.p2pTurnUrls))("validates the configured shared secret through a derived credential without logging it", () => {
+  it.runIf(Boolean(ENV.p2pTurnSharedSecret && ENV.p2pTurnUrls && ENV.p2pTurnAuthMode !== "static"))("validates the configured shared secret through a derived credential without logging it", () => {
     const turn = getTurnCredential({
       turnUrls: ENV.p2pTurnUrls,
+      turnAuthMode: ENV.p2pTurnAuthMode,
       turnSharedSecret: ENV.p2pTurnSharedSecret,
       turnUsername: ENV.p2pTurnUsername,
       turnCredential: ENV.p2pTurnCredential,
@@ -90,5 +94,19 @@ describe("P2P TURN credentials", () => {
 
     expect(turn).toMatchObject({ authMode: "shared-secret", expiresAt: Math.floor(now / 1000) + P2P_TURN_TTL_SECONDS });
     expect(turn?.credential).toBe(createTurnCredential(ENV.p2pTurnSharedSecret, turn!.username));
+  });
+
+  it.runIf(Boolean(ENV.p2pTurnAuthMode === "static" && ENV.p2pTurnUrls && ENV.p2pTurnUsername && ENV.p2pTurnCredential))("validates the configured OpenRelay static mode without logging its credential", () => {
+    const turn = getTurnCredential({
+      turnUrls: ENV.p2pTurnUrls,
+      turnAuthMode: ENV.p2pTurnAuthMode,
+      turnSharedSecret: ENV.p2pTurnSharedSecret,
+      turnUsername: ENV.p2pTurnUsername,
+      turnCredential: ENV.p2pTurnCredential,
+    }, { userId: 7, callId }, now);
+
+    expect(turn).toMatchObject({ authMode: "static", username: ENV.p2pTurnUsername.trim(), expiresAt: 0 });
+    expect(turn?.credential).toBe(ENV.p2pTurnCredential);
+    expect(turn?.urls).toHaveLength(6);
   });
 });

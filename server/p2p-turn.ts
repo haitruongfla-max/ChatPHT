@@ -12,6 +12,7 @@ export type IceServer = {
 
 export type P2pTurnEnvironment = {
   turnUrls: string;
+  turnAuthMode?: string;
   turnSharedSecret: string;
   turnUsername: string;
   turnCredential: string;
@@ -71,7 +72,9 @@ export function getTurnCredential(
   const urls = parseTurnUrls(environment.turnUrls);
   if (!urls.length) return null;
 
-  if (environment.turnSharedSecret) {
+  // OpenRelay commonly uses one static username/credential pair. Respect an explicit
+  // static mode even if an older Coturn shared secret remains in the environment.
+  if (environment.turnAuthMode !== "static" && environment.turnSharedSecret) {
     const expiresAt = Math.floor(now / 1000) + P2P_TURN_TTL_SECONDS;
     const username = createTurnUsername(identity.userId, identity.callId, expiresAt);
     return {
