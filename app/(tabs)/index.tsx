@@ -7,10 +7,11 @@ import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleShe
 import { ScreenContainer } from "@/components/screen-container";
 import { ProfileAvatar } from "@/components/profile-avatar";
 
-function preview(message: { body: string | null; contentType: "text" | "image" | "video" } | null) {
+function preview(message: { body: string | null; contentType: "text" | "image" | "video" | "screen_share_invite" } | null) {
   if (!message) return "Bắt đầu một cuộc trò chuyện";
   if (message.contentType === "image") return "Ảnh";
   if (message.contentType === "video") return "Video";
+  if (message.contentType === "screen_share_invite") return "Đang chia sẻ màn hình";
   return message.body ?? "Tin nhắn mới";
 }
 

@@ -8,13 +8,14 @@ import { systemRouter } from "./_core/systemRouter";
 import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
 import { runMediaCleanup } from "./media-cleanup";
-import { createLiveKitCallToken } from "./call-token";
+import { createLiveKitCallToken, createLiveKitScreenShareRoom, createLiveKitScreenShareToken } from "./call-token";
 import { dispatchIncomingCallPushNotification, dispatchNewMessagePushNotifications } from "./push";
 import { createMediaAccessUrl } from "./media-access";
 import { emitConversationBackgroundUpdated } from "./_core/realtime";
 import { createOpaqueStorageKey, storageCreateUploadUrl, storageDelete, storagePut } from "./storage";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { ENV } from "./_core/env";
+import { createScreenShareInviteBody } from "../lib/screen-share-invite";
 
 const credentialsSchema = z.object({
   username: z.string().trim().min(3).max(24),
@@ -444,6 +445,78 @@ export const appRouter = router({
           return { success: true };
         } catch (error) {
           return appError(error, "Không thể kết thúc cuộc gọi.");
+        }
+      }),
+  }),
+  screenShares: router({
+    create: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const session = await db.createScreenShareSession(input.conversationId, ctx.user.id);
+          await createLiveKitScreenShareRoom(session.room);
+          const connection = await createLiveKitScreenShareToken({
+            room: session.room,
+            identity: `user-${ctx.user.id}`,
+            displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT",
+            role: "host",
+          });
+          return { session: await withSecureAvatarUrls(ctx, session), connection };
+        } catch (error) {
+          return appError(error, "Không thể chuẩn bị chia sẻ màn hình.");
+        }
+      }),
+    activate: protectedProcedure
+      .input(z.object({ sessionId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const activation = await db.activateScreenShareSession(input.sessionId, ctx.user.id);
+          const { session } = activation;
+          const message = activation.activatedNow
+            ? await db.createMessage({
+              conversationId: session.conversationId,
+              senderId: ctx.user.id,
+              contentType: "screen_share_invite",
+              body: createScreenShareInviteBody(session.id),
+            })
+            : null;
+          if (message) {
+            void dispatchNewMessagePushNotifications({ conversationId: session.conversationId, senderId: ctx.user.id });
+          }
+          return {
+            session: await withSecureAvatarUrls(ctx, session),
+            message: message ? publicMessage(message, null) : null,
+          };
+        } catch (error) {
+          return appError(error, "Không thể bắt đầu chia sẻ màn hình.");
+        }
+      }),
+    get: protectedProcedure
+      .input(z.object({ sessionId: z.string().uuid() }))
+      .query(async ({ ctx, input }) => withSecureAvatarUrls(ctx, await db.getScreenShareSession(input.sessionId, ctx.user.id))),
+    join: protectedProcedure
+      .input(z.object({ sessionId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const session = await db.joinScreenShareSession(input.sessionId, ctx.user.id);
+          const connection = await createLiveKitScreenShareToken({
+            room: session.room,
+            identity: `user-${ctx.user.id}`,
+            displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT",
+            role: "viewer",
+          });
+          return { session: await withSecureAvatarUrls(ctx, session), connection };
+        } catch (error) {
+          return appError(error, "Không thể tham gia chia sẻ màn hình.");
+        }
+      }),
+    end: protectedProcedure
+      .input(z.object({ sessionId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await withSecureAvatarUrls(ctx, await db.finishScreenShareSession(input.sessionId, ctx.user.id));
+        } catch (error) {
+          return appError(error, "Không thể kết thúc chia sẻ màn hình.");
         }
       }),
   }),

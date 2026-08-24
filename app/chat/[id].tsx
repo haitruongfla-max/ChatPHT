@@ -8,7 +8,6 @@ import { ChatMediaGrid } from "@/components/chat-media-grid";
 import {
   ChatCameraCapture,
   type CapturedChatMedia,
-  type ChatCameraCaptureMode,
 } from "@/components/chat-camera-capture";
 import {
   buildChatMediaCandidate,
@@ -20,6 +19,7 @@ import {
 } from "@/lib/direct-media-upload";
 import { runMediaUploadQueue } from "@/lib/media-upload-queue";
 import { subscribeToConversationBackground } from "@/lib/conversation-background-realtime.native";
+import { parseScreenShareInviteBody } from "@/lib/screen-share-invite";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
@@ -32,6 +32,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -45,13 +46,13 @@ type ChatMessage = {
   id: number;
   senderId: number;
   body: string | null;
-  contentType: "text" | "image" | "video";
+  contentType: "text" | "image" | "video" | "screen_share_invite";
   mediaUrl: string | null;
   mediaCacheKey: string | null;
   mediaName: string | null;
   mediaBatchId: string | null;
   replyToMessageId: number | null;
-  replyTo: { id: number; senderId: number; body: string | null; contentType: "text" | "image" | "video"; mediaName: string | null; recalledAt: Date | null } | null;
+  replyTo: { id: number; senderId: number; body: string | null; contentType: "text" | "image" | "video" | "screen_share_invite"; mediaName: string | null; recalledAt: Date | null } | null;
   mediaCleanedAt: Date | null;
   recalledAt: Date | null;
   recalledBy: number | null;
@@ -204,7 +205,10 @@ export default function ChatScreen() {
     null,
   );
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
-  const [captureMode, setCaptureMode] = useState<ChatCameraCaptureMode | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [capturedMedia, setCapturedMedia] = useState<CapturedChatMedia | null>(null);
+  const [captureCaption, setCaptureCaption] = useState("");
+  const [sendingCapturedMedia, setSendingCapturedMedia] = useState(false);
   const [preview, setPreview] = useState<ChatMediaPreview | null>(null);
   const [previewItems, setPreviewItems] = useState<ChatMediaPreview[]>([]);
   const openMediaPreview = (entries: ChatMessage[], selectedId: number) => {
@@ -278,11 +282,13 @@ export default function ChatScreen() {
   const startCall = trpc.calls.start.useMutation();
   const startGroupCall = trpc.calls.startGroup.useMutation();
   const pinGroupMessage = trpc.conversations.pinGroupMessage.useMutation();
+  const createScreenShare = trpc.screenShares.create.useMutation();
   const group = groupDetails.data;
   const isGroupAdmin = Boolean(
     groupMembers.data?.some((member) => member.id === userId && (member.groupRole === "owner" || member.groupRole === "admin")),
   );
   const isStartingCall = startCall.isPending || startGroupCall.isPending;
+  const isStartingScreenShare = createScreenShare.isPending;
   const header = useMemo(
     () => ({
       title: isGroup ? group?.title ?? "Nhóm chat" : "Hội thoại riêng tư",
@@ -370,6 +376,26 @@ export default function ChatScreen() {
         error instanceof Error ? error.message : "Vui lòng thử lại.",
       );
     }
+  };
+  const beginScreenShare = async () => {
+    if (isStartingScreenShare) return;
+    try {
+      const { session, connection } = await createScreenShare.mutateAsync({ conversationId });
+      router.push({
+        pathname: "/screen-share",
+        params: {
+          sessionId: session.id,
+          role: "host",
+          serverUrl: connection.serverUrl,
+          token: connection.token,
+        },
+      });
+    } catch (error) {
+      Alert.alert("Không thể chuẩn bị chia sẻ màn hình", error instanceof Error ? error.message : "Vui lòng thử lại.");
+    }
+  };
+  const viewScreenShare = (sessionId: string) => {
+    router.push({ pathname: "/screen-share", params: { sessionId, role: "viewer" } });
   };
   const pinMessage = async (messageId: number | null) => {
     if (!isGroup || !isGroupAdmin || pinGroupMessage.isPending) return;
@@ -490,7 +516,7 @@ export default function ChatScreen() {
     );
 
   const uploadCandidates = async (candidates: ChatMediaUploadCandidate[]) => {
-    if (!candidates.length || uploading) return;
+    if (!candidates.length || uploading) return false;
     setUploading(true);
     setUploadProgress(0);
     setUploadLabel(`Đang gửi 0/${candidates.length}...`);
@@ -537,11 +563,13 @@ export default function ChatScreen() {
       );
       await utils.messages.list.invalidate({ conversationId });
       void utils.conversations.list.invalidate();
+      return true;
     } catch (error) {
       Alert.alert(
         "Không tải được tệp",
         error instanceof Error ? error.message : "Vui lòng thử lại bằng tệp nhỏ hơn.",
       );
+      return false;
     } finally {
       setUploading(false);
       setUploadProgress(null);
@@ -618,29 +646,49 @@ export default function ChatScreen() {
         mimeType,
         fileName: `chatpht-${type === "video" ? "video" : "photo"}-${Date.now()}.${type === "video" ? "mp4" : "jpg"}`,
       }]);
-      if (candidates) await uploadCandidates(candidates);
+      return candidates ? await uploadCandidates(candidates) : false;
     } catch (error) {
       Alert.alert("Không thể chuẩn bị media", error instanceof Error ? error.message : "Vui lòng thử lại.");
+      return false;
     }
   };
 
   const handleCapturedMedia = (media: CapturedChatMedia) => {
-    setCaptureMode(null);
-    void uploadCapturedMedia(media);
+    setCameraOpen(false);
+    setCaptureCaption("");
+    setCapturedMedia(media);
   };
 
-  const openCameraMenu = () => {
+  const retakeCapturedMedia = () => {
+    if (sendingCapturedMedia) return;
+    setCapturedMedia(null);
+    setCaptureCaption("");
+    setCameraOpen(true);
+  };
+
+  const sendCapturedMedia = async () => {
+    if (!capturedMedia || sendingCapturedMedia) return;
+    setSendingCapturedMedia(true);
+    const caption = captureCaption.trim();
+    try {
+      const mediaSent = await uploadCapturedMedia(capturedMedia);
+      if (!mediaSent) return;
+      if (caption) {
+        await sendText.mutateAsync({ conversationId, body: caption, replyToMessageId: null });
+        await utils.messages.list.invalidate({ conversationId });
+      }
+      setCapturedMedia(null);
+      setCaptureCaption("");
+    } catch (error) {
+      Alert.alert("Đã gửi media nhưng chưa gửi được chú thích", error instanceof Error ? error.message : "Vui lòng gửi lại chú thích.");
+    } finally {
+      setSendingCapturedMedia(false);
+    }
+  };
+
+  const openCamera = () => {
     if (!canStartMediaUpload()) return;
-    Alert.alert(
-      "Gửi ảnh hoặc video",
-      "Ảnh và video được mã hóa đường dẫn, gửi qua kho riêng tư của cuộc trò chuyện và tính vào quota chung.",
-      [
-        { text: "Hủy", style: "cancel" },
-        { text: "Chọn từ thư viện", onPress: () => void chooseMedia() },
-        { text: "Quay video", onPress: () => setCaptureMode("video") },
-        { text: "Chụp ảnh", onPress: () => setCaptureMode("image") },
-      ],
-    );
+    setCameraOpen(true);
   };
 
   const remove = async () => {
@@ -691,6 +739,22 @@ export default function ChatScreen() {
         },
       ],
     );
+
+  const openConversationMenu = () => {
+    const actions: { text: string; style?: "cancel" | "destructive"; onPress?: () => void }[] = [
+      { text: "Hủy", style: "cancel" },
+      { text: "Ảnh nền cuộc trò chuyện", onPress: openWallpaperMenu },
+    ];
+    if (isGroup) {
+      actions.push({ text: "Thông tin và quản trị nhóm", onPress: () => router.push(`/group/${conversationId}` as never) });
+    } else {
+      actions.push(
+        { text: "Xóa hội thoại khỏi hộp thư", style: "destructive", onPress: () => void confirmRemove() },
+        { text: "Xóa sạch toàn bộ nội dung", style: "destructive", onPress: () => void confirmClearContent() },
+      );
+    }
+    Alert.alert("Tùy chọn hội thoại", "Các thay đổi ảnh nền được đồng bộ cho mọi thành viên.", actions);
+  };
 
   const confirmRecall = (item: ChatMessage) =>
     Alert.alert(
@@ -782,45 +846,22 @@ export default function ChatScreen() {
           >
             <MaterialIcons name="videocam" size={21} color="#2563EB" />
           </Pressable>
-          {isGroup ? (
-            <Pressable
-              onPress={() => router.push(`/group/${conversationId}` as never)}
-              style={({ pressed }) => [styles.groupSettingsButton, pressed && styles.pressed]}
-              accessibilityRole="button"
-              accessibilityLabel="Thông tin và quản trị nhóm"
-            >
-              <MaterialIcons name="group" size={21} color="#2563EB" />
-            </Pressable>
-          ) : (
-            <>
-              <Pressable
-                onPress={confirmRemove}
-                disabled={removeConversation.isPending || clearConversation.isPending}
-                style={({ pressed }) => [styles.deleteConversation, pressed && styles.pressed]}
-                accessibilityRole="button"
-                accessibilityLabel="Xóa hội thoại khỏi hộp thư"
-              >
-                <MaterialIcons name="delete-outline" size={21} color="#C2410C" />
-              </Pressable>
-              <Pressable
-                onPress={confirmClearContent}
-                disabled={removeConversation.isPending || clearConversation.isPending}
-                style={({ pressed }) => [styles.clearConversation, pressed && styles.pressed]}
-                accessibilityRole="button"
-                accessibilityLabel="Xóa sạch toàn bộ tin nhắn, ảnh và video"
-              >
-                <MaterialIcons name="delete-forever" size={21} color="#B91C1C" />
-              </Pressable>
-            </>
-          )}
           <Pressable
-            onPress={openWallpaperMenu}
-            disabled={wallpaperProgress !== null || requestWallpaperUpload.isPending || setWallpaper.isPending}
-            style={({ pressed }) => [styles.wallpaperButton, pressed && styles.pressed]}
+            onPress={() => void beginScreenShare()}
+            disabled={isStartingScreenShare}
+            style={({ pressed }) => [styles.callButton, (pressed || isStartingScreenShare) && styles.pressed]}
             accessibilityRole="button"
-            accessibilityLabel="Tùy chỉnh ảnh nền cuộc trò chuyện"
+            accessibilityLabel="Chia sẻ màn hình độc lập"
           >
-            <MaterialIcons name="wallpaper" size={20} color="#2563EB" />
+            {isStartingScreenShare ? <ActivityIndicator color="#2563EB" size="small" /> : <MaterialIcons name="screen-share" size={20} color="#2563EB" />}
+          </Pressable>
+          <Pressable
+            onPress={openConversationMenu}
+            style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Thêm tùy chọn hội thoại"
+          >
+            <MaterialIcons name="more-vert" size={22} color="#2563EB" />
           </Pressable>
         </View>
         {isGroup && group?.pinnedMessageId ? (
@@ -844,6 +885,7 @@ export default function ChatScreen() {
           renderItem={({ item }) => {
             if (item.entryType === "call") return <CallHistoryItem call={item} />;
             const mine = item.senderId === user.id;
+            const inviteSessionId = item.contentType === "screen_share_invite" ? parseScreenShareInviteBody(item.body) : null;
             const groupedReactions = item.reactions.reduce<
               Record<string, { count: number; mine: boolean }>
             >((accumulator, reaction) => {
@@ -900,7 +942,7 @@ export default function ChatScreen() {
                         ) : null}
                         {item.albumItems && item.albumItems.length > 1 ? (
                           <ChatMediaGrid
-                            items={item.albumItems}
+                              items={item.albumItems.filter((albumItem): albumItem is ChatMessage & { contentType: "text" | "image" | "video" } => albumItem.contentType !== "screen_share_invite")}
                             onOpen={(media) => openMediaPreview(item.albumItems ?? [], media.id)}
                           />
                         ) : null}
@@ -929,8 +971,23 @@ export default function ChatScreen() {
                             onOpen={() => openMediaPreview([item], item.id)}
                           />
                         ) : null}
+                        {inviteSessionId ? (
+                          <View style={[styles.screenShareInvite, mine && styles.mineScreenShareInvite]}>
+                            <View style={[styles.screenShareInviteIcon, mine && styles.mineScreenShareInviteIcon]}>
+                              <MaterialIcons name="screen-share" size={22} color={mine ? "#DBEAFE" : "#1D4ED8"} />
+                            </View>
+                            <View style={styles.screenShareInviteContent}>
+                              <Text style={[styles.screenShareInviteTitle, mine && styles.mineScreenShareInviteTitle]}>Đang chia sẻ màn hình</Text>
+                              <Text style={[styles.screenShareInviteDetail, mine && styles.mineScreenShareInviteDetail]}>Chạm để xem trực tiếp và bật micro nếu cần hỏi.</Text>
+                              <Pressable onPress={() => viewScreenShare(inviteSessionId)} style={({ pressed }) => [styles.screenShareJoin, mine && styles.mineScreenShareJoin, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Xem màn hình đang được chia sẻ">
+                                <MaterialIcons name="visibility" size={16} color={mine ? "#1D4ED8" : "#FFFFFF"} />
+                                <Text style={[styles.screenShareJoinText, mine && styles.mineScreenShareJoinText]}>Xem màn hình</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                        ) : null}
                         {item.mediaCleanedAt ? <View style={[styles.mediaCleaned, mine && styles.mineMediaCleaned]}><MaterialIcons name="auto-delete" size={16} color={mine ? "#D9E5FF" : "#64748B"} /><Text style={[styles.mediaCleanedText, mine && styles.mineMediaCleanedText]}>File đã được tự động dọn dẹp để tiết kiệm dung lượng</Text></View> : null}
-                        {item.body ? (
+                        {item.body && item.contentType !== "screen_share_invite" ? (
                           <Text
                             selectable
                             accessibilityHint="Nhấn giữ nội dung để chọn hoặc sao chép văn bản"
@@ -1082,13 +1139,13 @@ export default function ChatScreen() {
           <View style={styles.composerRow}>
             <Pressable
               disabled={uploading}
-              onPress={openCameraMenu}
+              onPress={openCamera}
               style={({ pressed }) => [
                 styles.cameraButton,
                 (pressed || uploading) && styles.pressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Mở camera: chụp ảnh, quay video hoặc chọn thư viện"
+              accessibilityLabel="Mở camera: chạm để chụp ảnh, giữ để quay video"
             >
               <MaterialIcons name="photo-camera" size={22} color="#2563EB" />
             </Pressable>
@@ -1142,10 +1199,46 @@ export default function ChatScreen() {
         </View>
         <ChatMediaViewer item={preview} items={previewItems} onClose={() => { setPreview(null); setPreviewItems([]); }} />
         <ChatCameraCapture
-          mode={captureMode}
-          onClose={() => setCaptureMode(null)}
+          visible={cameraOpen}
+          onClose={() => setCameraOpen(false)}
           onCaptured={handleCapturedMedia}
         />
+        <Modal visible={Boolean(capturedMedia)} animationType="slide" presentationStyle="pageSheet" onRequestClose={retakeCapturedMedia}>
+          <SafeAreaView style={styles.capturePreviewSafe} edges={["top", "bottom", "left", "right"]}>
+            <View style={styles.capturePreviewHeader}>
+              <Pressable disabled={sendingCapturedMedia} onPress={retakeCapturedMedia} style={({ pressed }) => [styles.capturePreviewHeaderButton, (pressed || sendingCapturedMedia) && styles.pressed]} accessibilityLabel="Chụp hoặc quay lại">
+                <MaterialIcons name="arrow-back" size={22} color="#1D4ED8" />
+              </Pressable>
+              <Text style={styles.capturePreviewTitle}>{capturedMedia?.type === "video" ? "Xem trước video" : "Xem trước ảnh"}</Text>
+              <View style={styles.capturePreviewHeaderButton} pointerEvents="none" />
+            </View>
+            <View style={styles.capturePreviewFrame}>
+              {capturedMedia?.type === "image" ? (
+                <Image source={{ uri: capturedMedia.uri }} style={styles.capturePreviewImage} contentFit="contain" />
+              ) : capturedMedia?.thumbnailUri ? (
+                <Image source={{ uri: capturedMedia.thumbnailUri }} style={styles.capturePreviewImage} contentFit="contain" />
+              ) : (
+                <View style={styles.capturePreviewVideoFallback}>
+                  <MaterialIcons name="movie" size={52} color="#BFDBFE" />
+                  <Text style={styles.capturePreviewVideoText}>Video HD đã sẵn sàng để gửi</Text>
+                </View>
+              )}
+              {capturedMedia?.type === "video" ? <View style={styles.capturePreviewPlay}><MaterialIcons name="play-arrow" size={42} color="#FFFFFF" /></View> : null}
+            </View>
+            <View style={styles.capturePreviewComposer}>
+              <TextInput value={captureCaption} onChangeText={setCaptureCaption} editable={!sendingCapturedMedia} placeholder="Thêm chú thích (không bắt buộc)..." placeholderTextColor="#7B8798" style={styles.capturePreviewInput} multiline maxLength={600} accessibilityLabel="Chú thích cho media" />
+              <View style={styles.capturePreviewActions}>
+                <Pressable disabled={sendingCapturedMedia} onPress={retakeCapturedMedia} style={({ pressed }) => [styles.capturePreviewRetake, (pressed || sendingCapturedMedia) && styles.pressed]}>
+                  <MaterialIcons name="camera-alt" size={19} color="#1D4ED8" />
+                  <Text style={styles.capturePreviewRetakeText}>Chụp lại</Text>
+                </Pressable>
+                <Pressable disabled={sendingCapturedMedia} onPress={() => void sendCapturedMedia()} style={({ pressed }) => [styles.capturePreviewSend, (pressed || sendingCapturedMedia) && styles.pressed]}>
+                  {sendingCapturedMedia ? <ActivityIndicator color="#FFFFFF" size="small" /> : <><Text style={styles.capturePreviewSendText}>Gửi</Text><MaterialIcons name="send" size={18} color="#FFFFFF" /></>}
+                </Pressable>
+              </View>
+            </View>
+          </SafeAreaView>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1196,35 +1289,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#EAF2FF",
     marginRight: 6,
   },
-  deleteConversation: {
+  moreButton: {
     height: 36,
     width: 36,
     borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FFF0E9",
-  },
-  clearConversation: {
-    height: 36,
-    width: 36,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FEE2E2",
-  },
-  groupSettingsButton: {
-    height: 36,
-    width: 36,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
     backgroundColor: "#E9EFFD",
-  },
-  wallpaperButton: {
-    height: 36,
-    width: 36,
-    borderRadius: 12,
-    backgroundColor: "#ECFDF3",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1287,6 +1356,19 @@ const styles = StyleSheet.create({
   },
   mineBubble: { backgroundColor: "#2563EB", borderBottomRightRadius: 5 },
   theirBubble: { backgroundColor: "#E9EEF8", borderBottomLeftRadius: 5 },
+  screenShareInvite: { minWidth: 215, flexDirection: "row", gap: 10, alignItems: "flex-start", paddingVertical: 3 },
+  mineScreenShareInvite: {},
+  screenShareInviteIcon: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#DCEAFF" },
+  mineScreenShareInviteIcon: { backgroundColor: "rgba(255,255,255,0.16)" },
+  screenShareInviteContent: { flex: 1, minWidth: 0 },
+  screenShareInviteTitle: { color: "#1E3A8A", fontSize: 13.5, fontWeight: "800" },
+  mineScreenShareInviteTitle: { color: "#FFFFFF" },
+  screenShareInviteDetail: { color: "#58718F", fontSize: 11.5, lineHeight: 16, marginTop: 2 },
+  mineScreenShareInviteDetail: { color: "#D9E5FF" },
+  screenShareJoin: { height: 31, alignSelf: "flex-start", borderRadius: 10, paddingHorizontal: 10, marginTop: 8, flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#1D4ED8" },
+  mineScreenShareJoin: { backgroundColor: "#FFFFFF" },
+  screenShareJoinText: { color: "#FFFFFF", fontSize: 11.5, fontWeight: "800" },
+  mineScreenShareJoinText: { color: "#1D4ED8" },
   replyPreview: { alignItems: "center", backgroundColor: "#E8EEF5", borderLeftColor: "#64748B", borderLeftWidth: 3, borderRadius: 8, flexDirection: "row", gap: 6, marginBottom: 8, paddingHorizontal: 8, paddingVertical: 6 },
   mineReplyPreview: { backgroundColor: "#315EAB", borderLeftColor: "#D9E5FF" },
   replyPreviewText: { color: "#4B6584", flex: 1, fontSize: 12, lineHeight: 16 },
@@ -1494,5 +1576,21 @@ const styles = StyleSheet.create({
     backgroundColor: "#2563EB",
   },
   sendDisabled: { backgroundColor: "#AAB4C5" },
+  capturePreviewSafe: { flex: 1, backgroundColor: "#F7FAFF" },
+  capturePreviewHeader: { minHeight: 58, paddingHorizontal: 16, alignItems: "center", justifyContent: "space-between", flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#E3E8F0", backgroundColor: "#FFFFFF" },
+  capturePreviewHeaderButton: { width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#EAF2FF" },
+  capturePreviewTitle: { color: "#172554", fontSize: 16, fontWeight: "800" },
+  capturePreviewFrame: { flex: 1, margin: 16, overflow: "hidden", borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: "#091225" },
+  capturePreviewImage: { width: "100%", height: "100%" },
+  capturePreviewVideoFallback: { alignItems: "center", gap: 10 },
+  capturePreviewVideoText: { color: "#DBEAFE", fontSize: 14, fontWeight: "700" },
+  capturePreviewPlay: { position: "absolute", width: 68, height: 68, borderRadius: 34, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15, 23, 42, 0.68)" },
+  capturePreviewComposer: { padding: 16, paddingTop: 4, backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#E3E8F0" },
+  capturePreviewInput: { minHeight: 74, maxHeight: 132, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 16, backgroundColor: "#F1F5FA", color: "#172554", fontSize: 15 },
+  capturePreviewActions: { marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  capturePreviewRetake: { height: 46, paddingHorizontal: 14, borderRadius: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: "#EAF2FF" },
+  capturePreviewRetakeText: { color: "#1D4ED8", fontSize: 13.5, fontWeight: "800" },
+  capturePreviewSend: { minWidth: 116, height: 46, paddingHorizontal: 16, borderRadius: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: "#2563EB" },
+  capturePreviewSendText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900" },
   pressed: { opacity: 0.75, transform: [{ scale: 0.97 }] },
 });

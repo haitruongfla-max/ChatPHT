@@ -243,3 +243,16 @@
 - [x] Thêm card Cập nhật ứng dụng trong tab Tôi, kiểm tra GitHub Release, tải APK có tiến trình và mở trình cài đặt Android an toàn.
 - [x] Kiểm thử, checkpoint, đồng bộ GitHub và phát hành APK 1.0.16 sửa lỗi với tag phát hành riêng.
 - [x] Tiếp tục đợt sửa lỗi Android theo phản hồi thiết bị thực tế: camera quay video, LiveKit fallback, tên người gọi, screen share và card cập nhật GitHub.
+- [x] Đánh giá và chốt kiến trúc chia sẻ màn hình độc lập ngoài cuộc gọi, bảo toàn tRPC/MySQL và quyền riêng tư hiện hữu thay vì thêm Firestore không được cấu hình.
+- [x] Tách nút chia sẻ màn hình khỏi cuộc gọi, thêm phiên LiveKit riêng, tin mời chat và màn hình xem khi phương án backend được phê duyệt.
+- [x] Nâng camera chat thành thao tác chạm để chụp, giữ để quay tối đa 5 phút với timer tiến/lùi, preview/chú thích và thumbnail video cục bộ.
+- [ ] Kiểm thử Android thật và phát hành APK signed tăng versionCode sau khi luồng MediaProjection riêng được nghiệm thu.
+- [x] Thêm migration MySQL cho phiên screen share riêng, chỉ thành viên hội thoại được tạo/xem/kết thúc.
+- [x] Thêm tRPC cấp token LiveKit theo phiên chia sẻ và kiểm tra quyền thành viên trước mọi thao tác.
+- [x] Thêm tin mời screen share cùng màn hình xem/tham gia độc lập ngoài cuộc gọi trên Android.
+- [x] Nâng recordAsync camera lên quality 720p, tối đa 300 giây, lưu tạm cache riêng và tạo thumbnail video cục bộ trước khi upload kho private.
+- [ ] Deploy backend Live đã được phê duyệt, build APK signed versionCode 19 và phát hành GitHub Release.
+- [x] Gỡ nút và publication chia sẻ màn hình khỏi màn hình cuộc gọi để không còn kích hoạt luồng MediaProjection lỗi cũ.
+- [x] Cho phép thành viên chat riêng/nhóm tham gia phiên screen share độc lập với vai trò viewer subscribe-only, có mic hỏi và giới hạn an toàn.
+- [x] Gửi tin nhắn hệ thống screen_share_invite có nút Xem màn hình trong đúng hội thoại sau khi host publish thành công.
+- [x] Đổi camera chat sang một nút: chạm chụp, giữ quay; hiển thị thời gian đã quay/đếm ngược/progress vòng và tự dừng ở 05:00.

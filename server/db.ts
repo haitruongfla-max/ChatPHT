@@ -11,9 +11,11 @@ import {
   messages,
   p2pSignals,
   pushDevices,
+  screenShareSessions,
   storageSettings,
   type CallSession,
   type InsertUser,
+  type ScreenShareSession,
   type User,
   users,
 } from "../drizzle/schema";
@@ -40,6 +42,13 @@ export type CallSessionSummary = Pick<
   isCaller: boolean;
   peer: PublicProfile | null;
   group: { title: string; participantCount: number } | null;
+};
+
+export type ScreenShareSessionSummary = Pick<
+  ScreenShareSession,
+  "id" | "conversationId" | "hostId" | "room" | "status" | "expiresAt" | "startedAt" | "endedAt" | "createdAt"
+> & {
+  host: PublicProfile;
 };
 
 export function toPublicProfile(user: User): PublicProfile {
@@ -1004,6 +1013,93 @@ export async function getJoinableGroupCallSession(sessionId: string, userId: num
   return joined;
 }
 
+function isActiveScreenShareStatus(status: ScreenShareSession["status"]) {
+  return status === "starting" || status === "live";
+}
+
+async function toScreenShareSessionSummary(session: ScreenShareSession): Promise<ScreenShareSessionSummary> {
+  const host = await getUserById(session.hostId);
+  if (!host) throw new Error("Không tìm thấy người chia sẻ màn hình.");
+  return { ...session, host: toPublicProfile(host) };
+}
+
+async function expireScreenShareIfNeeded(session: ScreenShareSession) {
+  if (isActiveScreenShareStatus(session.status) && session.expiresAt.getTime() <= Date.now()) {
+    const db = requireDb(await getDb());
+    const endedAt = new Date();
+    await db.update(screenShareSessions).set({ status: "expired", endedAt }).where(eq(screenShareSessions.id, session.id));
+    return { ...session, status: "expired" as const, endedAt };
+  }
+  return session;
+}
+
+/** Creates a separate LiveKit room. No call session or participant is altered. */
+export async function createScreenShareSession(conversationId: number, hostId: number) {
+  const db = requireDb(await getDb());
+  if (!(await isConversationMember(conversationId, hostId))) throw new Error("Bạn không có quyền chia sẻ trong hội thoại này.");
+  const now = new Date();
+  const sessions = await db.select().from(screenShareSessions).where(eq(screenShareSessions.conversationId, conversationId));
+  for (const session of sessions) {
+    if (isActiveScreenShareStatus(session.status)) {
+      await db.update(screenShareSessions).set({ status: "ended", endedAt: now }).where(eq(screenShareSessions.id, session.id));
+    }
+  }
+  const id = randomUUID();
+  await db.insert(screenShareSessions).values({
+    id,
+    conversationId,
+    hostId,
+    room: `chatpht-screen-${id}`,
+    status: "starting",
+    expiresAt: new Date(now.getTime() + 2 * 60 * 60 * 1000),
+  });
+  const [created] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, id)).limit(1);
+  if (!created) throw new Error("Không thể tạo phiên chia sẻ màn hình.");
+  return toScreenShareSessionSummary(created);
+}
+
+/** The host calls this only after MediaProjection and publishing the screen track succeed. */
+export async function activateScreenShareSession(sessionId: string, hostId: number) {
+  const db = requireDb(await getDb());
+  const [existing] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, sessionId)).limit(1);
+  if (!existing || existing.hostId !== hostId) throw new Error("Bạn không có quyền bắt đầu phiên chia sẻ này.");
+  const session = await expireScreenShareIfNeeded(existing);
+  if (session.status === "expired") throw new Error("Phiên chia sẻ đã hết thời gian chờ.");
+  if (session.status !== "starting" && session.status !== "live") throw new Error("Phiên chia sẻ không còn hoạt động.");
+  const activatedNow = session.status === "starting";
+  if (activatedNow) {
+    await db.update(screenShareSessions).set({ status: "live", startedAt: new Date() }).where(eq(screenShareSessions.id, sessionId));
+  }
+  const [updated] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, sessionId)).limit(1);
+  if (!updated) throw new Error("Không thể cập nhật phiên chia sẻ.");
+  return { session: await toScreenShareSessionSummary(updated), activatedNow };
+}
+
+export async function getScreenShareSession(sessionId: string, userId: number) {
+  const db = requireDb(await getDb());
+  const [existing] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, sessionId)).limit(1);
+  if (!existing || !(await isConversationMember(existing.conversationId, userId))) return undefined;
+  return toScreenShareSessionSummary(await expireScreenShareIfNeeded(existing));
+}
+
+export async function joinScreenShareSession(sessionId: string, viewerId: number) {
+  const session = await getScreenShareSession(sessionId, viewerId);
+  if (!session || session.status !== "live") throw new Error("Chia sẻ màn hình này không còn hoạt động.");
+  return session;
+}
+
+export async function finishScreenShareSession(sessionId: string, hostId: number) {
+  const db = requireDb(await getDb());
+  const [existing] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, sessionId)).limit(1);
+  if (!existing || existing.hostId !== hostId) throw new Error("Bạn không có quyền kết thúc phiên chia sẻ này.");
+  if (isActiveScreenShareStatus(existing.status)) {
+    await db.update(screenShareSessions).set({ status: "ended", endedAt: new Date() }).where(eq(screenShareSessions.id, sessionId));
+  }
+  const [updated] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, sessionId)).limit(1);
+  if (!updated) throw new Error("Không thể kết thúc phiên chia sẻ.");
+  return toScreenShareSessionSummary(updated);
+}
+
 export async function getAdminOperationalStats() {
   const db = requireDb(await getDb());
   const startOfToday = new Date();
@@ -1297,7 +1393,7 @@ export async function createMessage(input: {
   conversationId: number;
   senderId: number;
   body?: string | null;
-  contentType: "text" | "image" | "video";
+  contentType: "text" | "image" | "video" | "screen_share_invite";
   mediaKey?: string | null;
   mediaMime?: string | null;
   mediaName?: string | null;

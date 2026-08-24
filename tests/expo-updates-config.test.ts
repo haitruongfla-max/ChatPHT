@@ -14,9 +14,9 @@ describe("Cấu hình APK nền OTA", () => {
     expect(configSource).toContain("fallbackToCacheTimeout: 30_000");
   });
 
-  it("tăng versionCode cho APK sửa lỗi 1.0.16 và khai báo MediaProjection Android", () => {
+  it("tăng versionCode cho APK chia sẻ màn hình 1.0.16 và khai báo MediaProjection Android", () => {
     expect(configSource).toContain('version: "1.0.16"');
-    expect(configSource).toContain("versionCode: 18");
+    expect(configSource).toContain("versionCode: 19");
     expect(configSource).toContain('"FOREGROUND_SERVICE_MEDIA_PROJECTION"');
   });
 });

@@ -110,7 +110,7 @@ export const messages = mysqlTable(
     conversationId: int("conversationId").notNull(),
     senderId: int("senderId").notNull(),
     body: text("body"),
-    contentType: mysqlEnum("contentType", ["text", "image", "video"]).notNull(),
+    contentType: mysqlEnum("contentType", ["text", "image", "video", "screen_share_invite"]).notNull(),
     mediaKey: varchar("mediaKey", { length: 512 }),
     mediaMime: varchar("mediaMime", { length: 96 }),
     mediaName: varchar("mediaName", { length: 255 }),
@@ -178,6 +178,29 @@ export const callParticipants = mysqlTable(
   ],
 );
 
+/**
+ * A LiveKit room used only for screen sharing. It stays independent from calls
+ * so declining or ending Android MediaProjection cannot terminate a call.
+ */
+export const screenShareSessions = mysqlTable(
+  "screen_share_sessions",
+  {
+    id: varchar("id", { length: 40 }).primaryKey(),
+    conversationId: int("conversationId").notNull(),
+    hostId: int("hostId").notNull(),
+    room: varchar("room", { length: 96 }).notNull().unique(),
+    status: mysqlEnum("status", ["starting", "live", "ended", "expired"]).default("starting").notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+    startedAt: timestamp("startedAt"),
+    endedAt: timestamp("endedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [
+    index("screen_share_conversation_status_idx").on(table.conversationId, table.status, table.createdAt),
+    index("screen_share_host_status_idx").on(table.hostId, table.status, table.expiresAt),
+  ],
+);
+
 export const messageReactions = mysqlTable(
   "message_reactions",
   {
@@ -218,6 +241,7 @@ export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type CallSession = typeof callSessions.$inferSelect;
 export type CallParticipant = typeof callParticipants.$inferSelect;
+export type ScreenShareSession = typeof screenShareSessions.$inferSelect;
 export type P2pSignal = typeof p2pSignals.$inferSelect;
 export type MessageReaction = typeof messageReactions.$inferSelect;
 export type PushDevice = typeof pushDevices.$inferSelect;
