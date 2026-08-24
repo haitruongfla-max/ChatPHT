@@ -91,7 +91,7 @@ jobs:
             gh release upload "$RELEASE_TAG" "$APK_OUTPUT#app-release.apk" --clobber
           else
             gh release create "$RELEASE_TAG" "$APK_OUTPUT#app-release.apk" \
-              --title "ChatPHT 1.0.18 — P2P 1:1 (versionCode 22)" \
+              --title "ChatPHT 1.0.19 — P2P 1:1 Modules (versionCode 23)" \
               --generate-notes \
               --target "$GITHUB_SHA"
           fi
