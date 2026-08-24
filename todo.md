@@ -295,7 +295,7 @@
 - [x] Tách gọi thoại, gọi video và chia sẻ màn hình thành các mô-đun native riêng với API vòng đời độc lập.
 - [x] Chỉ giữ một lớp điều phối mỏng trong màn gọi để chọn đúng mô-đun theo từng phím bấm, không tự bật chéo chức năng.
 - [x] Bổ sung hồi quy tách luồng và kiểm chứng chat/media/quota/bảo mật không bị ảnh hưởng trước checkpoint.
-- [ ] Đồng bộ bản tái cấu trúc ba mô-đun P2P hiện tại lên GitHub mà không thay đổi versionCode hoặc tạo APK mới.
-- [ ] Publish backend Live từ checkpoint đã kiểm chứng và xác minh trạng thái phát hành sau khi đồng bộ GitHub.
-- [ ] Nâng versionCode, build APK Android signed cho bản tái cấu trúc ba mô-đun P2P và đính kèm vào GitHub Release.
-- [ ] Xác minh asset APK mới, SHA-256 và khả năng cài đè từ versionCode 22 trước khi báo link tải.
+- [x] Đồng bộ bản tái cấu trúc ba mô-đun P2P hiện tại lên GitHub mà không thay đổi versionCode hoặc tạo APK mới.
+- [x] Publish backend Live từ checkpoint đã kiểm chứng và xác minh trạng thái phát hành sau khi đồng bộ GitHub.
+- [x] Nâng versionCode, build APK Android signed cho bản tái cấu trúc ba mô-đun P2P và đính kèm vào GitHub Release.
+- [x] Xác minh asset APK mới, SHA-256 và khả năng cài đè từ versionCode 22 trước khi báo link tải.
