@@ -21,6 +21,7 @@ import { runMediaUploadQueue } from "@/lib/media-upload-queue";
 import { preserveStableMediaUrl } from "@/lib/stable-media-url";
 import { subscribeToConversationBackground } from "@/lib/conversation-background-realtime.native";
 import { callKindForP2pMode, type P2pCallMode } from "@/lib/p2p-call-mode";
+import { p2pCallRoute } from "@/lib/p2p-call-route";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
@@ -371,7 +372,7 @@ export default function ChatScreen() {
     try {
       const call = await startCall.mutateAsync({ conversationId, kind, p2pMode: mode });
       router.push({
-        pathname: "/call",
+        pathname: p2pCallRoute(mode) as never,
         params: {
           callId: call.id,
           kind,

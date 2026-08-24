@@ -14,9 +14,9 @@ describe("Cấu hình APK nền OTA", () => {
     expect(configSource).toContain("fallbackToCacheTimeout: 30_000");
   });
 
-  it("tăng versionCode cho APK sửa route và SDP P2P 1.0.20 và khai báo MediaProjection Android", () => {
-    expect(configSource).toContain('version: "1.0.20"');
-    expect(configSource).toContain("versionCode: 24");
+  it("tăng versionCode cho APK ba route P2P độc lập 1.0.21 và khai báo MediaProjection Android", () => {
+    expect(configSource).toContain('version: "1.0.21"');
+    expect(configSource).toContain("versionCode: 25");
     expect(configSource).toContain('"FOREGROUND_SERVICE_MEDIA_PROJECTION"');
   });
 });

@@ -6,7 +6,7 @@ on:
       release_tag:
         description: "GitHub Release tag cho APK nền OTA"
         required: true
-        default: "v1.0.20-p2p-routing-sdp-vc24"
+        default: "v1.0.21-p2p-isolated-routes-vc25"
 
 # GitHub Release cần quyền ghi nội dung; workflow không sử dụng Expo cloud build.
 permissions:
@@ -91,7 +91,7 @@ jobs:
             gh release upload "$RELEASE_TAG" "$APK_OUTPUT#app-release.apk" --clobber
           else
             gh release create "$RELEASE_TAG" "$APK_OUTPUT#app-release.apk" \
-              --title "ChatPHT 1.0.20 — P2P Route & SDP Fix (versionCode 24)" \
+              --title "ChatPHT 1.0.21 — P2P Isolated Routes (versionCode 25)" \
               --generate-notes \
               --target "$GITHUB_SHA"
           fi
