@@ -290,4 +290,4 @@
 - [x] Chẩn đoán điều phối gọi thoại, gọi video và chia sẻ màn hình P2P để mỗi nút chỉ khởi tạo đúng một chức năng riêng.
 - [x] Chặn answer SDP trùng hoặc sai trạng thái signaling, đặc biệt lỗi `setRemoteDescription(answer)` khi peer đã `stable`.
 - [x] Bổ sung hồi quy cho ba hành động P2P riêng biệt và xác nhận chat/media/quota không bị ảnh hưởng.
-- [ ] Nâng versionCode, build signed APK sửa lỗi, đồng bộ GitHub và Publish backend theo yêu cầu người dùng.
+- [x] Nâng versionCode, build signed APK sửa lỗi, đồng bộ GitHub và Publish backend theo yêu cầu người dùng.
