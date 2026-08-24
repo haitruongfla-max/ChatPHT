@@ -49,6 +49,7 @@ export default function CallScreen() {
   const started = useRef(Boolean(resumed?.connected));
   const autoScreenShareRequested = useRef(false);
   const finalized = useRef(false);
+  const answerInFlight = useRef(false);
   const handledSignals = useRef(new Set<number>());
   const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: 800 });
   const answer = trpc.calls.answer.useMutation();
@@ -94,7 +95,7 @@ export default function CallScreen() {
   }, [callId, details.data?.status, p2p]);
 
   useEffect(() => {
-    const shouldPlay = direction === "outgoing" && connected && !isAnswered;
+    const shouldPlay = direction === "outgoing" && details.data?.status === "ringing" && !isAnswered;
     if (!shouldPlay) { stopCallTone(ringbackTone.current); ringbackTone.current = null; return; }
     let active = true;
     void createCallTonePlayer().then((player) => {
@@ -103,7 +104,7 @@ export default function CallScreen() {
       player.play();
     }).catch(() => undefined);
     return () => { active = false; stopCallTone(ringbackTone.current); ringbackTone.current = null; };
-  }, [connected, direction, isAnswered]);
+  }, [details.data?.status, direction, isAnswered]);
 
   useEffect(() => {
     if (!connected || !isAnswered || !answeredAt) return;
@@ -169,7 +170,9 @@ export default function CallScreen() {
       onSignal: async (signal: P2pSignal) => { await sendSignal.mutateAsync({ callId, ...signal }); },
       onState: (state) => {
         setP2pState(state);
+        setConnected(state === "connected");
         if (state === "connected") { setConnected(true); setConnectionError(null); publishActiveState({ seconds: 0 }); }
+        if (state === "recovering") setConnectionError("Đang khôi phục kết nối P2P sau khi đổi Wi‑Fi/4G…");
         if (state === "failed") setConnectionError("Không thiết lập được P2P trực tiếp. Khi cấu hình TURN có xác thực, hãy thử lại cuộc gọi.");
       },
       onRemoteStream: setRemoteStream,
@@ -179,20 +182,23 @@ export default function CallScreen() {
   }
 
   async function enterCall(isAnswer: boolean) {
-    if (!callId || isConnecting) return;
+    if (!callId || isConnecting || (isAnswer && answerInFlight.current)) return;
     if (isGroup) { Alert.alert("Đã dừng gọi nhóm", "ChatPHT hiện chỉ hỗ trợ gọi P2P 1:1."); return; }
     setConnectionError(null);
     if (!(await requestPermissions())) return;
     stopAllCallAlerts();
+    if (isAnswer) answerInFlight.current = true;
     setIsConnecting(true);
     try {
       if (isAnswer) await answer.mutateAsync({ callId });
-      else setConnected(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Hãy thử lại khi mạng ổn định hơn.";
       setConnectionError(message);
       Alert.alert("Chưa thể kết nối", message);
-    } finally { setIsConnecting(false); }
+    } finally {
+      answerInFlight.current = false;
+      setIsConnecting(false);
+    }
   }
 
   async function finish(status: "ended" | "declined") {
@@ -227,6 +233,10 @@ export default function CallScreen() {
   async function switchCamera() { try { await p2p.switchCamera(); setIsFrontCamera((current) => !current); activeCall.update(callId, { isFrontCamera: !isFrontCamera }); } catch (error) { Alert.alert("Chưa thể đổi camera", error instanceof Error ? error.message : "Vui lòng thử lại."); } }
   async function toggleVideoQuality() { const next = videoQuality === "hd" ? "sd" : "hd"; try { await p2p.setVideoQuality(next); setVideoQuality(next); activeCall.update(callId, { videoQuality: next }); } catch { Alert.alert("Chưa thể đổi chất lượng", "Vui lòng thử lại."); } }
   async function toggleScreenShare() {
+    if (!isAnswered || !p2p.isConnected()) {
+      Alert.alert("Đang chờ kết nối P2P", "Hai máy đã nhận cuộc gọi nhưng kênh video chưa ổn định. Hãy chờ đến khi hiện thời lượng cuộc gọi rồi thử lại; ứng dụng sẽ tự khôi phục khi đổi Wi‑Fi/4G.");
+      return;
+    }
     try {
       if (p2p.hasScreenShare()) { await p2p.stopScreenShare(); setLocalScreenStream(null); }
       else { const stream = await p2p.startScreenShare(); setLocalScreenStream(stream); }

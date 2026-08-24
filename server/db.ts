@@ -31,6 +31,13 @@ export type PublicProfile = {
 export type CallKind = "audio" | "video";
 export type CallStatus = "ringing" | "active" | "declined" | "ended" | "missed";
 export type P2pSignalType = "offer" | "answer" | "ice" | "screen-start" | "screen-stop";
+// Android may need time to surface a full-screen incoming call and request media permissions.
+export const P2P_RING_TIMEOUT_MS = 180_000;
+
+export function isIdempotentP2pAnswerStatus(status: CallStatus) {
+  return status === "active";
+}
+
 export type CallSessionSummary = Pick<
   CallSession,
   "id" | "conversationId" | "room" | "kind" | "provider" | "isGroup" | "status" | "expiresAt" | "answeredAt" | "endedAt" | "createdAt"
@@ -900,7 +907,7 @@ export async function createCallSession(conversationId: number, callerId: number
     kind,
     provider: "p2p",
     status: "ringing",
-    expiresAt: new Date(now.getTime() + 60_000),
+    expiresAt: new Date(now.getTime() + P2P_RING_TIMEOUT_MS),
   });
   const created = (await db.select().from(callSessions).where(eq(callSessions.id, id)).limit(1))[0];
   if (!created) throw new Error("Không thể tạo phiên gọi.");
@@ -972,7 +979,12 @@ export async function getIncomingCallSession(userId: number) {
 export async function answerCallSession(sessionId: string, userId: number) {
   const db = requireDb(await getDb());
   const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (!call || call.isGroup || call.recipientId !== userId || call.status !== "ringing") throw new Error("Cuộc gọi này không còn chờ phản hồi.");
+  if (!call || call.isGroup || call.recipientId !== userId) throw new Error("Cuộc gọi này không còn chờ phản hồi.");
+  // Android can retry a mutation after a slow network response or surface two
+  // acceptance events close together. The recipient accepting an already-active
+  // direct call is safe and must not be reported as an expired/missed call.
+  if (isIdempotentP2pAnswerStatus(call.status)) return hydrateCallSession(call, userId);
+  if (call.status !== "ringing") throw new Error("Cuộc gọi này không còn chờ phản hồi.");
   if (call.expiresAt.getTime() <= Date.now()) {
     await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, sessionId));
     throw new Error("Cuộc gọi đã hết thời gian chờ.");

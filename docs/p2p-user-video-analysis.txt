@@ -1,0 +1,19 @@
+Starting video analysis...
+Submitting video analysis task...
+Task submitted (ID: video-analysis-49c0047a-8ada-408a-8195-d70f12b1658d)
+[8s] Status: Analyzing video content with AI...
+[10s] Status: Analysis completed
+[10s] Analysis completed!
+Full analysis result saved to: /home/ubuntu/video_VID_20260824_125022_analysis_20260824_060113.md
+Note: This tool performs AI-based visual and audio analysis, not verbatim transcription. For detailed speech transcription, use `manus-speech-to-text` instead.
+Analysis result:
+
+Dưới đây là mô tả tuần tự các trạng thái và thông báo lỗi xuất hiện trong video:
+
+*   **Trạng thái kết nối P2P:** Ngay từ đầu video (00:00), phía trên cùng của giao diện cuộc gọi hiển thị dòng chữ **"P2P · BẢO MẬT"**, cho biết cuộc gọi đang được thiết lập hoặc thực hiện qua giao thức ngang hàng (Peer-to-Peer).
+*   **Thông báo lỗi:** Một hộp thoại thông báo xuất hiện ở giữa màn hình với nội dung:
+    *   Tiêu đề: **"Chưa thể kết nối"**
+    *   Nội dung chi tiết: **"Cuộc gọi này không còn chờ phản hồi."**
+    *   Nút tương tác: Có một nút **"OK"** để xác nhận và đóng thông báo.
+*   **Các nút điều khiển:** Phía dưới hộp thoại thông báo là hai nút chức năng: một nút màu đỏ (biểu tượng cúp máy) và một nút màu xanh lá cây (biểu tượng máy quay video).
+*   **Chia sẻ màn hình và hiển thị media:** Trong suốt thời lượng video (00:00 - 00:03), **không xuất hiện nút chia sẻ màn hình** trên giao diện hiện tại. Đồng thời, **không có hiện tượng hiển thị media nhấp nháy**; hình ảnh trên màn hình điện thoại hoàn toàn tĩnh, ngoại trừ bóng phản chiếu trên mặt kính.

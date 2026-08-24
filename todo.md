@@ -270,3 +270,8 @@
 - [x] Nâng Android lên versionCode 20, giữ versionName hiện hành có ghi chú P2P và chạy lại quality gate phát hành.
 - [x] Đồng bộ GitHub, chạy workflow signed Android, tạo release mới với asset app-release.apk versionCode 20 và xác minh SHA-256/link tải (ffb7bf008bded0dbb33c0849569c0a19e2e577c7892564d11db52751cc8c1cb8).
 - [x] Sửa import ReactPackage trong native audio bridge Android P2P để compileReleaseKotlin tương thích React Native 0.81.
+- [x] Chẩn đoán và sửa cuộc gọi P2P bị báo hết thời gian chờ phản hồi dù hai máy đã thao tác nhận cuộc gọi.
+- [x] Sửa điều kiện chia sẻ màn hình 1:1 để chỉ hiển thị trạng thái sẵn sàng khi data channel/ICE thực sự ổn định và có phục hồi rõ ràng khi đổi mạng.
+- [x] Khắc phục ảnh/media trong chat nhấp nháy hoặc tải lại liên tục, giữ cache và URI ổn định khi danh sách tin nhắn cập nhật.
+- [ ] Bổ sung hồi quy cho timeout cuộc gọi, trạng thái chia sẻ màn hình và định danh/cache ảnh chat; nghiệm thu hai Android thật qua Wi-Fi/4G.
+- [x] Bổ sung hồi quy tự động cho timeout P2P, nhận cuộc gọi idempotent, trạng thái ICE/chia sẻ màn hình và URI media ổn định.

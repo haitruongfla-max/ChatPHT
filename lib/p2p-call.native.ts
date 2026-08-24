@@ -42,6 +42,7 @@ export class P2pCall {
   private recoveryInProgress = false;
   private remoteDescriptionReady = false;
   private pendingRemoteCandidates: Record<string, unknown>[] = [];
+  private preStartSignals: P2pSignal[] = [];
   private makingOffer = false;
   private ignoreOffer = false;
   private negotiationPending = false;
@@ -49,7 +50,7 @@ export class P2pCall {
   private pendingIceRestart = false;
 
   async start(options: StartOptions) {
-    await this.disconnect();
+    await this.disconnect({ preservePreStartSignals: true });
     this.options = options;
     this.remoteDescriptionReady = false;
     this.pendingRemoteCandidates = [];
@@ -106,13 +107,19 @@ export class P2pCall {
       }
     };
 
+    // Signals are polled independently from local media and TURN setup. An
+    // early offer must survive until this peer is ready to apply it.
+    await this.flushPreStartSignals();
     if (options.isCaller) await this.queueOffer();
   }
 
   async handleSignal(signal: P2pSignal) {
     const peer = this.peer;
     const options = this.options;
-    if (!peer || !options) throw new Error("Kết nối P2P chưa sẵn sàng.");
+    if (!peer || !options) {
+      this.preStartSignals.push(signal);
+      return;
+    }
     const payload = JSON.parse(signal.payload) as Record<string, unknown>;
     if (signal.type === "screen-start") {
       const trackId = typeof payload.trackId === "string" ? payload.trackId : "";
@@ -257,7 +264,7 @@ export class P2pCall {
     if (peer && this.connected) await this.queueOffer();
   }
 
-  async disconnect(options: { preserveAudioSession?: boolean } = {}) {
+  async disconnect(options: { preserveAudioSession?: boolean; preservePreStartSignals?: boolean } = {}) {
     this.connected = false;
     this.recoveryInProgress = false;
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
@@ -266,6 +273,7 @@ export class P2pCall {
     this.peer = null;
     this.remoteDescriptionReady = false;
     this.pendingRemoteCandidates = [];
+    if (!options.preservePreStartSignals) this.preStartSignals = [];
     this.negotiationPending = false;
     this.negotiationInFlight = false;
     this.pendingIceRestart = false;
@@ -315,6 +323,12 @@ export class P2pCall {
     const candidates = this.pendingRemoteCandidates;
     this.pendingRemoteCandidates = [];
     for (const candidate of candidates) await peer.addIceCandidate(candidate);
+  }
+
+  private async flushPreStartSignals() {
+    const signals = this.preStartSignals;
+    this.preStartSignals = [];
+    for (const signal of signals) await this.handleSignal(signal);
   }
 
   private async queueOffer(options: { iceRestart?: boolean } = {}) {

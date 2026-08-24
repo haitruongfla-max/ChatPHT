@@ -18,6 +18,7 @@ import {
   uploadMediaDirectly,
 } from "@/lib/direct-media-upload";
 import { runMediaUploadQueue } from "@/lib/media-upload-queue";
+import { preserveStableMediaUrl } from "@/lib/stable-media-url";
 import { subscribeToConversationBackground } from "@/lib/conversation-background-realtime.native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as FileSystem from "expo-file-system/legacy";
@@ -266,6 +267,7 @@ export default function ChatScreen() {
     { enabled: Boolean(user) && isGroup && Number.isInteger(conversationId) },
   );
   const messageCount = messages.data?.length ?? 0;
+  const stableMediaUrls = useRef(new Map<string, string>());
   const sendText = trpc.messages.sendText.useMutation();
   const requestMediaUpload = trpc.messages.requestMediaUpload.useMutation();
   const preflightMediaUpload = trpc.messages.preflightMediaUpload.useMutation();
@@ -295,7 +297,9 @@ export default function ChatScreen() {
     [group, isGroup],
   );
   const timeline = useMemo<TimelineItem[]>(() => {
-    const sourceMessages = (messages.data ?? []) as ChatMessage[];
+    const sourceMessages = ((messages.data ?? []) as ChatMessage[]).map((message) =>
+      preserveStableMediaUrl(stableMediaUrls.current, message),
+    );
     const renderedBatches = new Set<string>();
     const messageItems = sourceMessages.flatMap((message) => {
       if (!message.mediaBatchId) return [{ ...message, entryType: "message" as const }];
@@ -944,7 +948,7 @@ export default function ChatScreen() {
                               cachePolicy="memory-disk"
                               style={styles.image}
                               contentFit="cover"
-                              transition={120}
+                      transition={0}
                             />
                           </Pressable>
                         ) : null}

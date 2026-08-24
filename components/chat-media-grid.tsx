@@ -38,7 +38,7 @@ export function ChatMediaGrid({
               source={{ uri: item.mediaUrl as string, cacheKey: item.mediaCacheKey ?? `chat-media-${item.id}` }}
               cachePolicy="memory-disk"
               contentFit="cover"
-              transition={120}
+              transition={0}
               style={styles.image}
             />
             {item.contentType === "video" ? <View style={styles.videoBadge}><MaterialIcons name="play-arrow" size={20} color="#FFFFFF" /></View> : null}

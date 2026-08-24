@@ -126,4 +126,20 @@ describe("native P2P renegotiation", () => {
     expect((call as any).pendingRemoteCandidates).toEqual([]);
     expect(peer.addIceCandidate).not.toHaveBeenCalled();
   });
+
+  it("keeps an offer received before Android finishes starting the recipient peer", async () => {
+    const signals: Array<{ type: string; payload: string }> = [];
+    const call = new P2pCall();
+
+    await call.handleSignal({ type: "offer", payload: JSON.stringify({ type: "offer", sdp: "early-offer" }) });
+    await call.start({
+      isCaller: false,
+      kind: "video",
+      onSignal: async (signal) => { signals.push(signal); },
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    });
+
+    expect(signals.map((signal) => signal.type)).toEqual(["answer"]);
+  });
 });
