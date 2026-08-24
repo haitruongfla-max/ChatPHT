@@ -284,6 +284,6 @@
 - [x] Tích hợp chọn lọc chỉ các cải tiến chia sẻ màn hình vượt trội, tương thích với Android/P2P/MySQL/tRPC mà không ảnh hưởng giao diện, chat/media riêng tư hoặc quota.
 - [x] Bổ sung hồi quy, kiểm tra toàn diện và checkpoint riêng cho đợt nâng cấp chia sẻ màn hình nếu có thay đổi mã nguồn an toàn.
 - [x] Đồng bộ checkpoint chia sẻ màn hình P2P mới nhất lên kho GitHub hiện có mà không phát hành APK hoặc triển khai backend.
-- [ ] Nâng Android lên versionCode lớn hơn 20, kiểm tra chất lượng và đồng bộ cấu hình phát hành lên GitHub.
-- [ ] Chạy workflow GitHub Actions tạo APK Android đã ký, xác minh release asset, SHA-256 và khả năng cài đè từ versionCode 20.
-- [ ] Chỉ publish backend Live sau khi người dùng xác nhận thao tác phát hành, rồi báo cáo link APK và hướng dẫn cài đặt.
+- [x] Nâng Android lên versionCode lớn hơn 20, kiểm tra chất lượng và đồng bộ cấu hình phát hành lên GitHub.
+- [x] Chạy workflow GitHub Actions tạo APK Android đã ký, xác minh release asset, SHA-256 và khả năng cài đè từ versionCode 20.
+- [x] Chỉ publish backend Live sau khi người dùng xác nhận thao tác phát hành, rồi báo cáo link APK và hướng dẫn cài đặt.
