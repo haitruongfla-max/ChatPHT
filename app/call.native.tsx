@@ -10,6 +10,7 @@ import { activeCall } from "@/lib/active-call";
 import { getCallConnectionStatus, getP2pNetworkQuality, type P2pNetworkQuality } from "@/lib/call-connection-status";
 import { createCallTonePlayer, stopAllCallAlerts, stopCallTone } from "@/lib/call-sounds";
 import { P2pCall, type P2pConnectionState, type P2pSignal } from "@/lib/p2p-call";
+import { callKindForP2pMode, toP2pCallMode, type P2pCallMode } from "@/lib/p2p-call-mode";
 import { trpc } from "@/lib/trpc";
 
 type CallKind = "audio" | "video";
@@ -24,9 +25,12 @@ function CallerAvatar({ name, avatarUrl, style }: { name: string; avatarUrl: str
 }
 
 export default function CallScreen() {
-  const params = useLocalSearchParams<{ callId?: string; kind?: CallKind; direction?: Direction; name?: string; avatar?: string; p2pScreenShare?: string }>();
+  const params = useLocalSearchParams<{ callId?: string; kind?: CallKind; p2pMode?: P2pCallMode; direction?: Direction; name?: string; avatar?: string; p2pScreenShare?: string }>();
   const callId = params.callId ?? "";
-  const kind = params.kind === "video" ? "video" : "audio";
+  // Retain legacy p2pScreenShare only for an already-open older route; all
+  // new routes carry a mutually exclusive p2pMode.
+  const mode = toP2pCallMode(params.p2pMode ?? (params.p2pScreenShare === "1" ? "screen" : params.kind));
+  const kind = callKindForP2pMode(mode);
   const direction = params.direction === "incoming" ? "incoming" : "outgoing";
   const resumed = activeCall.get(callId);
   const p2p = useRef(resumed?.call ?? new P2pCall()).current;
@@ -59,7 +63,7 @@ export default function CallScreen() {
   const isGroup = details.data?.isGroup === true;
   const isCaller = details.data?.isCaller === true || direction === "outgoing";
   const isAnswered = details.data?.status === "active";
-  const startsWithScreenShare = params.p2pScreenShare === "1";
+  const startsWithScreenShare = mode === "screen";
   const p2pActive = p2pState !== "idle" && p2pState !== "closed";
   const incomingSignals = trpc.calls.p2pSignal.drain.useQuery({ callId }, { enabled: Boolean(callId) && p2pActive, refetchInterval: p2pActive ? 300 : false });
   const iceConfig = trpc.calls.p2pIceConfig.useQuery({ callId }, { enabled: Boolean(callId) && isAnswered });
@@ -124,9 +128,9 @@ export default function CallScreen() {
   }, [answeredAt, callId, connected, isAnswered]);
 
   useEffect(() => {
-    if (Platform.OS !== "android" || kind !== "video" || !connected || !ExpoPip.isAvailable()) return;
+    if (Platform.OS !== "android" || mode !== "video" || !connected || !ExpoPip.isAvailable()) return;
     ExpoPip.setPictureInPictureParams({ width: 16, height: 9, title: "ChatPHT", subtitle: "Cuộc gọi P2P đang diễn ra", seamlessResizeEnabled: true, autoEnterEnabled: true });
-  }, [connected, kind]);
+  }, [connected, mode]);
 
   useEffect(() => {
     if (!startsWithScreenShare || autoScreenShareRequested.current || !connected || !isAnswered) return;
@@ -154,7 +158,7 @@ export default function CallScreen() {
   async function requestPermissions() {
     const microphone = await Camera.requestMicrophonePermissionsAsync();
     if (!microphone.granted) { Alert.alert("Cần quyền micro", "Hãy cấp quyền micro để gọi."); return false; }
-    if (kind === "video" && !startsWithScreenShare) {
+    if (mode === "video") {
       const camera = await Camera.requestCameraPermissionsAsync();
       if (!camera.granted) { Alert.alert("Cần quyền camera", "Hãy cấp quyền camera để gọi video."); return false; }
     }
@@ -162,7 +166,7 @@ export default function CallScreen() {
   }
 
   function publishActiveState(next: Partial<{ muted: boolean; speaker: boolean; cameraOn: boolean; isFrontCamera: boolean; videoQuality: "sd" | "hd"; seconds: number }> = {}) {
-    activeCall.activate({ callId, kind, direction, name, call: p2p, connected: true, muted: next.muted ?? muted, speaker: next.speaker ?? speaker, cameraOn: next.cameraOn ?? cameraOn, isFrontCamera: next.isFrontCamera ?? isFrontCamera, videoQuality: next.videoQuality ?? videoQuality, seconds: next.seconds ?? seconds, isGroup: false, provider: "p2p" });
+    activeCall.activate({ callId, kind, p2pMode: mode, direction, name, call: p2p, connected: true, muted: next.muted ?? muted, speaker: next.speaker ?? speaker, cameraOn: next.cameraOn ?? cameraOn, isFrontCamera: next.isFrontCamera ?? isFrontCamera, videoQuality: next.videoQuality ?? videoQuality, seconds: next.seconds ?? seconds, isGroup: false, provider: "p2p" });
   }
 
   async function startP2p(isAnswer: boolean) {
@@ -171,6 +175,7 @@ export default function CallScreen() {
     await p2p.start({
       isCaller: !isAnswer,
       kind,
+      mode,
       iceServers: result?.iceServers,
       onSignal: async (signal: P2pSignal) => { await sendSignal.mutateAsync({ callId, ...signal }); },
       onState: (state) => {

@@ -20,6 +20,7 @@ import {
 import { runMediaUploadQueue } from "@/lib/media-upload-queue";
 import { preserveStableMediaUrl } from "@/lib/stable-media-url";
 import { subscribeToConversationBackground } from "@/lib/conversation-background-realtime.native";
+import { callKindForP2pMode, type P2pCallMode } from "@/lib/p2p-call-mode";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
@@ -361,13 +362,12 @@ export default function ChatScreen() {
       void utils.conversations.groupMembers.invalidate({ conversationId });
     }
   };
-  const beginP2pAction = async (action: "audio" | "video" | "screen") => {
+  const beginP2pAction = async (mode: P2pCallMode) => {
     if (isGroup) {
       Alert.alert("Gọi nhóm đã tắt", "ChatPHT hiện chỉ hỗ trợ gọi và chia sẻ màn hình P2P giữa hai người.");
       return;
     }
-    const kind = action === "video" ? "video" : "audio";
-    const startsWithScreenShare = action === "screen";
+    const kind = callKindForP2pMode(mode);
     try {
       const call = await startCall.mutateAsync({ conversationId, kind });
       router.push({
@@ -375,9 +375,9 @@ export default function ChatScreen() {
         params: {
           callId: call.id,
           kind,
+          p2pMode: mode,
           direction: "outgoing",
           name: header.title,
-          ...(startsWithScreenShare ? { p2pScreenShare: "1" } : {}),
         },
       });
     } catch (error) {

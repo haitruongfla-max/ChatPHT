@@ -43,6 +43,7 @@ export function CallMiniOverlay() {
       params: {
         callId: snapshot.callId,
         kind: snapshot.kind,
+        p2pMode: snapshot.p2pMode,
         direction: snapshot.direction,
         name: snapshot.name,
       },
@@ -69,7 +70,7 @@ export function CallMiniOverlay() {
         accessibilityLabel="Mở rộng cuộc gọi đang diễn ra"
       >
         <View style={styles.icon}>
-          <MaterialIcons name={snapshot.kind === "video" ? "videocam" : "phone"} size={22} color="#DBEAFE" />
+          <MaterialIcons name={snapshot.p2pMode === "screen" ? "screen-share" : snapshot.p2pMode === "video" ? "videocam" : "phone"} size={22} color="#DBEAFE" />
         </View>
         <View style={styles.texts}>
           <Text numberOfLines={1} style={styles.name}>{snapshot.name}</Text>

@@ -96,6 +96,7 @@ describe("native P2P renegotiation", () => {
     await call.start({
       isCaller: true,
       kind: "video",
+      mode: "video",
       onSignal: async (signal) => { signals.push(signal); },
       onState: () => undefined,
       onRemoteStream: () => undefined,
@@ -118,6 +119,7 @@ describe("native P2P renegotiation", () => {
     await call.start({
       isCaller: true,
       kind: "audio",
+      mode: "audio",
       onSignal: () => undefined,
       onState: () => undefined,
       onRemoteStream: () => undefined,
@@ -139,6 +141,7 @@ describe("native P2P renegotiation", () => {
     await call.start({
       isCaller: false,
       kind: "video",
+      mode: "video",
       onSignal: async (signal) => { signals.push(signal); },
       onState: () => undefined,
       onRemoteStream: () => undefined,
@@ -152,6 +155,7 @@ describe("native P2P renegotiation", () => {
     await call.start({
       isCaller: true,
       kind: "video",
+      mode: "video",
       onSignal: () => undefined,
       onState: () => undefined,
       onRemoteStream: () => undefined,
@@ -181,6 +185,7 @@ describe("native P2P renegotiation", () => {
     await call.start({
       isCaller: true,
       kind: "video",
+      mode: "video",
       onSignal: () => undefined,
       onState: () => undefined,
       onRemoteStream: () => undefined,

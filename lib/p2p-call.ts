@@ -1,4 +1,5 @@
 import type { MediaStream } from "react-native-webrtc";
+import type { P2pCallMode } from "@/lib/p2p-call-mode";
 
 export type P2pSignalType = "offer" | "answer" | "ice" | "screen-start" | "screen-stop";
 export type P2pSignal = { type: P2pSignalType; payload: string };
@@ -7,6 +8,7 @@ export type P2pIceServer = { urls: string[]; username?: string; credential?: str
 export type P2pStartOptions = {
   isCaller: boolean;
   kind: "audio" | "video";
+  mode: P2pCallMode;
   iceServers?: P2pIceServer[];
   onSignal: (signal: P2pSignal) => Promise<void> | void;
   onState: (state: P2pConnectionState) => void;

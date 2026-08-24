@@ -1,8 +1,10 @@
 import type { P2pCall } from "@/lib/p2p-call";
+import type { P2pCallMode } from "@/lib/p2p-call-mode";
 
 export type ActiveCallSnapshot = {
   callId: string;
   kind: "audio" | "video";
+  p2pMode: P2pCallMode;
   direction: "incoming" | "outgoing";
   name: string;
   isGroup: false;

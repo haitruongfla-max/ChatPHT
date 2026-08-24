@@ -38,7 +38,8 @@ describe("P2P call screen guards", () => {
     expect(chatScreen).toContain('beginP2pAction("video")');
     expect(chatScreen).toContain('beginP2pAction("screen")');
     expect(chatScreen).not.toContain('beginCall("video", true)');
-    expect(callScreen).toContain('const startsWithScreenShare = params.p2pScreenShare === "1"');
-    expect(callScreen).toContain('kind === "video" && !startsWithScreenShare');
+    expect(callScreen).toContain('const mode = toP2pCallMode');
+    expect(callScreen).toContain('const startsWithScreenShare = mode === "screen"');
+    expect(callScreen).toContain('const kind = callKindForP2pMode(mode)');
   });
 });

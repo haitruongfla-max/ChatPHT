@@ -22,19 +22,19 @@ describe("Android P2P call configuration", () => {
 
   it("keeps Android camera capture and call audio safeguards enabled", () => {
     const camera = source("components/chat-camera-capture.tsx");
-    const call = source("lib/p2p-call.native.ts");
+    const audioCall = source("lib/p2p-audio-call.ts");
     expect(camera).toContain("}, 300)");
     expect(camera).toContain("maxDuration: MAX_RECORDING_SECONDS");
-    expect(call).toContain("autoGainControl: true");
-    expect(call).toContain("noiseSuppression: true");
-    expect(call).toContain("setAndroidCallSpeakerRoute");
+    expect(audioCall).toContain("autoGainControl: true");
+    expect(audioCall).toContain("noiseSuppression: true");
+    expect(audioCall).toContain("setAndroidCallSpeakerRoute");
   });
 
   it("keeps the P2P release upgradeable from versionCode 20 and the signed asset name stable", () => {
     const appConfig = source("app.config.ts");
     const workflow = source(".github/workflows/build-ota-base-apk.yml");
-    expect(appConfig).toContain("versionCode: 22");
-    expect(workflow).toContain('default: "v1.0.18-p2p-vc22"');
+    expect(appConfig).toContain("versionCode: 23");
+    expect(workflow).toContain('default: "v1.0.19-p2p-vc23"');
     expect(workflow).toContain("APK_OUTPUT: ./app-release.apk");
     expect(workflow).toContain('"$APK_OUTPUT#app-release.apk"');
   });
