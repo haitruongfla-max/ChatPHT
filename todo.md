@@ -269,3 +269,4 @@
 - [x] Xác minh TURN OpenRelay dùng danh sách sáu URL UDP/TCP/TLS đã đặt trong secrets và chọn chế độ credential tĩnh tương thích với openrelayproject.
 - [x] Nâng Android lên versionCode 20, giữ versionName hiện hành có ghi chú P2P và chạy lại quality gate phát hành.
 - [ ] Đồng bộ GitHub, chạy workflow signed Android, tạo release mới với asset app-release.apk versionCode 20 và xác minh SHA-256/link tải.
+- [x] Sửa import ReactPackage trong native audio bridge Android P2P để compileReleaseKotlin tương thích React Native 0.81.

@@ -16,6 +16,8 @@ describe("Android P2P call configuration", () => {
     expect(plugin).toContain('"android:foregroundServiceType": "mediaProjection|microphone|camera"');
     expect(plugin).toContain("add(ChatPHTAudioRoutePackage())");
     expect(plugin).toContain("setCommunicationDevice");
+    expect(plugin).toContain("import com.facebook.react.ReactPackage");
+    expect(plugin).not.toContain("import com.facebook.react.bridge.ReactPackage");
   });
 
   it("keeps Android camera capture and call audio safeguards enabled", () => {
