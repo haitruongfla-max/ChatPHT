@@ -17,6 +17,12 @@ export function getAutoStartIntentForBrand(brand?: string, manufacturer?: string
   if (device.includes("oppo")) {
     return { packageName: "com.coloros.safecenter", className: "com.coloros.safecenter.permission.startup.StartupAppListActivity" };
   }
+  if (device.includes("realme")) {
+    return { packageName: "com.realme.securitycenter", className: "com.realme.securitycheck.permission.startup.StartupAppListActivity" };
+  }
+  if (device.includes("vivo") || device.includes("iqoo")) {
+    return { packageName: "com.vivo.permissionmanager", className: "com.vivo.permissionmanager.activity.BgStartUpManagerActivity" };
+  }
   return null;
 }
 

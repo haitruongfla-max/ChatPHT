@@ -1,0 +1,2 @@
+ALTER TABLE `call_sessions` MODIFY COLUMN `provider` enum('livekit','p2p') NOT NULL DEFAULT 'p2p';--> statement-breakpoint
+ALTER TABLE `p2p_signals` MODIFY COLUMN `type` enum('offer','answer','ice','screen-start','screen-stop') NOT NULL;

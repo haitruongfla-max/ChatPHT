@@ -19,7 +19,6 @@ import {
 } from "@/lib/direct-media-upload";
 import { runMediaUploadQueue } from "@/lib/media-upload-queue";
 import { subscribeToConversationBackground } from "@/lib/conversation-background-realtime.native";
-import { parseScreenShareInviteBody } from "@/lib/screen-share-invite";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
@@ -280,15 +279,12 @@ export default function ChatScreen() {
   const requestWallpaperUpload = trpc.conversations.requestWallpaperUpload.useMutation();
   const setWallpaper = trpc.conversations.setWallpaper.useMutation();
   const startCall = trpc.calls.start.useMutation();
-  const startGroupCall = trpc.calls.startGroup.useMutation();
   const pinGroupMessage = trpc.conversations.pinGroupMessage.useMutation();
-  const createScreenShare = trpc.screenShares.create.useMutation();
   const group = groupDetails.data;
   const isGroupAdmin = Boolean(
     groupMembers.data?.some((member) => member.id === userId && (member.groupRole === "owner" || member.groupRole === "admin")),
   );
-  const isStartingCall = startCall.isPending || startGroupCall.isPending;
-  const isStartingScreenShare = createScreenShare.isPending;
+  const isStartingCall = startCall.isPending;
   const header = useMemo(
     () => ({
       title: isGroup ? group?.title ?? "Nhóm chat" : "Hội thoại riêng tư",
@@ -361,14 +357,22 @@ export default function ChatScreen() {
       void utils.conversations.groupMembers.invalidate({ conversationId });
     }
   };
-  const beginCall = async (kind: "audio" | "video") => {
+  const beginCall = async (kind: "audio" | "video", startWithScreenShare = false) => {
+    if (isGroup) {
+      Alert.alert("Gọi nhóm đã tắt", "ChatPHT hiện chỉ hỗ trợ gọi và chia sẻ màn hình P2P giữa hai người.");
+      return;
+    }
     try {
-      const call = isGroup
-        ? (await startGroupCall.mutateAsync({ conversationId, kind })).call
-        : await startCall.mutateAsync({ conversationId, kind });
+      const call = await startCall.mutateAsync({ conversationId, kind });
       router.push({
         pathname: "/call",
-        params: { callId: call.id, kind, direction: "outgoing", name: header.title, group: isGroup ? "1" : "0" },
+        params: {
+          callId: call.id,
+          kind,
+          direction: "outgoing",
+          name: header.title,
+          p2pScreenShare: startWithScreenShare ? "1" : "0",
+        },
       });
     } catch (error) {
       Alert.alert(
@@ -376,26 +380,6 @@ export default function ChatScreen() {
         error instanceof Error ? error.message : "Vui lòng thử lại.",
       );
     }
-  };
-  const beginScreenShare = async () => {
-    if (isStartingScreenShare) return;
-    try {
-      const { session, connection } = await createScreenShare.mutateAsync({ conversationId });
-      router.push({
-        pathname: "/screen-share",
-        params: {
-          sessionId: session.id,
-          role: "host",
-          serverUrl: connection.serverUrl,
-          token: connection.token,
-        },
-      });
-    } catch (error) {
-      Alert.alert("Không thể chuẩn bị chia sẻ màn hình", error instanceof Error ? error.message : "Vui lòng thử lại.");
-    }
-  };
-  const viewScreenShare = (sessionId: string) => {
-    router.push({ pathname: "/screen-share", params: { sessionId, role: "viewer" } });
   };
   const pinMessage = async (messageId: number | null) => {
     if (!isGroup || !isGroupAdmin || pinGroupMessage.isPending) return;
@@ -828,7 +812,7 @@ export default function ChatScreen() {
               {wallpaperProgress !== null ? `Đang tải ảnh nền ${wallpaperProgress}%` : header.subtitle}
             </Text>
           </View>
-          <Pressable
+          {!isGroup ? <Pressable
             onPress={() => void beginCall("audio")}
             disabled={isStartingCall}
             style={({ pressed }) => [styles.callButton, pressed && styles.pressed]}
@@ -836,8 +820,8 @@ export default function ChatScreen() {
             accessibilityLabel="Gọi thoại"
           >
             <MaterialIcons name="phone" size={20} color="#2563EB" />
-          </Pressable>
-          <Pressable
+          </Pressable> : null}
+          {!isGroup ? <Pressable
             onPress={() => void beginCall("video")}
             disabled={isStartingCall}
             style={({ pressed }) => [styles.callButton, pressed && styles.pressed]}
@@ -845,16 +829,16 @@ export default function ChatScreen() {
             accessibilityLabel="Gọi video"
           >
             <MaterialIcons name="videocam" size={21} color="#2563EB" />
-          </Pressable>
-          <Pressable
-            onPress={() => void beginScreenShare()}
-            disabled={isStartingScreenShare}
-            style={({ pressed }) => [styles.callButton, (pressed || isStartingScreenShare) && styles.pressed]}
+          </Pressable> : null}
+          {!isGroup ? <Pressable
+            onPress={() => void beginCall("video", true)}
+            disabled={isStartingCall}
+            style={({ pressed }) => [styles.callButton, (pressed || isStartingCall) && styles.pressed]}
             accessibilityRole="button"
-            accessibilityLabel="Chia sẻ màn hình độc lập"
+            accessibilityLabel="Chia sẻ màn hình P2P với người liên hệ"
           >
-            {isStartingScreenShare ? <ActivityIndicator color="#2563EB" size="small" /> : <MaterialIcons name="screen-share" size={20} color="#2563EB" />}
-          </Pressable>
+            {isStartingCall ? <ActivityIndicator color="#2563EB" size="small" /> : <MaterialIcons name="screen-share" size={20} color="#2563EB" />}
+          </Pressable> : null}
           <Pressable
             onPress={openConversationMenu}
             style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
@@ -885,7 +869,6 @@ export default function ChatScreen() {
           renderItem={({ item }) => {
             if (item.entryType === "call") return <CallHistoryItem call={item} />;
             const mine = item.senderId === user.id;
-            const inviteSessionId = item.contentType === "screen_share_invite" ? parseScreenShareInviteBody(item.body) : null;
             const groupedReactions = item.reactions.reduce<
               Record<string, { count: number; mine: boolean }>
             >((accumulator, reaction) => {
@@ -971,18 +954,14 @@ export default function ChatScreen() {
                             onOpen={() => openMediaPreview([item], item.id)}
                           />
                         ) : null}
-                        {inviteSessionId ? (
+                        {item.contentType === "screen_share_invite" ? (
                           <View style={[styles.screenShareInvite, mine && styles.mineScreenShareInvite]}>
                             <View style={[styles.screenShareInviteIcon, mine && styles.mineScreenShareInviteIcon]}>
                               <MaterialIcons name="screen-share" size={22} color={mine ? "#DBEAFE" : "#1D4ED8"} />
                             </View>
                             <View style={styles.screenShareInviteContent}>
-                              <Text style={[styles.screenShareInviteTitle, mine && styles.mineScreenShareInviteTitle]}>Đang chia sẻ màn hình</Text>
-                              <Text style={[styles.screenShareInviteDetail, mine && styles.mineScreenShareInviteDetail]}>Chạm để xem trực tiếp và bật micro nếu cần hỏi.</Text>
-                              <Pressable onPress={() => viewScreenShare(inviteSessionId)} style={({ pressed }) => [styles.screenShareJoin, mine && styles.mineScreenShareJoin, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Xem màn hình đang được chia sẻ">
-                                <MaterialIcons name="visibility" size={16} color={mine ? "#1D4ED8" : "#FFFFFF"} />
-                                <Text style={[styles.screenShareJoinText, mine && styles.mineScreenShareJoinText]}>Xem màn hình</Text>
-                              </Pressable>
+                              <Text style={[styles.screenShareInviteTitle, mine && styles.mineScreenShareInviteTitle]}>Chia sẻ màn hình trước đây</Text>
+                              <Text style={[styles.screenShareInviteDetail, mine && styles.mineScreenShareInviteDetail]}>Phiên chia sẻ cũ không còn mở được. Hãy gọi video 1:1 và chọn Chia sẻ để bắt đầu phiên P2P mới.</Text>
                             </View>
                           </View>
                         ) : null}

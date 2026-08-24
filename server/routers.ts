@@ -8,14 +8,13 @@ import { systemRouter } from "./_core/systemRouter";
 import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
 import { runMediaCleanup } from "./media-cleanup";
-import { createLiveKitCallToken, createLiveKitScreenShareRoom, createLiveKitScreenShareToken } from "./call-token";
 import { dispatchIncomingCallPushNotification, dispatchNewMessagePushNotifications } from "./push";
 import { createMediaAccessUrl } from "./media-access";
 import { emitConversationBackgroundUpdated } from "./_core/realtime";
 import { createOpaqueStorageKey, storageCreateUploadUrl, storageDelete, storagePut } from "./storage";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { ENV } from "./_core/env";
-import { createScreenShareInviteBody } from "../lib/screen-share-invite";
+import { getP2pIceConfiguration } from "./p2p-turn";
 
 const credentialsSchema = z.object({
   username: z.string().trim().min(3).max(24),
@@ -306,38 +305,6 @@ export const appRouter = router({
           return appError(error, "Không thể bắt đầu cuộc gọi.");
         }
       }),
-    startGroup: protectedProcedure
-      .input(z.object({ conversationId: z.number().int().positive(), kind: z.enum(["audio", "video"]) }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          const call = await db.createGroupCallSession(input.conversationId, ctx.user.id, input.kind);
-          const session = await createLiveKitCallToken({ room: call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" });
-          void dispatchIncomingCallPushNotification({ conversationId: input.conversationId, senderId: ctx.user.id, callId: call.id, kind: input.kind, isGroup: true });
-          return { call, session };
-        } catch (error) {
-          return appError(error, "Không thể bắt đầu cuộc gọi nhóm.");
-        }
-      }),
-    joinGroup: protectedProcedure
-      .input(z.object({ callId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          const joined = await db.getJoinableGroupCallSession(input.callId, ctx.user.id);
-          const session = await createLiveKitCallToken({ room: joined.call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" });
-          return { ...joined, session };
-        } catch (error) {
-          return appError(error, "Không thể tham gia cuộc gọi nhóm.");
-        }
-      }),
-    leaveGroup: protectedProcedure
-      .input(z.object({ callId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          return await db.leaveGroupCallSession(input.callId, ctx.user.id);
-        } catch (error) {
-          return appError(error, "Không thể rời cuộc gọi nhóm.");
-        }
-      }),
     listByConversation: protectedProcedure
       .input(z.object({ conversationId: z.number().int().positive(), limit: z.number().int().min(1).max(100).default(60) }))
       .query(async ({ ctx, input }) => {
@@ -359,35 +326,9 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         try {
           const call = await db.answerCallSession(input.callId, ctx.user.id);
-          const session = call.provider === "livekit"
-            ? await createLiveKitCallToken({ room: call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" })
-            : null;
-          return { call, session };
+          return { call };
         } catch (error) {
           return appError(error, "Không thể nhận cuộc gọi.");
-        }
-      }),
-    join: protectedProcedure
-      .input(z.object({ callId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          const call = await db.getJoinableCallSession(input.callId, ctx.user.id);
-          return createLiveKitCallToken({ room: call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" });
-        } catch (error) {
-          return appError(error, "Không thể kết nối cuộc gọi.");
-        }
-      }),
-    fallbackToLiveKit: protectedProcedure
-      .input(z.object({ callId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          const call = await db.activateLiveKitFallback(input.callId, ctx.user.id);
-          return {
-            call,
-            session: await createLiveKitCallToken({ room: call.room, identity: `user-${ctx.user.id}`, displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT" }),
-          };
-        } catch (error) {
-          return appError(error, "Không thể chuyển sang đường truyền LiveKit.");
         }
       }),
     p2pIceConfig: protectedProcedure
@@ -395,21 +336,35 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         try {
           await db.authorizeP2pIceConfig(input.callId, ctx.user.id);
-          const iceServers: Array<{ urls: string[]; username?: string; credential?: string }> = [
-            { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
-          ];
-          const turnUrls = ENV.p2pTurnUrls.split(",").map((url) => url.trim()).filter((url) => /^(turn|turns):/i.test(url));
-          if (turnUrls.length && ENV.p2pTurnUsername && ENV.p2pTurnCredential) {
-            iceServers.push({ urls: turnUrls, username: ENV.p2pTurnUsername, credential: ENV.p2pTurnCredential });
-          }
-          return { iceServers, hasTurn: turnUrls.length > 0 && Boolean(ENV.p2pTurnUsername && ENV.p2pTurnCredential) };
+          return getP2pIceConfiguration({
+            turnUrls: ENV.p2pTurnUrls,
+            turnSharedSecret: ENV.p2pTurnSharedSecret,
+            turnUsername: ENV.p2pTurnUsername,
+            turnCredential: ENV.p2pTurnCredential,
+          }, { userId: ctx.user.id, callId: input.callId });
         } catch (error) {
           return appError(error, "Không thể lấy cấu hình kết nối P2P.");
         }
       }),
+    getTurnCredentials: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .query(async ({ ctx, input }) => {
+        try {
+          await db.authorizeP2pIceConfig(input.callId, ctx.user.id);
+          const configuration = getP2pIceConfiguration({
+            turnUrls: ENV.p2pTurnUrls,
+            turnSharedSecret: ENV.p2pTurnSharedSecret,
+            turnUsername: ENV.p2pTurnUsername,
+            turnCredential: ENV.p2pTurnCredential,
+          }, { userId: ctx.user.id, callId: input.callId });
+          return { hasTurn: configuration.hasTurn, turn: configuration.turn };
+        } catch (error) {
+          return appError(error, "Không thể lấy thông tin TURN cho cuộc gọi này.");
+        }
+      }),
     p2pSignal: router({
       send: protectedProcedure
-        .input(z.object({ callId: z.string().uuid(), type: z.enum(["offer", "answer", "ice"]), payload: z.string().min(2).max(100_000) }))
+        .input(z.object({ callId: z.string().uuid(), type: z.enum(["offer", "answer", "ice", "screen-start", "screen-stop"]), payload: z.string().min(2).max(100_000) }))
         .mutation(async ({ ctx, input }) => {
           try {
             return await db.createP2pSignal({ ...input, senderId: ctx.user.id });
@@ -445,78 +400,6 @@ export const appRouter = router({
           return { success: true };
         } catch (error) {
           return appError(error, "Không thể kết thúc cuộc gọi.");
-        }
-      }),
-  }),
-  screenShares: router({
-    create: protectedProcedure
-      .input(z.object({ conversationId: z.number().int().positive() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          const session = await db.createScreenShareSession(input.conversationId, ctx.user.id);
-          await createLiveKitScreenShareRoom(session.room);
-          const connection = await createLiveKitScreenShareToken({
-            room: session.room,
-            identity: `user-${ctx.user.id}`,
-            displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT",
-            role: "host",
-          });
-          return { session: await withSecureAvatarUrls(ctx, session), connection };
-        } catch (error) {
-          return appError(error, "Không thể chuẩn bị chia sẻ màn hình.");
-        }
-      }),
-    activate: protectedProcedure
-      .input(z.object({ sessionId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          const activation = await db.activateScreenShareSession(input.sessionId, ctx.user.id);
-          const { session } = activation;
-          const message = activation.activatedNow
-            ? await db.createMessage({
-              conversationId: session.conversationId,
-              senderId: ctx.user.id,
-              contentType: "screen_share_invite",
-              body: createScreenShareInviteBody(session.id),
-            })
-            : null;
-          if (message) {
-            void dispatchNewMessagePushNotifications({ conversationId: session.conversationId, senderId: ctx.user.id });
-          }
-          return {
-            session: await withSecureAvatarUrls(ctx, session),
-            message: message ? publicMessage(message, null) : null,
-          };
-        } catch (error) {
-          return appError(error, "Không thể bắt đầu chia sẻ màn hình.");
-        }
-      }),
-    get: protectedProcedure
-      .input(z.object({ sessionId: z.string().uuid() }))
-      .query(async ({ ctx, input }) => withSecureAvatarUrls(ctx, await db.getScreenShareSession(input.sessionId, ctx.user.id))),
-    join: protectedProcedure
-      .input(z.object({ sessionId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          const session = await db.joinScreenShareSession(input.sessionId, ctx.user.id);
-          const connection = await createLiveKitScreenShareToken({
-            room: session.room,
-            identity: `user-${ctx.user.id}`,
-            displayName: ctx.user.name ?? ctx.user.username ?? "Người dùng ChatPHT",
-            role: "viewer",
-          });
-          return { session: await withSecureAvatarUrls(ctx, session), connection };
-        } catch (error) {
-          return appError(error, "Không thể tham gia chia sẻ màn hình.");
-        }
-      }),
-    end: protectedProcedure
-      .input(z.object({ sessionId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          return await withSecureAvatarUrls(ctx, await db.finishScreenShareSession(input.sessionId, ctx.user.id));
-        } catch (error) {
-          return appError(error, "Không thể kết thúc chia sẻ màn hình.");
         }
       }),
   }),

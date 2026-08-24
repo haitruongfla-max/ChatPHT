@@ -36,8 +36,7 @@ export function IncomingCallWatcher() {
         callId: call?.id ?? "",
         kind: call?.kind,
         direction: "incoming",
-        group: call?.isGroup ? "1" : "0",
-        name: call?.peer?.displayName ?? call?.group?.title ?? "Người dùng ChatPHT",
+        name: call?.peer?.displayName ?? "Người dùng ChatPHT",
         avatar: call?.peer?.avatarUrl ?? "",
       },
     });

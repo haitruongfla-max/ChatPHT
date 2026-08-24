@@ -4,16 +4,11 @@ import ExpoPip from "expo-pip";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Animated, Image, Platform, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
-import { LiveKitRoom, useSpeakingParticipants, useTracks, VideoTrack } from "@livekit/react-native";
-import { Room, Track } from "livekit-client";
-import { RTCView, type MediaStream } from "@livekit/react-native-webrtc";
+import { RTCView, type MediaStream } from "react-native-webrtc";
 
 import { activeCall } from "@/lib/active-call";
-import { getCallConnectionStatus, type CallConnectionStatus } from "@/lib/call-connection-status";
-import { getCallNetworkQuality, type LiveKitConnectionQuality } from "@/lib/call-network-quality";
+import { getCallConnectionStatus } from "@/lib/call-connection-status";
 import { createCallTonePlayer, stopAllCallAlerts, stopCallTone } from "@/lib/call-sounds";
-import { P2P_FALLBACK_TIMEOUT_MS, selectInitialCallTransport, shouldFallbackToLiveKit, type CallTransport } from "@/lib/call-transport-policy";
-import { LiveKitCall, type LiveKitSession, type VideoQualityMode } from "@/lib/livekit-call";
 import { P2pCall, type P2pConnectionState, type P2pSignal } from "@/lib/p2p-call";
 import { trpc } from "@/lib/trpc";
 
@@ -21,386 +16,195 @@ type CallKind = "audio" | "video";
 type Direction = "incoming" | "outgoing";
 
 function callDuration(seconds: number) {
-  const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
-  return `${minutes}:${(seconds % 60).toString().padStart(2, "0")}`;
+  return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
 }
 
 function CallerAvatar({ name, avatarUrl, style }: { name: string; avatarUrl: string | null; style: StyleProp<ViewStyle> }) {
-  return (
-    <View style={style} accessibilityLabel={`Ảnh đại diện của ${name}`}>
-      <Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text>
-      {avatarUrl ? <Image source={{ uri: avatarUrl }} style={styles.avatarImage} resizeMode="cover" /> : null}
-    </View>
-  );
+  return <View style={style}>{avatarUrl ? <Image source={{ uri: avatarUrl }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{name.slice(0, 1).toUpperCase()}</Text>}</View>;
 }
 
 export default function CallScreen() {
-  const params = useLocalSearchParams<{ callId?: string; kind?: CallKind; direction?: Direction; name?: string; avatar?: string; group?: string }>();
+  const params = useLocalSearchParams<{ callId?: string; kind?: CallKind; direction?: Direction; name?: string; avatar?: string; p2pScreenShare?: string }>();
   const callId = params.callId ?? "";
   const kind = params.kind === "video" ? "video" : "audio";
   const direction = params.direction === "incoming" ? "incoming" : "outgoing";
   const resumed = activeCall.get(callId);
+  const p2p = useRef(resumed?.call ?? new P2pCall()).current;
   const [connected, setConnected] = useState(Boolean(resumed?.connected));
   const [muted, setMuted] = useState(resumed?.muted ?? false);
   const [speaker, setSpeaker] = useState(resumed?.speaker ?? kind === "video");
   const [cameraOn, setCameraOn] = useState(resumed?.cameraOn ?? kind === "video");
   const [isFrontCamera, setIsFrontCamera] = useState(resumed?.isFrontCamera ?? true);
-  const [videoQuality, setVideoQuality] = useState<VideoQualityMode>(resumed?.videoQuality ?? "hd");
+  const [videoQuality, setVideoQuality] = useState<"sd" | "hd">(resumed?.videoQuality ?? "hd");
   const [seconds, setSeconds] = useState(resumed?.seconds ?? 0);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [networkStats, setNetworkStats] = useState<{ pingMs: number | null; connectionQuality: LiveKitConnectionQuality }>({ pingMs: null, connectionQuality: "unknown" });
-  const [controlsVisible, setControlsVisible] = useState(true);
-  const [transport, setTransport] = useState<CallTransport>(params.group === "true" || params.group === "1" || resumed?.isGroup === true ? "livekit" : "p2p");
   const [p2pState, setP2pState] = useState<P2pConnectionState>("idle");
-  const [p2pRemoteStream, setP2pRemoteStream] = useState<MediaStream | null>(null);
-  const [p2pLocalStream, setP2pLocalStream] = useState<MediaStream | null>(null);
-  const call = useRef(resumed?.call ?? new LiveKitCall()).current;
-  const p2p = useRef(new P2pCall()).current;
-  const ringingScale = useRef(new Animated.Value(1)).current;
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteScreenStream, setRemoteScreenStream] = useState<MediaStream | null>(null);
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const ringbackTone = useRef<Awaited<ReturnType<typeof createCallTonePlayer>> | null>(null);
   const started = useRef(Boolean(resumed?.connected));
+  const autoScreenShareRequested = useRef(false);
   const finalized = useRef(false);
-  const liveKitTransitioning = useRef(false);
-  const liveKitRetryNotBefore = useRef(0);
-  const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: 900 });
+  const handledSignals = useRef(new Set<number>());
+  const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: 800 });
   const answer = trpc.calls.answer.useMutation();
-  const join = trpc.calls.join.useMutation();
-  const joinGroup = trpc.calls.joinGroup.useMutation();
-  const leaveGroup = trpc.calls.leaveGroup.useMutation();
-  const fallbackToLiveKit = trpc.calls.fallbackToLiveKit.useMutation();
-  const sendP2pSignal = trpc.calls.p2pSignal.send.useMutation();
-  const decline = trpc.calls.decline.useMutation();
   const end = trpc.calls.end.useMutation();
-  const answeredAt = details.data?.answeredAt ? new Date(details.data.answeredAt).getTime() : null;
-  const name = details.data?.peer?.displayName || details.data?.group?.title || params.name?.trim() || "Người dùng ChatPHT";
-  const avatarUrl = details.data?.peer?.avatarUrl ?? (params.avatar?.trim() || null);
-  const isAnswered = details.data?.status === "active";
-  const isGroup = params.group === "true" || params.group === "1" || resumed?.isGroup === true || details.data?.isGroup === true;
+  const decline = trpc.calls.decline.useMutation();
+  const sendSignal = trpc.calls.p2pSignal.send.useMutation();
+  const isGroup = details.data?.isGroup === true;
   const isCaller = details.data?.isCaller === true || direction === "outgoing";
-  const p2pAttempting = !isGroup && transport === "p2p" && p2pState !== "idle" && p2pState !== "closed";
-  const p2pSignals = trpc.calls.p2pSignal.drain.useQuery({ callId }, { enabled: Boolean(callId) && p2pAttempting, refetchInterval: p2pAttempting ? 350 : false });
-  const p2pIceConfig = trpc.calls.p2pIceConfig.useQuery(
-    { callId },
-    { enabled: Boolean(callId) && !isGroup && transport === "p2p" && isAnswered },
-  );
-  const handledP2pSignals = useRef(new Set<number>());
-  const isFullVideo = connected && kind === "video";
-  const showCallChrome = !isFullVideo || controlsVisible;
+  const isAnswered = details.data?.status === "active";
+  const p2pActive = p2pState !== "idle" && p2pState !== "closed";
+  const incomingSignals = trpc.calls.p2pSignal.drain.useQuery({ callId }, { enabled: Boolean(callId) && p2pActive, refetchInterval: p2pActive ? 300 : false });
+  const iceConfig = trpc.calls.p2pIceConfig.useQuery({ callId }, { enabled: Boolean(callId) && isAnswered });
+  const name = details.data?.peer?.displayName || params.name?.trim() || "Người dùng ChatPHT";
+  const avatarUrl = details.data?.peer?.avatarUrl ?? (params.avatar?.trim() || null);
+  const answeredAt = details.data?.answeredAt ? new Date(details.data.answeredAt).getTime() : null;
+  const fullVideo = connected && kind === "video";
+  const showChrome = !fullVideo || controlsVisible;
 
   useEffect(() => () => {
-    if (!activeCall.isMinimized(callId)) void call.disconnect();
-    void p2p.disconnect();
+    if (!activeCall.isMinimized(callId)) void p2p.disconnect();
     stopAllCallAlerts();
     stopCallTone(ringbackTone.current);
-  }, [call, callId, p2p]);
+  }, [callId, p2p]);
 
   useEffect(() => {
-    (p2pSignals.data ?? []).forEach((signal) => {
-      if (handledP2pSignals.current.has(signal.id)) return;
-      handledP2pSignals.current.add(signal.id);
-      void p2p.handleSignal({ type: signal.type, payload: signal.payload }).catch(() => undefined);
-    });
-  }, [p2p, p2pSignals.data]);
-
-  useEffect(() => {
-    const shouldPlayRingback = direction === "outgoing" && connected && !isAnswered;
-    if (!shouldPlayRingback) {
-      stopCallTone(ringbackTone.current);
-      ringbackTone.current = null;
-      return;
+    for (const signal of incomingSignals.data ?? []) {
+      if (handledSignals.current.has(signal.id)) continue;
+      handledSignals.current.add(signal.id);
+      void p2p.handleSignal({ type: signal.type, payload: signal.payload }).catch((error) => {
+        setConnectionError(error instanceof Error ? error.message : "Không xử lý được tín hiệu P2P.");
+      });
     }
-    let active = true;
-    void createCallTonePlayer().then((player) => {
-      if (!active || isAnswered) return stopCallTone(player);
-      ringbackTone.current = player;
-      player.play();
-    }).catch(() => undefined);
-    return () => {
-      active = false;
-      stopCallTone(ringbackTone.current);
-      ringbackTone.current = null;
-    };
-  }, [connected, direction, isAnswered]);
+  }, [incomingSignals.data, p2p]);
 
   useEffect(() => {
     const status = details.data?.status;
     if (!status || !["ended", "declined", "missed"].includes(status) || finalized.current) return;
     finalized.current = true;
     activeCall.clear(callId);
-    void call.disconnect().catch(() => undefined);
+    void p2p.disconnect();
     if (router.canGoBack()) router.back();
     else router.replace("/");
-  }, [call, callId, details.data?.status]);
+  }, [callId, details.data?.status, p2p]);
 
   useEffect(() => {
-    const shouldJoinFallbackRoom = !isGroup && connected && isAnswered && transport === "p2p" && details.data?.provider === "livekit";
-    if (!shouldJoinFallbackRoom || liveKitTransitioning.current || Date.now() < liveKitRetryNotBefore.current) return;
-    liveKitTransitioning.current = true;
-    void (async () => {
-      try {
-        setIsConnecting(true);
-        const session = await join.mutateAsync({ callId });
-        await connectLiveKitWithoutDroppingP2p(session);
-      } catch (error) {
-        liveKitRetryNotBefore.current = Date.now() + 5_000;
-        if (p2p.isConnected()) await p2p.restoreAudioSession().catch(() => undefined);
-        setConnectionError(error instanceof Error ? error.message : "Không thể chuyển sang đường truyền LiveKit.");
-      } finally {
-        setIsConnecting(false);
-        liveKitTransitioning.current = false;
-      }
-    })();
-    // The remote participant joins only after the server has marked the shared call as LiveKit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [call, callId, connected, details.data?.provider, isAnswered, isGroup, kind, transport]);
-
-  useEffect(() => {
-    if (connected && isAnswered && answeredAt) {
-      const updateDuration = () => {
-        const next = Math.max(0, Math.floor((Date.now() - answeredAt) / 1000));
-        setSeconds(next);
-        activeCall.update(callId, { seconds: next });
-      };
-      updateDuration();
-      const timer = setInterval(updateDuration, 1000);
-      return () => clearInterval(timer);
-    }
-    if (connected) return;
-    const animation = Animated.loop(Animated.sequence([
-      Animated.timing(ringingScale, { toValue: 1.045, duration: 850, useNativeDriver: true }),
-      Animated.timing(ringingScale, { toValue: 1, duration: 850, useNativeDriver: true }),
-    ]));
-    animation.start();
-    return () => animation.stop();
-  }, [answeredAt, callId, connected, isAnswered, ringingScale]);
-
-  useEffect(() => {
-    if (!connected || transport !== "livekit") {
-      setNetworkStats({ pingMs: null, connectionQuality: "unknown" });
-      return;
-    }
+    const shouldPlay = direction === "outgoing" && connected && !isAnswered;
+    if (!shouldPlay) { stopCallTone(ringbackTone.current); ringbackTone.current = null; return; }
     let active = true;
-    const refreshNetworkStats = () => {
-      try {
-        const stats = call.getNetworkStats();
-        if (isGroup && kind === "video") void call.adaptVideoForNetwork(stats).catch(() => undefined);
-        if (active) setNetworkStats(stats);
-      } catch {
-        // A room can disconnect while the interval is queued; never crash the incoming-call screen.
-        if (active) setNetworkStats({ pingMs: null, connectionQuality: "unknown" });
-      }
+    void createCallTonePlayer().then((player) => {
+      if (!active || isAnswered) return stopCallTone(player);
+      ringbackTone.current = player;
+      player.play();
+    }).catch(() => undefined);
+    return () => { active = false; stopCallTone(ringbackTone.current); ringbackTone.current = null; };
+  }, [connected, direction, isAnswered]);
+
+  useEffect(() => {
+    if (!connected || !isAnswered || !answeredAt) return;
+    const tick = () => {
+      const next = Math.max(0, Math.floor((Date.now() - answeredAt) / 1000));
+      setSeconds(next);
+      activeCall.update(callId, { seconds: next });
     };
-    refreshNetworkStats();
-    const timer = setInterval(refreshNetworkStats, 3000);
-    return () => { active = false; clearInterval(timer); };
-  }, [call, connected, isGroup, kind, transport]);
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [answeredAt, callId, connected, isAnswered]);
 
   useEffect(() => {
     if (Platform.OS !== "android" || kind !== "video" || !connected || !ExpoPip.isAvailable()) return;
-    ExpoPip.setPictureInPictureParams({ width: 16, height: 9, title: "ChatPHT", subtitle: "Cuộc gọi video đang diễn ra", seamlessResizeEnabled: true, autoEnterEnabled: true });
+    ExpoPip.setPictureInPictureParams({ width: 16, height: 9, title: "ChatPHT", subtitle: "Cuộc gọi P2P đang diễn ra", seamlessResizeEnabled: true, autoEnterEnabled: true });
   }, [connected, kind]);
 
   useEffect(() => {
-    if (direction !== "outgoing" || started.current || !callId || activeCall.get(callId)?.connected) return;
+    if (params.p2pScreenShare !== "1" || autoScreenShareRequested.current || !connected || !isAnswered || kind !== "video") return;
+    autoScreenShareRequested.current = true;
+    void toggleScreenShare();
+    // MediaProjection must be requested only after the P2P connection is established.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, isAnswered, kind, params.p2pScreenShare]);
+
+  useEffect(() => {
+    if (direction !== "outgoing" || started.current || !callId) return;
     started.current = true;
     void enterCall(false);
-    // An outgoing screen requests its joining token once only.
+    // The caller rings first. Its offer starts only after the receiver accepts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callId, direction]);
 
+  useEffect(() => {
+    const shouldStart = !isGroup && isAnswered && p2pState === "idle" && !isConnecting && !finalized.current;
+    if (!shouldStart) return;
+    void startP2p(!isCaller).catch((error) => setConnectionError(error instanceof Error ? error.message : "Không thể khởi tạo P2P."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAnswered, isCaller, isConnecting, isGroup, p2pState]);
+
   async function requestPermissions() {
     const microphone = await Camera.requestMicrophonePermissionsAsync();
-    if (!microphone.granted) {
-      Alert.alert("Cần quyền micro", "Hãy cấp quyền micro để gọi thoại.");
-      return false;
-    }
+    if (!microphone.granted) { Alert.alert("Cần quyền micro", "Hãy cấp quyền micro để gọi."); return false; }
     if (kind === "video") {
       const camera = await Camera.requestCameraPermissionsAsync();
-      if (!camera.granted) {
-        Alert.alert("Cần quyền camera", "Hãy cấp quyền camera để gọi video.");
-        return false;
-      }
+      if (!camera.granted) { Alert.alert("Cần quyền camera", "Hãy cấp quyền camera để gọi video."); return false; }
     }
     return true;
   }
 
-  function publishActiveState(next: { muted?: boolean; speaker?: boolean; cameraOn?: boolean; isFrontCamera?: boolean; videoQuality?: VideoQualityMode; seconds?: number } = {}, provider: CallTransport = transport) {
-    activeCall.activate({
-      callId,
-      kind,
-      direction,
-      name,
-      call,
-      connected: true,
-      muted: next.muted ?? muted,
-      speaker: next.speaker ?? speaker,
-      cameraOn: next.cameraOn ?? cameraOn,
-      isFrontCamera: next.isFrontCamera ?? isFrontCamera,
-      videoQuality: next.videoQuality ?? videoQuality,
-      seconds: next.seconds ?? seconds,
-      isGroup,
-      provider,
-    });
-  }
-
-  /**
-   * Keep the direct transport alive until LiveKit has authenticated and
-   * published its mandatory microphone/camera tracks. This prevents the old
-   * black screen caused by disconnecting P2P before a fallback room was usable.
-   */
-  async function connectLiveKitWithoutDroppingP2p(session: LiveKitSession) {
-    await call.connect(session, kind);
-    if (!call.isConnected()) throw new Error("Phòng LiveKit chưa sẵn sàng sau khi kết nối.");
-    await p2p.disconnect({ preserveAudioSession: true });
-    setP2pRemoteStream(null);
-    setP2pLocalStream(null);
-    setTransport("livekit");
-    setConnected(true);
-    setConnectionError(null);
-    publishActiveState({ seconds: 0 }, "livekit");
-  }
-
-  async function switchToLiveKit(): Promise<boolean> {
-    if (isGroup) return call.isConnected();
-    if (transport === "livekit" && call.isConnected()) return true;
-    if (liveKitTransitioning.current) return false;
-    liveKitTransitioning.current = true;
-    try {
-      setIsConnecting(true);
-      const result = await fallbackToLiveKit.mutateAsync({ callId });
-      await connectLiveKitWithoutDroppingP2p(result.session);
-      return true;
-    } catch (error) {
-      liveKitRetryNotBefore.current = Date.now() + 5_000;
-      if (p2p.isConnected()) await p2p.restoreAudioSession().catch(() => undefined);
-      setConnectionError(error instanceof Error ? error.message : "Không thể chuyển sang LiveKit.");
-      return false;
-    } finally {
-      setIsConnecting(false);
-      liveKitTransitioning.current = false;
-    }
+  function publishActiveState(next: Partial<{ muted: boolean; speaker: boolean; cameraOn: boolean; isFrontCamera: boolean; videoQuality: "sd" | "hd"; seconds: number }> = {}) {
+    activeCall.activate({ callId, kind, direction, name, call: p2p, connected: true, muted: next.muted ?? muted, speaker: next.speaker ?? speaker, cameraOn: next.cameraOn ?? cameraOn, isFrontCamera: next.isFrontCamera ?? isFrontCamera, videoQuality: next.videoQuality ?? videoQuality, seconds: next.seconds ?? seconds, isGroup: false, provider: "p2p" });
   }
 
   async function startP2p(isAnswer: boolean) {
-    const policy = selectInitialCallTransport({ isGroup: false, participantCount: 2, p2pSupported: Platform.OS !== "web" });
-    if (policy.transport !== "p2p") return switchToLiveKit();
-    setTransport("p2p");
     setP2pState("connecting");
-    const iceConfig = p2pIceConfig.data ?? (await p2pIceConfig.refetch()).data;
+    const result = iceConfig.data ?? (await iceConfig.refetch()).data;
     await p2p.start({
       isCaller: !isAnswer,
       kind,
-      iceServers: iceConfig?.iceServers,
-      onSignal: async (signal: P2pSignal) => { await sendP2pSignal.mutateAsync({ callId, ...signal }); },
+      iceServers: result?.iceServers,
+      onSignal: async (signal: P2pSignal) => { await sendSignal.mutateAsync({ callId, ...signal }); },
       onState: (state) => {
         setP2pState(state);
-        if (state === "connected") {
-          setConnected(true);
-          setConnectionError(null);
-        } else if (state === "failed") {
-          void switchToLiveKit();
-        }
+        if (state === "connected") { setConnected(true); setConnectionError(null); publishActiveState({ seconds: 0 }); }
+        if (state === "failed") setConnectionError("Không thiết lập được P2P trực tiếp. Khi cấu hình TURN có xác thực, hãy thử lại cuộc gọi.");
       },
-      onRemoteStream: setP2pRemoteStream,
+      onRemoteStream: setRemoteStream,
+      onRemoteScreenStream: setRemoteScreenStream,
     });
-    setP2pLocalStream(p2p.getLocalStream());
+    setLocalStream(p2p.getLocalStream());
   }
-
-  useEffect(() => {
-    if (!p2pAttempting || p2pState === "connected") return;
-    const startedAt = Date.now();
-    const timer = setTimeout(() => {
-      if (shouldFallbackToLiveKit({ elapsedMs: Date.now() - startedAt, p2pConnected: p2p.isConnected() })) void switchToLiveKit();
-    }, P2P_FALLBACK_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p2pAttempting, p2pState]);
-
-  useEffect(() => {
-    const shouldStartCallerP2p =
-      !isGroup &&
-      isCaller &&
-      details.data?.provider === "p2p" &&
-      details.data.status === "active" &&
-      p2pState === "idle" &&
-      !isConnecting &&
-      !finalized.current;
-    if (!shouldStartCallerP2p) return;
-    void startP2p(false).catch((error) => {
-      setConnectionError(error instanceof Error ? error.message : "Không thể thiết lập P2P.");
-      void switchToLiveKit();
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [details.data?.provider, details.data?.status, isCaller, isConnecting, isGroup, p2pState]);
 
   async function enterCall(isAnswer: boolean) {
     if (!callId || isConnecting) return;
+    if (isGroup) { Alert.alert("Đã dừng gọi nhóm", "ChatPHT hiện chỉ hỗ trợ gọi P2P 1:1."); return; }
     setConnectionError(null);
     if (!(await requestPermissions())) return;
-    // The global watcher remains mounted on this screen; stop feedback before waiting for the API response.
     stopAllCallAlerts();
     setIsConnecting(true);
     try {
-      const callProvider = isGroup ? "livekit" : (details.data?.provider ?? "p2p");
-      if (isGroup) {
-        const result = await joinGroup.mutateAsync({ callId });
-        await call.connect(result.session, kind);
-        setTransport("livekit");
-      } else if (isAnswer) {
-        const result = await answer.mutateAsync({ callId });
-        if (callProvider === "p2p") await startP2p(true);
-        else {
-          if (!result.session) throw new Error("Không nhận được phiên LiveKit cho cuộc gọi.");
-          setTransport("livekit");
-          await call.connect(result.session, kind);
-        }
-      } else {
-        if (callProvider === "p2p") {
-          // The caller waits for the recipient to accept before creating an offer.
-          // This makes the five-second fallback window measure connection setup only,
-          // never the user-facing ringing period.
-          setConnected(true);
-        }
-        else {
-          const session = await join.mutateAsync({ callId });
-          setTransport("livekit");
-          await call.connect(session, kind);
-        }
-      }
-      setConnectionError(null);
-      if (callProvider === "livekit") {
-        setConnected(true);
-        publishActiveState({ seconds: 0 });
-      }
+      if (isAnswer) await answer.mutateAsync({ callId });
+      else setConnected(true);
     } catch (error) {
-      if (isAnswer && !isGroup) void end.mutateAsync({ callId }).catch(() => undefined);
-      await call.disconnect().catch(() => undefined);
-      await p2p.disconnect().catch(() => undefined);
       const message = error instanceof Error ? error.message : "Hãy thử lại khi mạng ổn định hơn.";
       setConnectionError(message);
       Alert.alert("Chưa thể kết nối", message);
-    } finally {
-      setIsConnecting(false);
-    }
+    } finally { setIsConnecting(false); }
   }
 
   async function finish(status: "ended" | "declined") {
     finalized.current = true;
     stopAllCallAlerts();
     stopCallTone(ringbackTone.current);
-    ringbackTone.current = null;
     try {
-      if (isGroup) {
-        if (isCaller && status === "ended") await end.mutateAsync({ callId });
-        else await leaveGroup.mutateAsync({ callId });
-      } else if (status === "declined") await decline.mutateAsync({ callId });
+      if (status === "declined") await decline.mutateAsync({ callId });
       else await end.mutateAsync({ callId });
-    } catch {
-      // The local WebRTC connection must always be released even if the status request times out.
-    } finally {
+    } catch { /* release local media even if server is unavailable */ }
+    finally {
       activeCall.clear(callId);
-      await call.disconnect().catch(() => undefined);
       await p2p.disconnect().catch(() => undefined);
       if (router.canGoBack()) router.back();
       else router.replace("/");
@@ -408,264 +212,48 @@ export default function CallScreen() {
   }
 
   function minimize() {
-    if (!connected) {
-      void finish("ended");
-      return;
-    }
+    if (!connected) { void finish("ended"); return; }
     if (Platform.OS === "android" && kind === "video" && ExpoPip.isAvailable()) {
-      try {
-        ExpoPip.enterPipMode({ width: 16, height: 9, title: "ChatPHT", subtitle: "Cuộc gọi video đang diễn ra", seamlessResizeEnabled: true });
-        return;
-      } catch {
-        // Older Android devices or OEM builds can reject PiP; keep the existing in-app overlay as a safe fallback.
-      }
+      try { ExpoPip.enterPipMode({ width: 16, height: 9, title: "ChatPHT", subtitle: "Cuộc gọi P2P đang diễn ra", seamlessResizeEnabled: true }); return; } catch { /* in-app overlay remains available */ }
     }
     publishActiveState();
     activeCall.minimize(callId);
     router.back();
   }
 
-  async function toggleMicrophone() {
-    const next = !muted;
+  async function toggleMicrophone() { const next = !muted; try { await p2p.setMicrophoneEnabled(!next); setMuted(next); activeCall.update(callId, { muted: next }); } catch { Alert.alert("Chưa thể đổi micro", "Hãy kiểm tra quyền micro rồi thử lại."); } }
+  async function toggleSpeaker() { const next = !speaker; try { await p2p.setSpeakerEnabled(next); setSpeaker(next); activeCall.update(callId, { speaker: next }); } catch { Alert.alert("Chưa thể đổi loa", "Vui lòng thử lại sau giây lát."); } }
+  async function toggleCamera() { const next = !cameraOn; try { await p2p.setCameraEnabled(next); setCameraOn(next); activeCall.update(callId, { cameraOn: next }); } catch { Alert.alert("Chưa thể đổi camera", "Hãy kiểm tra quyền camera rồi thử lại."); } }
+  async function switchCamera() { try { await p2p.switchCamera(); setIsFrontCamera((current) => !current); activeCall.update(callId, { isFrontCamera: !isFrontCamera }); } catch (error) { Alert.alert("Chưa thể đổi camera", error instanceof Error ? error.message : "Vui lòng thử lại."); } }
+  async function toggleVideoQuality() { const next = videoQuality === "hd" ? "sd" : "hd"; try { await p2p.setVideoQuality(next); setVideoQuality(next); activeCall.update(callId, { videoQuality: next }); } catch { Alert.alert("Chưa thể đổi chất lượng", "Vui lòng thử lại."); } }
+  async function toggleScreenShare() {
     try {
-      if (transport === "p2p") await p2p.setMicrophoneEnabled(!next);
-      else await call.setMicrophoneEnabled(!next);
-      setMuted(next);
-      activeCall.update(callId, { muted: next });
+      if (p2p.hasScreenShare()) { await p2p.stopScreenShare(); setLocalScreenStream(null); }
+      else { const stream = await p2p.startScreenShare(); setLocalScreenStream(stream); }
     } catch (error) {
-      Alert.alert("Chưa thể đổi micro", error instanceof Error ? error.message : "Hãy kiểm tra quyền micro rồi thử lại.");
+      Alert.alert("Chưa thể chia sẻ màn hình", error instanceof Error ? error.message : "Hãy chấp nhận hộp thoại ghi màn hình Android rồi thử lại.");
     }
   }
 
-  async function toggleSpeaker() {
-    const next = !speaker;
-    try {
-      if (transport === "p2p") await p2p.setSpeakerEnabled(next);
-      else await call.setSpeakerEnabled(next);
-      setSpeaker(next);
-      activeCall.update(callId, { speaker: next });
-    } catch {
-      Alert.alert("Chưa thể đổi loa", "Vui lòng thử lại sau giây lát.");
-    }
-  }
-
-  async function toggleCamera() {
-    const next = !cameraOn;
-    try {
-      if (transport === "p2p") await p2p.setCameraEnabled(next);
-      else await call.setCameraEnabled(next);
-      setCameraOn(next);
-      activeCall.update(callId, { cameraOn: next });
-    } catch (error) {
-      Alert.alert("Chưa thể đổi trạng thái camera", error instanceof Error ? error.message : "Hãy kiểm tra quyền camera rồi thử lại.");
-    }
-  }
-
-  async function switchCamera() {
-    try {
-      const nextIsFrontCamera = transport === "p2p" ? !isFrontCamera : await call.switchCamera();
-      if (transport === "p2p") await p2p.switchCamera();
-      setIsFrontCamera(nextIsFrontCamera);
-      activeCall.update(callId, { isFrontCamera: nextIsFrontCamera });
-    } catch (error) {
-      Alert.alert("Chưa thể đổi camera", error instanceof Error ? error.message : "Vui lòng thử lại sau giây lát.");
-    }
-  }
-
-  async function toggleVideoQuality() {
-    const next: VideoQualityMode = videoQuality === "hd" ? "sd" : "hd";
-    try {
-      if (transport === "p2p") await p2p.setVideoQuality(next);
-      else await call.setVideoQuality(next);
-      setVideoQuality(next);
-      activeCall.update(callId, { videoQuality: next });
-    } catch (error) {
-      Alert.alert("Chưa thể đổi chất lượng", error instanceof Error ? error.message : "Vui lòng thử lại sau giây lát.");
-    }
-  }
-
-  const connectionStatus = getCallConnectionStatus({
-    kind,
-    direction,
-    detailsLoading: details.isLoading,
-    isConnecting,
-    connected,
-    isAnswered,
-    error: connectionError,
-  });
+  const connectionStatus = getCallConnectionStatus({ kind, direction, detailsLoading: details.isLoading, isConnecting, connected, isAnswered, error: connectionError });
   const subtitle = connected && isAnswered ? callDuration(seconds) : connectionStatus.title;
-  const networkQuality = getCallNetworkQuality(networkStats);
+  if (details.isLoading && !connected) return <SafeAreaView style={styles.safe}><StatusBar barStyle="dark-content" /><View style={styles.center}><ActivityIndicator color="#2563EB" /><Text style={styles.statusText}>Đang chuẩn bị P2P…</Text></View></SafeAreaView>;
+  if (isGroup) return <SafeAreaView style={styles.safe}><View style={styles.center}><MaterialIcons name="groups" size={42} color="#64748B" /><Text style={styles.groupTitle}>Gọi nhóm đã được dừng</Text><Text style={styles.groupBody}>ChatPHT hiện chỉ dùng gọi và chia sẻ màn hình P2P cho một người với một người.</Text><Pressable style={styles.primaryButton} onPress={() => router.back()}><Text style={styles.primaryButtonText}>Quay lại</Text></Pressable></View></SafeAreaView>;
 
-  if (details.isLoading && !connected) {
-    return <SafeAreaView style={styles.safe}><StatusBar barStyle="dark-content" /><View style={styles.center}><ConnectionStatus status={connectionStatus} /></View></SafeAreaView>;
-  }
+  if (!connected && direction === "incoming") return <SafeAreaView style={[styles.safe, styles.incomingSafe]}><StatusBar barStyle="light-content" backgroundColor="#0D2145" /><View style={styles.incoming}><Text style={styles.secureLabel}>P2P · BẢO MẬT</Text><Animated.View style={styles.avatar}><CallerAvatar name={name} avatarUrl={avatarUrl} style={styles.avatar} /></Animated.View><Text style={styles.name}>{name}</Text>{isConnecting || connectionError ? <Text style={styles.errorText}>{connectionStatus.title}</Text> : <Text style={styles.incomingSub}>{kind === "video" ? "Cuộc gọi video đến" : "Cuộc gọi thoại đến"}</Text>}<View style={styles.incomingActions}><RoundAction label="Từ chối" icon="call-end" color="#E8505B" onPress={() => void finish("declined")} /><RoundAction label={isConnecting ? "Đang kết nối" : "Nhận"} icon={kind === "video" ? "videocam" : "phone"} color="#20A86B" disabled={isConnecting} onPress={() => void enterCall(true)} /></View></View></SafeAreaView>;
 
-  if (!connected && direction === "incoming") {
-    return (
-      <SafeAreaView style={[styles.safe, styles.incomingSafe]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0D2145" />
-        <View style={styles.incoming}>
-          <View style={styles.incomingGlowOne} /><View style={styles.incomingGlowTwo} />
-          <View style={[styles.brandPill, styles.incomingBrandPill]}><MaterialIcons name="lock" size={14} color="#D7E8FF" /><Text style={styles.incomingBrandPillText}>{isGroup ? "NHÓM · LIVEKIT" : "KẾT NỐI RIÊNG TƯ"}</Text></View>
-          <Text style={styles.eyebrow}>{isGroup ? (kind === "video" ? "CUỘC GỌI VIDEO NHÓM" : "CUỘC GỌI THOẠI NHÓM") : (kind === "video" ? "CUỘC GỌI VIDEO ĐẾN" : "CUỘC GỌI THOẠI ĐẾN")}</Text>
-          <Animated.View style={[styles.avatar, { transform: [{ scale: ringingScale }] }]}><CallerAvatar name={name} avatarUrl={avatarUrl} style={styles.avatar} /></Animated.View>
-          <Text style={[styles.name, styles.incomingName]}>{name}</Text>{isConnecting || connectionError ? <ConnectionStatus status={connectionStatus} /> : <Text style={[styles.mutedText, styles.incomingSubtext]}>{subtitle}</Text>}
-          <View style={styles.incomingActions}><RoundAction label="Từ chối" icon="call-end" color="#E8505B" inverse onPress={() => void finish("declined")} /><RoundAction label={isConnecting ? "Đang kết nối" : "Nhận"} icon={kind === "video" ? "videocam" : "phone"} color="#20A86B" inverse disabled={isConnecting} onPress={() => void enterCall(true)} /></View>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={[styles.safe, isFullVideo && styles.videoSafe]}>
-      <StatusBar barStyle={isFullVideo ? "light-content" : "dark-content"} />
-      <View style={[styles.container, isFullVideo && styles.videoContainer]}>
-        {isFullVideo ? transport === "livekit" ? <LiveKitRoom room={call.getRoom() as unknown as Room} serverUrl={undefined} token={undefined} connect={false}><VideoStage room={call.getRoom() as unknown as Room} isGroup={isGroup} /></LiveKitRoom> : <P2pVideoStage localStream={p2pLocalStream} remoteStream={p2pRemoteStream} /> : null}
-        {isFullVideo ? <Pressable style={styles.videoTapArea} onPress={() => setControlsVisible((visible) => !visible)} accessibilityRole="button" accessibilityLabel="Ẩn hoặc hiện điều khiển cuộc gọi" /> : null}
-        {showCallChrome ? <View style={[styles.top, isFullVideo && styles.videoTop]}>
-          <Pressable onPress={minimize} style={({ pressed }) => [styles.dismiss, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={connected && kind === "video" && Platform.OS === "android" ? "Thu nhỏ thành cửa sổ PiP" : connected ? "Thu nhỏ cuộc gọi" : "Hủy cuộc gọi"}><MaterialIcons name={connected ? "keyboard-arrow-down" : "close"} size={28} color={isFullVideo ? "#FFFFFF" : "#183053"} /></Pressable>
-          <View style={[styles.secure, isFullVideo && styles.videoSecure]}><MaterialIcons name="lock" size={13} color={isFullVideo ? "#D8E7FF" : "#2563EB"} /><Text style={[styles.secureText, isFullVideo && styles.videoSecureText]}>{isGroup ? "Nhóm · LiveKit" : transport === "p2p" ? "P2P · bảo mật" : "LiveKit · bảo mật"}</Text></View><View style={styles.dismissPlaceholder} />
-        </View> : null}
-        {showCallChrome ? <View style={[styles.identity, isFullVideo && styles.videoIdentity]}><CallerAvatar name={name} avatarUrl={avatarUrl} style={[styles.avatar, styles.callAvatar, isFullVideo && styles.videoAvatar]} /><Text style={[styles.name, isFullVideo && styles.videoText]}>{name}</Text>{connected ? <><Text style={[styles.mutedText, isFullVideo && styles.videoSubtext]}>{subtitle}</Text><Text style={[styles.quality, isFullVideo && styles.videoQuality]}>{isGroup ? "Phòng nhóm LiveKit tối đa 8 người" : transport === "p2p" ? `P2P trực tiếp · ${videoQuality.toUpperCase()}` : "LiveKit · kết nối dự phòng"}</Text>{transport === "livekit" ? <NetworkQualityBadge quality={networkQuality} inverse={isFullVideo} /> : null}</> : <ConnectionStatus status={connectionStatus} />}</View> : null}
-        {showCallChrome ? <View style={[styles.controls, isFullVideo && styles.videoControls]}>
-          {connected ? <><View style={styles.controlRow}><Control label={muted ? "Bật micro" : "Tắt micro"} icon={muted ? "mic-off" : "mic"} active={muted} inverse={isFullVideo} onPress={() => void toggleMicrophone()} /><Control label={speaker ? "Loa ngoài" : "Tai nghe"} icon={speaker ? "volume-up" : "hearing"} active={speaker} inverse={isFullVideo} onPress={() => void toggleSpeaker()} />{kind === "video" ? <Control label={cameraOn ? "Tắt camera" : "Bật camera"} icon={cameraOn ? "videocam" : "videocam-off"} active={!cameraOn} inverse={isFullVideo} onPress={() => void toggleCamera()} /> : null}</View><View style={styles.secondaryControls}>{kind === "video" && cameraOn ? <><Control label={isFrontCamera ? "Camera trước" : "Camera sau"} icon="flip-camera-android" active={false} inverse={isFullVideo} onPress={() => void switchCamera()} /><Control label={videoQuality === "hd" ? "HD" : "SD"} icon="high-quality" active={videoQuality === "hd"} inverse={isFullVideo} onPress={() => void toggleVideoQuality()} /></> : null}</View><RoundAction label={isGroup && !isCaller ? "Rời nhóm" : "Kết thúc"} icon="call-end" color="#E8505B" inverse={isFullVideo} onPress={() => void finish("ended")} /></> : <View style={styles.pending}><RoundAction label={isGroup ? "Rời nhóm" : "Hủy cuộc gọi"} icon="call-end" color="#E8505B" onPress={() => void finish("ended")} /></View>}
-        </View> : null}
-      </View>
-    </SafeAreaView>
-  );
+  return <SafeAreaView style={[styles.safe, fullVideo && styles.videoSafe]}><StatusBar barStyle={fullVideo ? "light-content" : "dark-content"} /><View style={[styles.container, fullVideo && styles.videoContainer]}>{fullVideo ? <P2pVideoStage localStream={localStream} remoteStream={remoteStream} localScreenStream={localScreenStream} remoteScreenStream={remoteScreenStream} /> : null}{fullVideo ? <Pressable style={styles.videoTap} onPress={() => setControlsVisible((value) => !value)} /> : null}{showChrome ? <><View style={[styles.top, fullVideo && styles.videoTop]}><Pressable onPress={minimize} style={styles.dismiss}><MaterialIcons name={connected ? "keyboard-arrow-down" : "close"} size={28} color={fullVideo ? "#FFFFFF" : "#183053"} /></Pressable><View style={[styles.secure, fullVideo && styles.secureDark]}><MaterialIcons name="lock" size={13} color={fullVideo ? "#D8E7FF" : "#2563EB"} /><Text style={[styles.secureText, fullVideo && styles.secureTextDark]}>P2P · bảo mật</Text></View><View style={styles.dismiss} /></View><View style={[styles.identity, fullVideo && styles.videoIdentity]}><CallerAvatar name={name} avatarUrl={avatarUrl} style={[styles.avatar, styles.callAvatar]} /><Text style={[styles.name, fullVideo && styles.nameLight]}>{name}</Text><Text style={[styles.statusText, fullVideo && styles.statusLight]}>{subtitle}</Text>{connected ? <Text style={[styles.p2pLabel, fullVideo && styles.statusLight]}>P2P trực tiếp · {videoQuality.toUpperCase()}</Text> : <Text style={styles.errorText}>{connectionStatus.description}</Text>}</View><View style={[styles.controls, fullVideo && styles.videoControls]}>{connected ? <><View style={styles.controlRow}><Control label={muted ? "Bật micro" : "Tắt micro"} icon={muted ? "mic-off" : "mic"} active={muted} inverse={fullVideo} onPress={() => void toggleMicrophone()} /><Control label={speaker ? "Loa ngoài" : "Tai nghe"} icon={speaker ? "volume-up" : "hearing"} active={speaker} inverse={fullVideo} onPress={() => void toggleSpeaker()} />{kind === "video" ? <Control label={cameraOn ? "Tắt camera" : "Bật camera"} icon={cameraOn ? "videocam" : "videocam-off"} active={!cameraOn} inverse={fullVideo} onPress={() => void toggleCamera()} /> : null}</View><View style={styles.controlRow}>{kind === "video" && cameraOn ? <><Control label="Đổi camera" icon="flip-camera-android" inverse={fullVideo} onPress={() => void switchCamera()} /><Control label={videoQuality === "hd" ? "HD" : "SD"} icon="high-quality" active={videoQuality === "hd"} inverse={fullVideo} onPress={() => void toggleVideoQuality()} /></> : null}<Control label={localScreenStream ? "Dừng chia sẻ" : "Chia sẻ"} icon={localScreenStream ? "stop-screen-share" : "screen-share"} active={Boolean(localScreenStream)} inverse={fullVideo} onPress={() => void toggleScreenShare()} /></View><RoundAction label="Kết thúc" icon="call-end" color="#E8505B" onPress={() => void finish("ended")} /></> : <View style={styles.pending}><RoundAction label="Hủy cuộc gọi" icon="call-end" color="#E8505B" onPress={() => void finish("ended")} /></View>}</View></> : null}</View></SafeAreaView>;
 }
 
-function P2pVideoStage({ localStream, remoteStream }: { localStream: MediaStream | null; remoteStream: MediaStream | null }) {
-  return (
-    <View style={styles.video}>
-      {remoteStream ? <RTCView streamURL={remoteStream.toURL()} style={styles.videoTrack} objectFit="cover" /> : <View style={styles.videoWaiting}><MaterialIcons name="videocam-off" size={30} color="#D9E6FF" /><Text style={styles.videoWaitingText}>Đang thiết lập hình ảnh P2P…</Text></View>}
-      {localStream ? <View style={styles.localPreview}><RTCView streamURL={localStream.toURL()} style={styles.videoTrack} objectFit="cover" mirror /></View> : <View style={styles.localPreviewPlaceholder}><MaterialIcons name="videocam" size={19} color="#BFDBFE" /><Text style={styles.localPreviewText}>Đang mở camera</Text></View>}
-    </View>
-  );
+function P2pVideoStage({ localStream, remoteStream, localScreenStream, remoteScreenStream }: { localStream: MediaStream | null; remoteStream: MediaStream | null; localScreenStream: MediaStream | null; remoteScreenStream: MediaStream | null }) {
+  const main = remoteScreenStream ?? remoteStream;
+  const corner = localScreenStream ?? localStream;
+  return <View style={styles.video}>{main ? <RTCView streamURL={main.toURL()} style={styles.videoTrack} objectFit={remoteScreenStream ? "contain" : "cover"} /> : <View style={styles.waiting}><MaterialIcons name="videocam-off" size={32} color="#D9E6FF" /><Text style={styles.waitingText}>Đang thiết lập hình ảnh P2P…</Text></View>}{corner ? <View style={styles.localPreview}><RTCView streamURL={corner.toURL()} style={styles.videoTrack} objectFit={localScreenStream ? "contain" : "cover"} /></View> : null}{remoteScreenStream ? <Text style={styles.shareLabel}>Đang xem màn hình được chia sẻ</Text> : null}</View>;
 }
 
-function VideoStage({ room, isGroup }: { room: Room; isGroup: boolean }) {
-  const tracks = useTracks([Track.Source.Camera], { room, onlySubscribed: true });
-  const speakers = useSpeakingParticipants({ room });
-  const speakingIdentities = new Set(speakers.map((participant) => participant.identity));
-  const videoTracks = tracks.filter((item) => item.source === Track.Source.Camera && item.publication?.track).slice(0, 8);
-  const remoteTrack = videoTracks.find((item) => !item.participant.isLocal);
-  const localTrack = videoTracks.find((item) => item.participant.isLocal);
-  if (isGroup) {
-    return <View style={styles.video}><View style={styles.groupVideoGrid}>{videoTracks.length ? videoTracks.map((item) => <View key={`${item.participant.identity}-${item.source}`} style={[styles.groupTile, speakingIdentities.has(item.participant.identity) && styles.groupTileSpeaking]}><VideoTrack trackRef={item} style={styles.videoTrack} mirror={item.participant.isLocal} zOrder={0} /><View style={styles.groupTileLabel}><MaterialIcons name={speakingIdentities.has(item.participant.identity) ? "graphic-eq" : "person"} size={13} color="#F5FAFF" /><Text numberOfLines={1} style={styles.groupTileName}>{item.participant.name || item.participant.identity}</Text></View></View>) : <View style={styles.videoWaiting}><MaterialIcons name="groups" size={32} color="#D9E6FF" /><Text style={styles.videoWaitingText}>Đang chờ thành viên bật camera…</Text></View>}</View><Text style={styles.groupCapacity}>{videoTracks.length}/8 camera đang hiển thị</Text></View>;
-  }
-  return (
-    <View style={styles.video}>
-      {remoteTrack ? <VideoTrack trackRef={remoteTrack} style={styles.videoTrack} mirror={false} zOrder={0} /> : <View style={styles.videoWaiting}><MaterialIcons name="videocam-off" size={30} color="#D9E6FF" /><Text style={styles.videoWaitingText}>Đang chờ hình ảnh từ người bên kia…</Text></View>}
-      {localTrack ? <View style={styles.localPreview}><VideoTrack trackRef={localTrack} style={styles.videoTrack} mirror zOrder={1} /></View> : <View style={styles.localPreviewPlaceholder}><MaterialIcons name="videocam" size={19} color="#BFDBFE" /><Text style={styles.localPreviewText}>Đang mở camera</Text></View>}
-    </View>
-  );
-}
-
-function ConnectionStatus({ status }: { status: CallConnectionStatus }) {
-  const isError = status.phase === "error";
-  return <View style={[styles.connectionStatus, isError && styles.connectionStatusError]} accessibilityLiveRegion="polite" accessibilityLabel={`${status.title}. ${status.description}`}><View style={styles.connectionStatusIcon}>{isError ? <MaterialIcons name="error-outline" size={22} color="#D6404B" /> : <ActivityIndicator size="small" color="#2563EB" />}</View><View style={styles.connectionStatusContent}><Text style={[styles.connectionStatusTitle, isError && styles.connectionStatusTitleError]}>{status.title}</Text><Text style={[styles.connectionStatusDetail, isError && styles.connectionStatusDetailError]}>{status.description}</Text></View></View>;
-}
-
-function NetworkQualityBadge({ quality, inverse }: { quality: ReturnType<typeof getCallNetworkQuality>; inverse: boolean }) {
-  return <View style={[styles.networkBadge, inverse && styles.networkBadgeInverse]} accessibilityLabel={`${quality.label}. ${quality.detail}`}><MaterialIcons name={quality.icon} size={16} color={quality.color} /><Text style={[styles.networkLabel, inverse && styles.networkLabelInverse, { color: inverse ? "#E5F0FF" : quality.color }]}>{quality.label}</Text><Text style={[styles.networkDetail, inverse && styles.networkDetailInverse]}>{quality.detail}</Text></View>;
-}
-
-function Control({ label, icon, active, inverse, disabled = false, onPress }: { label: string; icon: React.ComponentProps<typeof MaterialIcons>["name"]; active: boolean; inverse?: boolean; disabled?: boolean; onPress: () => void }) {
-  return <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.control, disabled && styles.controlDisabled, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }}><View style={[styles.controlIcon, active && styles.controlActive, inverse && styles.inverseControlIcon]}><MaterialIcons name={icon} size={22} color={active ? "#FFFFFF" : inverse ? "#FFFFFF" : "#1D4ED8"} /></View><Text style={[styles.controlLabel, inverse && styles.inverseLabel]}>{label}</Text></Pressable>;
-}
-
-function RoundAction({ label, icon, color, inverse, disabled = false, onPress }: { label: string; icon: React.ComponentProps<typeof MaterialIcons>["name"]; color: string; inverse?: boolean; disabled?: boolean; onPress: () => void }) {
-  return <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.action, disabled && styles.actionDisabled, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }}><View style={[styles.actionIcon, { backgroundColor: color }]}><MaterialIcons name={icon} size={29} color="#FFF" /></View><Text style={[styles.actionLabel, inverse && styles.inverseLabel]}>{label}</Text></Pressable>;
-}
+function Control({ label, icon, active = false, inverse = false, onPress }: { label: string; icon: React.ComponentProps<typeof MaterialIcons>["name"]; active?: boolean; inverse?: boolean; onPress: () => void }) { return <Pressable onPress={onPress} style={({ pressed }) => [styles.control, inverse && styles.controlInverse, active && styles.controlActive, pressed && styles.pressed]}><MaterialIcons name={icon} size={24} color={inverse ? "#FFFFFF" : "#1E4E91"} /><Text style={[styles.controlText, inverse && styles.controlTextInverse]}>{label}</Text></Pressable>; }
+function RoundAction({ label, icon, color, disabled, onPress }: { label: string; icon: React.ComponentProps<typeof MaterialIcons>["name"]; color: string; disabled?: boolean; onPress: () => void }) { return <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.roundWrap, disabled && { opacity: 0.55 }, pressed && styles.pressed]}><View style={[styles.round, { backgroundColor: color }]}><MaterialIcons name={icon} size={30} color="#FFFFFF" /></View><Text style={styles.roundText}>{label}</Text></Pressable>; }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F5F8FF" },
-  incomingSafe: { backgroundColor: "#0D2145" },
-  videoSafe: { backgroundColor: "#0D1B33" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  incoming: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, paddingBottom: 42, overflow: "hidden", backgroundColor: "#0D2145" },
-  incomingGlowOne: { position: "absolute", width: 390, height: 390, borderRadius: 195, top: -145, right: -125, backgroundColor: "rgba(42, 109, 213, 0.3)" },
-  incomingGlowTwo: { position: "absolute", width: 300, height: 300, borderRadius: 150, bottom: -125, left: -100, backgroundColor: "rgba(21, 151, 126, 0.2)" },
-  brandPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18, backgroundColor: "#E7F0FF", marginBottom: 30 },
-  brandPillText: { color: "#2563EB", fontSize: 11, fontWeight: "800", letterSpacing: 0.7 },
-  incomingBrandPill: { backgroundColor: "rgba(214, 231, 255, 0.14)" },
-  incomingBrandPillText: { color: "#D7E8FF", fontSize: 11, fontWeight: "800", letterSpacing: 0.7 },
-  eyebrow: { color: "#2563EB", fontSize: 12, fontWeight: "800", letterSpacing: 1.05, marginBottom: 30 },
-  avatar: { width: 132, height: 132, borderRadius: 66, alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: "#3775E8", shadowColor: "#2563EB", shadowOpacity: 0.24, shadowRadius: 20, elevation: 6 },
-  avatarImage: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
-  callAvatar: { width: 96, height: 96, borderRadius: 48, shadowOpacity: 0.16, shadowRadius: 14 },
-  videoAvatar: { width: 58, height: 58, borderRadius: 29, shadowOpacity: 0 },
-  avatarText: { color: "#FFF", fontSize: 48, fontWeight: "800" },
-  name: { color: "#172554", fontSize: 27, fontWeight: "800", marginTop: 22 },
-  incomingName: { color: "#FFFFFF" },
-  incomingSubtext: { color: "#D7E8FF" },
-  mutedText: { color: "#62718D", fontSize: 15, marginTop: 7, textAlign: "center" },
-  connectionStatus: { alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 10, maxWidth: 310, marginTop: 14, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 16, backgroundColor: "#EAF2FF" },
-  connectionStatusError: { backgroundColor: "#FFF0F1" },
-  connectionStatusIcon: { width: 24, alignItems: "center" },
-  connectionStatusContent: { flex: 1 },
-  connectionStatusTitle: { color: "#1E3A8A", fontSize: 14, fontWeight: "800" },
-  connectionStatusTitleError: { color: "#B4232C" },
-  connectionStatusDetail: { color: "#53647F", fontSize: 12, lineHeight: 17, marginTop: 2 },
-  connectionStatusDetailError: { color: "#9F2D35" },
-  incomingActions: { position: "absolute", bottom: 24, left: 46, right: 46, flexDirection: "row", justifyContent: "space-between" },
-  container: { flex: 1, padding: 20, paddingBottom: 20 },
-  top: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  videoTop: { paddingHorizontal: 16, paddingTop: 10, backgroundColor: "rgba(8, 20, 42, 0.36)" },
-  dismiss: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#FFFFFF", justifyContent: "center", alignItems: "center", shadowColor: "#1E3A8A", shadowOpacity: 0.1, shadowRadius: 8, elevation: 2 },
-  dismissPlaceholder: { width: 44, height: 44 },
-  secure: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 18, backgroundColor: "#E7F0FF" },
-  videoSecure: { backgroundColor: "rgba(15, 38, 77, 0.7)" },
-  secureText: { color: "#2563EB", fontSize: 12, fontWeight: "700" },
-  videoSecureText: { color: "#E5F0FF" },
-  identity: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 36 },
-  quality: { color: "#168759", marginTop: 12, fontSize: 13, fontWeight: "700" },
-  networkBadge: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 10, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 14, backgroundColor: "#F0F7FF" },
-  networkBadgeInverse: { backgroundColor: "rgba(15, 38, 77, 0.72)" },
-  networkLabel: { fontSize: 12, fontWeight: "800" },
-  networkLabelInverse: { color: "#E5F0FF" },
-  networkDetail: { color: "#64748B", fontSize: 11, fontWeight: "600" },
-  networkDetailInverse: { color: "#C9DCFA" },
-  controls: { alignItems: "center", gap: 18, backgroundColor: "#FFFFFF", borderRadius: 28, paddingVertical: 16, shadowColor: "#1E3A8A", shadowOpacity: 0.11, shadowRadius: 16, elevation: 4 },
-  controlRow: { flexDirection: "row", gap: 20 },
-  secondaryControls: { flexDirection: "row", justifyContent: "center", gap: 20, marginTop: -4 },
-  control: { width: 78, alignItems: "center" },
-  controlDisabled: { opacity: 0.55 },
-  controlIcon: { width: 56, height: 56, borderRadius: 28, justifyContent: "center", alignItems: "center", backgroundColor: "#E7F0FF" },
-  inverseControlIcon: { backgroundColor: "rgba(255,255,255,0.2)" },
-  controlActive: { backgroundColor: "#60718F" },
-  controlLabel: { color: "#3C4B68", fontSize: 11, fontWeight: "600", marginTop: 7, textAlign: "center" },
-  inverseLabel: { color: "#F7FAFF" },
-  action: { alignItems: "center" },
-  actionDisabled: { opacity: 0.58 },
-  actionIcon: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
-  actionLabel: { color: "#334155", fontSize: 13, fontWeight: "800", marginTop: 7 },
-  pending: { alignItems: "center" },
-  videoContainer: { padding: 0, overflow: "hidden" },
-  videoTapArea: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
-  video: { ...StyleSheet.absoluteFillObject, overflow: "hidden", backgroundColor: "#0D1B33", alignItems: "center", justifyContent: "center" },
-  videoTrack: { flex: 1, width: "100%" },
-  screenShareTrack: { width: "100%", height: "100%" },
-  screenShareBadge: { position: "absolute", top: 70, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 14, backgroundColor: "rgba(8, 20, 42, 0.78)" },
-  screenShareBadgeText: { color: "#E7F0FF", fontSize: 11, fontWeight: "800" },
-  screenShareStrip: { position: "absolute", top: 112, left: 10, right: 10, flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 6 },
-  screenShareThumbnail: { width: 52, height: 72, borderRadius: 10, overflow: "hidden", backgroundColor: "#1B2E50", borderWidth: 1, borderColor: "rgba(214, 231, 255, 0.72)" },
-  groupVideoGrid: { flex: 1, width: "100%", flexDirection: "row", flexWrap: "wrap", alignContent: "center", justifyContent: "center", gap: 4, padding: 4 },
-  groupTile: { width: "49%", aspectRatio: 0.74, overflow: "hidden", backgroundColor: "#1B2E50", borderWidth: 2, borderColor: "transparent" },
-  groupTileSpeaking: { borderColor: "#4DE0A2", shadowColor: "#4DE0A2", shadowOpacity: 0.55, shadowRadius: 8, elevation: 5 },
-  groupTileLabel: { position: "absolute", left: 7, right: 7, bottom: 7, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 10, backgroundColor: "rgba(8, 20, 42, 0.72)" },
-  groupTileName: { flex: 1, color: "#F5FAFF", fontSize: 11, fontWeight: "700" },
-  groupCapacity: { position: "absolute", top: 64, alignSelf: "center", color: "#DCEBFF", fontSize: 11, fontWeight: "700", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: "rgba(8, 20, 42, 0.68)" },
-  videoWaiting: { alignItems: "center", gap: 12, paddingHorizontal: 32 },
-  videoWaitingText: { color: "#E5EEFF", fontSize: 15, fontWeight: "600", textAlign: "center" },
-  localPreview: { position: "absolute", right: 16, top: 84, width: 112, height: 158, borderRadius: 18, overflow: "hidden", backgroundColor: "#1B2E50", borderWidth: 2, borderColor: "#D6E7FF", zIndex: 1, elevation: 4 },
-  localPreviewPlaceholder: { position: "absolute", right: 16, top: 84, width: 112, height: 64, borderRadius: 16, paddingHorizontal: 8, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15, 38, 77, 0.88)", gap: 4, zIndex: 1 },
-  localPreviewText: { color: "#DCEBFF", fontSize: 10, fontWeight: "700" },
-  videoIdentity: { position: "absolute", zIndex: 2, top: 86, alignSelf: "center", paddingVertical: 10, paddingHorizontal: 18, borderRadius: 22, backgroundColor: "rgba(8, 20, 42, 0.58)" },
-  videoText: { color: "#FFFFFF", fontSize: 20, marginTop: 8 },
-  videoSubtext: { color: "#E2EAFE", fontSize: 14 },
-  videoQuality: { color: "#9DF0C5", marginTop: 7 },
-  videoControls: { position: "absolute", zIndex: 2, left: 0, right: 0, bottom: 0, borderRadius: 0, paddingTop: 15, paddingBottom: 18, backgroundColor: "rgba(8, 20, 42, 0.82)", shadowOpacity: 0 },
-  pressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
+  safe: { flex: 1, backgroundColor: "#F4F8FF" }, videoSafe: { backgroundColor: "#061426" }, container: { flex: 1, alignItems: "center", padding: 20 }, videoContainer: { backgroundColor: "#061426", padding: 0 }, center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 28, gap: 14 }, top: { width: "100%", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, videoTop: { position: "absolute", top: 14, zIndex: 5, paddingHorizontal: 18 }, dismiss: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#FFFFFFCC", alignItems: "center", justifyContent: "center" }, secure: { flexDirection: "row", gap: 6, alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, backgroundColor: "#E7F0FF", borderRadius: 20 }, secureDark: { backgroundColor: "#0F274BCC" }, secureText: { fontSize: 12, fontWeight: "800", color: "#2563EB" }, secureTextDark: { color: "#D8E7FF" }, identity: { alignItems: "center", flex: 1, justifyContent: "center", gap: 10 }, videoIdentity: { position: "absolute", top: 94, alignSelf: "center", zIndex: 4 }, avatar: { width: 104, height: 104, borderRadius: 52, backgroundColor: "#1E4E91", overflow: "hidden", alignItems: "center", justifyContent: "center" }, callAvatar: { width: 88, height: 88, borderRadius: 44 }, avatarImage: { width: "100%", height: "100%" }, avatarText: { color: "#FFFFFF", fontWeight: "800", fontSize: 42 }, name: { fontSize: 26, fontWeight: "800", color: "#183053" }, nameLight: { color: "#FFFFFF" }, statusText: { color: "#64748B", fontSize: 15, textAlign: "center" }, statusLight: { color: "#D7E8FF" }, p2pLabel: { color: "#2563EB", fontSize: 13, fontWeight: "700" }, controls: { width: "100%", gap: 18, paddingBottom: 18 }, videoControls: { position: "absolute", bottom: 22, width: "100%", paddingHorizontal: 20, zIndex: 5 }, controlRow: { flexDirection: "row", justifyContent: "center", gap: 18 }, control: { minWidth: 76, maxWidth: 96, alignItems: "center", gap: 6, paddingVertical: 10 }, controlInverse: { backgroundColor: "#102A4FCC", borderRadius: 20 }, controlActive: { backgroundColor: "#DBEAFE", borderRadius: 20 }, controlText: { color: "#183053", fontSize: 11, fontWeight: "700", textAlign: "center" }, controlTextInverse: { color: "#FFFFFF" }, roundWrap: { alignItems: "center", alignSelf: "center", gap: 6 }, round: { width: 62, height: 62, borderRadius: 31, alignItems: "center", justifyContent: "center" }, roundText: { fontSize: 13, fontWeight: "700", color: "#183053" }, pending: { alignItems: "center" }, incomingSafe: { backgroundColor: "#0D2145" }, incoming: { flex: 1, alignItems: "center", justifyContent: "center", gap: 18, padding: 24 }, secureLabel: { color: "#BFD9FF", fontWeight: "800", letterSpacing: 1 }, incomingSub: { color: "#D7E8FF", fontSize: 16 }, incomingActions: { flexDirection: "row", gap: 72, marginTop: 32 }, errorText: { color: "#B91C1C", fontSize: 14, textAlign: "center" }, groupTitle: { fontSize: 22, fontWeight: "800", color: "#183053" }, groupBody: { fontSize: 15, lineHeight: 22, color: "#64748B", textAlign: "center" }, primaryButton: { marginTop: 10, backgroundColor: "#2563EB", paddingHorizontal: 24, paddingVertical: 13, borderRadius: 14 }, primaryButtonText: { color: "#FFFFFF", fontWeight: "800" }, video: { ...StyleSheet.absoluteFillObject, backgroundColor: "#061426" }, videoTrack: { width: "100%", height: "100%" }, waiting: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 }, waitingText: { color: "#D9E6FF", fontSize: 15 }, localPreview: { position: "absolute", right: 16, top: 76, width: 112, height: 164, borderRadius: 15, overflow: "hidden", borderWidth: 2, borderColor: "#FFFFFFAA", backgroundColor: "#0F274B" }, shareLabel: { position: "absolute", top: 22, alignSelf: "center", color: "#FFFFFF", fontWeight: "700", backgroundColor: "#0F274BCC", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 15 }, videoTap: { ...StyleSheet.absoluteFillObject, zIndex: 2 }, pressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
 });

@@ -17,7 +17,7 @@ export function BackgroundCallPermission() {
         if (!active || saved) return;
         Alert.alert(
           "Cho phép ChatPHT chạy nền để nhận tin nhắn/cuộc gọi khi tắt app?",
-          "ChatPHT sẽ mở trang Cài đặt Pin để bạn tự chọn Không hạn chế. Với Xiaomi/Oppo, ứng dụng sẽ mở thêm trang Tự khởi chạy nếu thiết bị hỗ trợ.",
+          "ChatPHT sẽ mở trang Cài đặt Pin để bạn tự chọn Không hạn chế. Với Xiaomi/MIUI, Oppo/ColorOS, Realme và Vivo/FuntouchOS, ứng dụng sẽ thử mở thêm trang Tự khởi chạy. Samsung và Huawei cần bật thủ công theo hướng dẫn trong Cài đặt > Bảo mật & thông báo.",
           [
             { text: "Để sau", style: "cancel", onPress: () => void AsyncStorage.setItem(BACKGROUND_CALL_PROMPT_KEY, "deferred") },
             {

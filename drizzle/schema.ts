@@ -148,7 +148,9 @@ export const callSessions = mysqlTable(
     recipientId: int("recipientId").notNull(),
     room: varchar("room", { length: 96 }).notNull().unique(),
     kind: mysqlEnum("kind", ["audio", "video"]).notNull(),
-    provider: mysqlEnum("provider", ["livekit", "p2p"]).default("livekit").notNull(),
+    // Keep the legacy value in the database enum so existing call history remains readable.
+    // Every newly created call is P2P and no service-room token is issued at runtime.
+    provider: mysqlEnum("provider", ["livekit", "p2p"]).default("p2p").notNull(),
     isGroup: boolean("isGroup").default(false).notNull(),
     status: mysqlEnum("status", ["ringing", "active", "declined", "ended", "missed"]).default("ringing").notNull(),
     expiresAt: timestamp("expiresAt").notNull(),
@@ -179,8 +181,8 @@ export const callParticipants = mysqlTable(
 );
 
 /**
- * A LiveKit room used only for screen sharing. It stays independent from calls
- * so declining or ending Android MediaProjection cannot terminate a call.
+ * Historical record of the retired multi-viewer screen-share feature.
+ * New Android shares are 1:1 P2P tracks in the video call and do not create rows here.
  */
 export const screenShareSessions = mysqlTable(
   "screen_share_sessions",
@@ -224,7 +226,7 @@ export const p2pSignals = mysqlTable(
     callId: varchar("callId", { length: 40 }).notNull(),
     senderId: int("senderId").notNull(),
     recipientId: int("recipientId").notNull(),
-    type: mysqlEnum("type", ["offer", "answer", "ice"]).notNull(),
+    type: mysqlEnum("type", ["offer", "answer", "ice", "screen-start", "screen-stop"]).notNull(),
     payload: text("payload").notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },

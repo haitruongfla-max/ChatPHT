@@ -1,13 +1,13 @@
-import type { LiveKitCall } from "@/lib/livekit-call";
+import type { P2pCall } from "@/lib/p2p-call";
 
 export type ActiveCallSnapshot = {
   callId: string;
   kind: "audio" | "video";
   direction: "incoming" | "outgoing";
   name: string;
-  isGroup: boolean;
-  provider: "livekit" | "p2p";
-  call: LiveKitCall;
+  isGroup: false;
+  provider: "p2p";
+  call: P2pCall;
   connected: boolean;
   minimized: boolean;
   muted: boolean;
@@ -33,37 +33,22 @@ export const activeCall = {
     if (!snapshot || (callId && snapshot.callId !== callId)) return null;
     return snapshot;
   },
-
   subscribe(listener: Listener) {
     listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-    };
+    return () => { listeners.delete(listener); };
   },
-
   activate(next: Omit<ActiveCallSnapshot, "minimized"> & { minimized?: boolean }) {
     snapshot = { ...next, minimized: next.minimized ?? false };
     emit();
   },
-
   update(callId: string, patch: ActiveCallPatch) {
     if (!snapshot || snapshot.callId !== callId) return;
     snapshot = { ...snapshot, ...patch };
     emit();
   },
-
-  minimize(callId: string) {
-    this.update(callId, { minimized: true });
-  },
-
-  restore(callId: string) {
-    this.update(callId, { minimized: false });
-  },
-
-  isMinimized(callId: string) {
-    return snapshot?.callId === callId && snapshot.minimized;
-  },
-
+  minimize(callId: string) { this.update(callId, { minimized: true }); },
+  restore(callId: string) { this.update(callId, { minimized: false }); },
+  isMinimized(callId: string) { return snapshot?.callId === callId && snapshot.minimized; },
   clear(callId?: string) {
     if (callId && snapshot?.callId !== callId) return;
     snapshot = null;

@@ -256,3 +256,13 @@
 - [x] Cho phép thành viên chat riêng/nhóm tham gia phiên screen share độc lập với vai trò viewer subscribe-only, có mic hỏi và giới hạn an toàn.
 - [x] Gửi tin nhắn hệ thống screen_share_invite có nút Xem màn hình trong đúng hội thoại sau khi host publish thành công.
 - [x] Đổi camera chat sang một nút: chạm chụp, giữ quay; hiển thị thời gian đã quay/đếm ngược/progress vòng và tự dừng ở 05:00.
+- [x] Chuyển gọi thoại và gọi video 1:1 từ LiveKit hybrid sang WebRTC P2P thuần, giữ signaling tRPC/MySQL bảo vệ và không build APK trong đợt này.
+- [x] Loại bỏ gọi nhóm và chia sẻ màn hình nhóm khỏi giao diện, route, signaling và quyền backend; giữ riêng chia sẻ màn hình Android 1:1 bằng MediaProjection qua P2P.
+- [x] Gia cố state machine P2P: chỉ tạo/công bố camera sau khi PeerConnection có signaling ổn định; xử lý thứ tự offer/answer/ICE, reconnect và đóng cuộc gọi idempotent.
+- [x] Khắc phục quay video Android: chỉ cho record khi CameraView sẵn sàng, chặn stop quá sớm, chờ dữ liệu hợp lệ và hiển thị lỗi thân thiện có thể thử lại.
+- [x] Viết hướng dẫn triển khai P2P 1:1 và checklist TURN có xác thực; không tạo APK mới cho đến khi người dùng yêu cầu.
+- [x] Cấu hình secret TURN gồm URL UDP/TCP/TLS 443, username/credential dài hạn và endpoint tRPC sinh credential HMAC-SHA1 có hạn 24 giờ.
+- [x] Gia cố Android cho P2P 1:1: foreground service MediaProjection/microphone/camera, thông báo foreground, POST_NOTIFICATIONS và hướng dẫn quyền pin theo từng OEM.
+- [x] Tách chắc camera chat khỏi camera WebRTC, thêm debounce 300 ms và hoàn thiện audio echo cancellation, noise suppression, auto gain cùng chuyển loa/tai nghe.
+- [ ] Áp dụng migration 0021 lên backend Live, kiểm thử P2P/TURN và cập nhật checklist Wi‑Fi/4G cho Xiaomi, Samsung và Oppo.
+- [ ] Lưu checkpoint, triển khai backend Live và build/phát hành APK signed versionCode 19 sau khi các kiểm tra nguồn đạt.

@@ -2,18 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../server/db", () => ({
   isUserAccessExpired: vi.fn(() => false),
+  createCallSession: vi.fn(),
   createP2pSignal: vi.fn(),
   drainP2pSignals: vi.fn(),
-  activateLiveKitFallback: vi.fn(),
   authorizeP2pIceConfig: vi.fn(),
-}));
-
-vi.mock("../server/call-token", () => ({
-  createLiveKitCallToken: vi.fn(),
+  listConversationRecipientDevices: vi.fn(async () => []),
 }));
 
 import * as db from "../server/db";
-import { createLiveKitCallToken } from "../server/call-token";
 import { appRouter } from "../server/routers";
 
 const callId = "45e72ca3-6109-4cf2-b861-6d565bc470a3";
@@ -29,7 +25,24 @@ function callerFor(userId = 7) {
 describe("P2P signaling router", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(createLiveKitCallToken).mockResolvedValue({ serverUrl: "wss://livekit.example", token: "fallback-token" } as any);
+  });
+
+  it("starts only a direct P2P call without accepting a group or provider input", async () => {
+    const call = { id: callId, conversationId: 33, kind: "video", provider: "p2p" };
+    vi.mocked(db.createCallSession).mockResolvedValue(call as any);
+
+    await expect(callerFor(7).calls.start({ conversationId: 33, kind: "video" })).resolves.toEqual(call);
+    expect(db.createCallSession).toHaveBeenCalledWith(33, 7, "video");
+  });
+
+  it("does not expose group-call, Room token, or standalone screen-share procedures", () => {
+    const procedures = (appRouter as any)._def.procedures as Record<string, unknown>;
+
+    expect(procedures["calls.startGroup"]).toBeUndefined();
+    expect(procedures["calls.joinGroup"]).toBeUndefined();
+    expect(procedures["calls.livekitToken"]).toBeUndefined();
+    expect(procedures["screenShares.create"]).toBeUndefined();
+    expect(procedures["screenShares.join"]).toBeUndefined();
   });
 
   it("passes an authenticated caller signal to the data layer without exposing another recipient", async () => {
@@ -37,6 +50,15 @@ describe("P2P signaling router", () => {
 
     await expect(callerFor(7).calls.p2pSignal.send({ callId, type: "offer", payload: "sdp-offer" })).resolves.toEqual({ id: 11, recipientId: 9 });
     expect(db.createP2pSignal).toHaveBeenCalledWith({ callId, type: "offer", payload: "sdp-offer", senderId: 7 });
+  });
+
+  it("relays screen-start and screen-stop only through the same authenticated P2P signal path", async () => {
+    vi.mocked(db.createP2pSignal).mockResolvedValue({ id: 14, recipientId: 9 } as any);
+
+    await expect(callerFor(7).calls.p2pSignal.send({ callId, type: "screen-start", payload: '{"trackId":"screen-1"}' })).resolves.toEqual({ id: 14, recipientId: 9 });
+    await expect(callerFor(7).calls.p2pSignal.send({ callId, type: "screen-stop", payload: '{"trackId":"screen-1"}' })).resolves.toEqual({ id: 14, recipientId: 9 });
+    expect(db.createP2pSignal).toHaveBeenNthCalledWith(1, { callId, type: "screen-start", payload: '{"trackId":"screen-1"}', senderId: 7 });
+    expect(db.createP2pSignal).toHaveBeenNthCalledWith(2, { callId, type: "screen-stop", payload: '{"trackId":"screen-1"}', senderId: 7 });
   });
 
   it("returns only the authorized member's drained signal queue", async () => {
@@ -50,10 +72,20 @@ describe("P2P signaling router", () => {
   it("returns ICE configuration only after the data layer authorizes the direct-call member", async () => {
     vi.mocked(db.authorizeP2pIceConfig).mockResolvedValue(undefined);
 
-    await expect(callerFor(9).calls.p2pIceConfig({ callId })).resolves.toMatchObject({
-      hasTurn: false,
-      iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }],
-    });
+    const configuration = await callerFor(9).calls.p2pIceConfig({ callId });
+    expect(configuration.iceServers[0]).toEqual({ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] });
+    expect(typeof configuration.hasTurn).toBe("boolean");
+    if (configuration.hasTurn) expect(configuration.turn?.credential).toEqual(expect.any(String));
+    expect(db.authorizeP2pIceConfig).toHaveBeenCalledWith(callId, 9);
+  });
+
+  it("exposes TURN credentials only after the direct-call member is authorized", async () => {
+    vi.mocked(db.authorizeP2pIceConfig).mockResolvedValue(undefined);
+
+    const credentials = await callerFor(9).calls.getTurnCredentials({ callId });
+    expect(typeof credentials.hasTurn).toBe("boolean");
+    if (credentials.hasTurn) expect(credentials.turn?.credential).toEqual(expect.any(String));
+    else expect(credentials.turn).toBeNull();
     expect(db.authorizeP2pIceConfig).toHaveBeenCalledWith(callId, 9);
   });
 
@@ -63,18 +95,4 @@ describe("P2P signaling router", () => {
     await expect(callerFor(12).calls.p2pIceConfig({ callId })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
-  it("mints a LiveKit token only after the data layer authorizes a fallback", async () => {
-    vi.mocked(db.activateLiveKitFallback).mockResolvedValue({ id: callId, room: "chatpht-call-45e72ca3", provider: "livekit" } as any);
-
-    await expect(callerFor(9).calls.fallbackToLiveKit({ callId })).resolves.toMatchObject({ call: { provider: "livekit" }, session: { token: "fallback-token" } });
-    expect(db.activateLiveKitFallback).toHaveBeenCalledWith(callId, 9);
-    expect(createLiveKitCallToken).toHaveBeenCalledWith(expect.objectContaining({ room: "chatpht-call-45e72ca3", identity: "user-9" }));
-  });
-
-  it("does not mint a fallback token when the P2P session is unauthorized or closed", async () => {
-    vi.mocked(db.activateLiveKitFallback).mockRejectedValue(new Error("Bạn không có quyền chuyển đường truyền cuộc gọi này."));
-
-    await expect(callerFor(12).calls.fallbackToLiveKit({ callId })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(createLiveKitCallToken).not.toHaveBeenCalled();
-  });
 });

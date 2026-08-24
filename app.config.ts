@@ -84,7 +84,7 @@ const config: ExpoConfig = {
     googleServicesFile: "./google-services.json",
     // Bản chia sẻ màn hình độc lập cần cao hơn code 18 để Android cho phép cập nhật đè.
     versionCode: 19,
-    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE", "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PROJECTION"],
+    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE", "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PROJECTION", "FOREGROUND_SERVICE_MICROPHONE", "FOREGROUND_SERVICE_CAMERA"],
     intentFilters: [
       {
         action: "VIEW",
@@ -112,14 +112,13 @@ const config: ExpoConfig = {
     "expo-font",
     "expo-web-browser",
     [
-      "@livekit/react-native-expo-plugin",
+      "@config-plugins/react-native-webrtc",
       {
-        android: {
-          audioType: "communication",
-        },
+        cameraPermission: "ChatPHT cần camera để bạn gọi video 1:1.",
+        microphonePermission: "ChatPHT cần micro để bạn gọi thoại, gọi video và chia sẻ màn hình 1:1.",
       },
     ],
-    "@config-plugins/react-native-webrtc",
+    "./plugins/with-chatpht-android-p2p",
     [
       "expo-camera",
       {

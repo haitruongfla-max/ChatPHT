@@ -64,10 +64,10 @@ describe("admin access controls", () => {
     vi.mocked(db.getAdminOperationalStats).mockResolvedValue({
       storage: { usedBytes: 0, mediaCount: 0, quotaGb: 200, quotaBytes: 200 * 1024 * 1024 * 1024, unlimited: false, lastCleanupAt: null, recentMedia: [] },
       groupsCreated: 4,
-      callsToday: { p2p: 1, livekit: 3 },
+      callsToday: { p2p: 1 },
     });
 
-    await expect(callerFor("admin").admin.operationalStats()).resolves.toMatchObject({ groupsCreated: 4, callsToday: { p2p: 1, livekit: 3 } });
+    await expect(callerFor("admin").admin.operationalStats()).resolves.toMatchObject({ groupsCreated: 4, callsToday: { p2p: 1 } });
     expect(db.getAdminOperationalStats).toHaveBeenCalledTimes(1);
   });
 

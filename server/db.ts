@@ -2,7 +2,6 @@ import { and, desc, eq, inArray, isNotNull, isNull, like, lt, ne, or, sql } from
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
-  callParticipants,
   callSessions,
   conversationMembers,
   conversations,
@@ -11,11 +10,9 @@ import {
   messages,
   p2pSignals,
   pushDevices,
-  screenShareSessions,
   storageSettings,
   type CallSession,
   type InsertUser,
-  type ScreenShareSession,
   type User,
   users,
 } from "../drizzle/schema";
@@ -33,7 +30,7 @@ export type PublicProfile = {
 
 export type CallKind = "audio" | "video";
 export type CallStatus = "ringing" | "active" | "declined" | "ended" | "missed";
-export type P2pSignalType = "offer" | "answer" | "ice";
+export type P2pSignalType = "offer" | "answer" | "ice" | "screen-start" | "screen-stop";
 export type CallSessionSummary = Pick<
   CallSession,
   "id" | "conversationId" | "room" | "kind" | "provider" | "isGroup" | "status" | "expiresAt" | "answeredAt" | "endedAt" | "createdAt"
@@ -42,13 +39,6 @@ export type CallSessionSummary = Pick<
   isCaller: boolean;
   peer: PublicProfile | null;
   group: { title: string; participantCount: number } | null;
-};
-
-export type ScreenShareSessionSummary = Pick<
-  ScreenShareSession,
-  "id" | "conversationId" | "hostId" | "room" | "status" | "expiresAt" | "startedAt" | "endedAt" | "createdAt"
-> & {
-  host: PublicProfile;
 };
 
 export function toPublicProfile(user: User): PublicProfile {
@@ -881,34 +871,7 @@ function toCallSessionSummary(call: CallSession, userId: number, peer: PublicPro
 }
 
 async function hydrateCallSession(call: CallSession, userId: number): Promise<CallSessionSummary> {
-  if (call.isGroup) {
-    const db = requireDb(await getDb());
-    const [conversation] = await db.select().from(conversations).where(eq(conversations.id, call.conversationId)).limit(1);
-    if (!conversation || conversation.kind !== "group" || !(await isConversationMember(call.conversationId, userId))) {
-      throw new Error("Bạn không có quyền xem cuộc gọi nhóm này.");
-    }
-    const active = await db
-      .select({ id: callParticipants.id })
-      .from(callParticipants)
-      .where(and(eq(callParticipants.callId, call.id), isNull(callParticipants.leftAt)));
-    return {
-      id: call.id,
-      conversationId: call.conversationId,
-      room: call.room,
-      kind: call.kind,
-      provider: call.provider,
-      isGroup: true,
-      status: call.status,
-      expiresAt: call.expiresAt,
-      answeredAt: call.answeredAt,
-      endedAt: call.endedAt,
-      createdAt: call.createdAt,
-      direction: call.callerId === userId ? "outgoing" : "incoming",
-      isCaller: call.callerId === userId,
-      peer: null,
-      group: { title: conversation.title ?? "Nhóm ChatPHT", participantCount: active.length },
-    };
-  }
+  if (call.isGroup) throw new Error("Cuộc gọi nhóm cũ không còn được hỗ trợ.");
   const peerUser = await getUserById(call.callerId === userId ? call.recipientId : call.callerId);
   if (!peerUser) throw new Error("Không tìm thấy người dùng của cuộc gọi.");
   return toCallSessionSummary(call, userId, toPublicProfile(peerUser));
@@ -917,7 +880,7 @@ async function hydrateCallSession(call: CallSession, userId: number): Promise<Ca
 export async function createCallSession(conversationId: number, callerId: number, kind: CallKind) {
   const db = requireDb(await getDb());
   const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
-  if (!conversation || conversation.kind !== "direct") throw new Error("Hãy dùng cuộc gọi nhóm trong hội thoại nhóm.");
+  if (!conversation || conversation.kind !== "direct") throw new Error("ChatPHT hiện chỉ hỗ trợ gọi P2P trong hội thoại 1:1.");
   const peer = await getConversationPeer(conversationId, callerId);
   if (!peer) throw new Error("Bạn không có quyền gọi trong hội thoại này.");
 
@@ -944,162 +907,6 @@ export async function createCallSession(conversationId: number, callerId: number
   return toCallSessionSummary(created, callerId, peer);
 }
 
-/** Creates a LiveKit-only room for a group. Direct calls keep the existing 1:1 flow. */
-export async function createGroupCallSession(conversationId: number, callerId: number, kind: CallKind) {
-  const db = requireDb(await getDb());
-  const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
-  if (!conversation || conversation.kind !== "group") throw new Error("Cuộc gọi nhóm chỉ có trong hội thoại nhóm.");
-  if (!(await isConversationMember(conversationId, callerId))) throw new Error("Bạn không có quyền gọi trong nhóm này.");
-
-  const now = new Date();
-  const id = randomUUID();
-  await db.insert(callSessions).values({
-    id,
-    conversationId,
-    callerId,
-    // The existing schema requires a recipient. For group rooms it is the initiator;
-    // membership in call_participants remains the source of join/leave authority.
-    recipientId: callerId,
-    room: `chatpht-group-${id}`,
-    kind,
-    provider: "livekit",
-    isGroup: true,
-    status: "active",
-    expiresAt: new Date(now.getTime() + 12 * 60 * 60 * 1000),
-    answeredAt: now,
-  });
-  await db.insert(callParticipants).values({ callId: id, userId: callerId, joinedAt: now });
-  const [call] = await db.select().from(callSessions).where(eq(callSessions.id, id)).limit(1);
-  if (!call) throw new Error("Không thể tạo phòng gọi nhóm.");
-  return { ...call, participantCount: 1, groupTitle: conversation.title ?? "Nhóm ChatPHT" };
-}
-
-export async function joinGroupCallSession(sessionId: string, userId: number) {
-  const db = requireDb(await getDb());
-  return db.transaction(async (tx) => {
-    // Locking the session row serializes joins for a room, so two simultaneous requests cannot both pass the 8-person check.
-    const [call] = await tx.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1).for("update");
-    if (!call || !call.isGroup || call.status !== "active") throw new Error("Phòng gọi nhóm không còn hoạt động.");
-    if (!(await isConversationMember(call.conversationId, userId))) throw new Error("Bạn không có quyền tham gia cuộc gọi nhóm này.");
-
-    const existing = (await tx.select().from(callParticipants).where(and(eq(callParticipants.callId, sessionId), eq(callParticipants.userId, userId))).limit(1))[0];
-    if (!existing || existing.leftAt) {
-      const active = await tx.select({ id: callParticipants.id }).from(callParticipants).where(and(eq(callParticipants.callId, sessionId), isNull(callParticipants.leftAt)));
-      if (active.length >= 8) throw new Error("Cuộc gọi nhóm đã đủ 8 người.");
-      if (existing) {
-        await tx.update(callParticipants).set({ joinedAt: new Date(), leftAt: null }).where(eq(callParticipants.id, existing.id));
-      } else {
-        await tx.insert(callParticipants).values({ callId: sessionId, userId, joinedAt: new Date() });
-      }
-    }
-    const active = await tx.select({ id: callParticipants.id }).from(callParticipants).where(and(eq(callParticipants.callId, sessionId), isNull(callParticipants.leftAt)));
-    return { call, participantCount: active.length };
-  });
-}
-
-export async function leaveGroupCallSession(sessionId: string, userId: number) {
-  const db = requireDb(await getDb());
-  const [call] = await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1);
-  if (!call || !call.isGroup) throw new Error("Không tìm thấy cuộc gọi nhóm.");
-  if (!(await isConversationMember(call.conversationId, userId))) throw new Error("Bạn không có quyền rời cuộc gọi nhóm này.");
-  await db.update(callParticipants).set({ leftAt: new Date() }).where(and(eq(callParticipants.callId, sessionId), eq(callParticipants.userId, userId), isNull(callParticipants.leftAt)));
-  const active = await db.select({ id: callParticipants.id }).from(callParticipants).where(and(eq(callParticipants.callId, sessionId), isNull(callParticipants.leftAt)));
-  if (!active.length) await db.update(callSessions).set({ status: "ended", endedAt: new Date() }).where(eq(callSessions.id, sessionId));
-  return { participantCount: active.length };
-}
-
-export async function getJoinableGroupCallSession(sessionId: string, userId: number) {
-  const joined = await joinGroupCallSession(sessionId, userId);
-  return joined;
-}
-
-function isActiveScreenShareStatus(status: ScreenShareSession["status"]) {
-  return status === "starting" || status === "live";
-}
-
-async function toScreenShareSessionSummary(session: ScreenShareSession): Promise<ScreenShareSessionSummary> {
-  const host = await getUserById(session.hostId);
-  if (!host) throw new Error("Không tìm thấy người chia sẻ màn hình.");
-  return { ...session, host: toPublicProfile(host) };
-}
-
-async function expireScreenShareIfNeeded(session: ScreenShareSession) {
-  if (isActiveScreenShareStatus(session.status) && session.expiresAt.getTime() <= Date.now()) {
-    const db = requireDb(await getDb());
-    const endedAt = new Date();
-    await db.update(screenShareSessions).set({ status: "expired", endedAt }).where(eq(screenShareSessions.id, session.id));
-    return { ...session, status: "expired" as const, endedAt };
-  }
-  return session;
-}
-
-/** Creates a separate LiveKit room. No call session or participant is altered. */
-export async function createScreenShareSession(conversationId: number, hostId: number) {
-  const db = requireDb(await getDb());
-  if (!(await isConversationMember(conversationId, hostId))) throw new Error("Bạn không có quyền chia sẻ trong hội thoại này.");
-  const now = new Date();
-  const sessions = await db.select().from(screenShareSessions).where(eq(screenShareSessions.conversationId, conversationId));
-  for (const session of sessions) {
-    if (isActiveScreenShareStatus(session.status)) {
-      await db.update(screenShareSessions).set({ status: "ended", endedAt: now }).where(eq(screenShareSessions.id, session.id));
-    }
-  }
-  const id = randomUUID();
-  await db.insert(screenShareSessions).values({
-    id,
-    conversationId,
-    hostId,
-    room: `chatpht-screen-${id}`,
-    status: "starting",
-    expiresAt: new Date(now.getTime() + 2 * 60 * 60 * 1000),
-  });
-  const [created] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, id)).limit(1);
-  if (!created) throw new Error("Không thể tạo phiên chia sẻ màn hình.");
-  return toScreenShareSessionSummary(created);
-}
-
-/** The host calls this only after MediaProjection and publishing the screen track succeed. */
-export async function activateScreenShareSession(sessionId: string, hostId: number) {
-  const db = requireDb(await getDb());
-  const [existing] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, sessionId)).limit(1);
-  if (!existing || existing.hostId !== hostId) throw new Error("Bạn không có quyền bắt đầu phiên chia sẻ này.");
-  const session = await expireScreenShareIfNeeded(existing);
-  if (session.status === "expired") throw new Error("Phiên chia sẻ đã hết thời gian chờ.");
-  if (session.status !== "starting" && session.status !== "live") throw new Error("Phiên chia sẻ không còn hoạt động.");
-  const activatedNow = session.status === "starting";
-  if (activatedNow) {
-    await db.update(screenShareSessions).set({ status: "live", startedAt: new Date() }).where(eq(screenShareSessions.id, sessionId));
-  }
-  const [updated] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, sessionId)).limit(1);
-  if (!updated) throw new Error("Không thể cập nhật phiên chia sẻ.");
-  return { session: await toScreenShareSessionSummary(updated), activatedNow };
-}
-
-export async function getScreenShareSession(sessionId: string, userId: number) {
-  const db = requireDb(await getDb());
-  const [existing] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, sessionId)).limit(1);
-  if (!existing || !(await isConversationMember(existing.conversationId, userId))) return undefined;
-  return toScreenShareSessionSummary(await expireScreenShareIfNeeded(existing));
-}
-
-export async function joinScreenShareSession(sessionId: string, viewerId: number) {
-  const session = await getScreenShareSession(sessionId, viewerId);
-  if (!session || session.status !== "live") throw new Error("Chia sẻ màn hình này không còn hoạt động.");
-  return session;
-}
-
-export async function finishScreenShareSession(sessionId: string, hostId: number) {
-  const db = requireDb(await getDb());
-  const [existing] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, sessionId)).limit(1);
-  if (!existing || existing.hostId !== hostId) throw new Error("Bạn không có quyền kết thúc phiên chia sẻ này.");
-  if (isActiveScreenShareStatus(existing.status)) {
-    await db.update(screenShareSessions).set({ status: "ended", endedAt: new Date() }).where(eq(screenShareSessions.id, sessionId));
-  }
-  const [updated] = await db.select().from(screenShareSessions).where(eq(screenShareSessions.id, sessionId)).limit(1);
-  if (!updated) throw new Error("Không thể kết thúc phiên chia sẻ.");
-  return toScreenShareSessionSummary(updated);
-}
-
 export async function getAdminOperationalStats() {
   const db = requireDb(await getDb());
   const startOfToday = new Date();
@@ -1113,7 +920,6 @@ export async function getAdminOperationalStats() {
     groupsCreated: groupRows.length,
     callsToday: {
       p2p: today.filter((call) => call.provider === "p2p").length,
-      livekit: today.filter((call) => call.provider === "livekit").length,
     },
   };
 }
@@ -1239,23 +1045,6 @@ export async function drainP2pSignals(callId: string, userId: number) {
   const pending = await db.select().from(p2pSignals).where(and(eq(p2pSignals.callId, callId), eq(p2pSignals.recipientId, userId))).orderBy(p2pSignals.id).limit(100);
   if (pending.length) await db.delete(p2pSignals).where(inArray(p2pSignals.id, pending.map((signal) => signal.id)));
   return pending.map((signal) => ({ id: signal.id, senderId: signal.senderId, type: signal.type, payload: signal.payload, createdAt: signal.createdAt }));
-}
-
-export async function activateLiveKitFallback(sessionId: string, userId: number) {
-  const db = requireDb(await getDb());
-  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (!call || call.isGroup || (call.callerId !== userId && call.recipientId !== userId)) {
-    throw new Error("Bạn không có quyền chuyển đường truyền cuộc gọi này.");
-  }
-  if (call.status !== "ringing" && call.status !== "active") throw new Error("Cuộc gọi đã kết thúc.");
-  if (call.status === "ringing" && call.expiresAt.getTime() <= Date.now()) throw new Error("Cuộc gọi đã hết thời gian chờ.");
-  if (call.provider === "p2p") {
-    await db.update(callSessions).set({ provider: "livekit" }).where(and(eq(callSessions.id, sessionId), eq(callSessions.provider, "p2p")));
-    await db.delete(p2pSignals).where(eq(p2pSignals.callId, sessionId));
-  }
-  const updated = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (!updated) throw new Error("Không thể chuyển sang LiveKit.");
-  return updated;
 }
 
 export async function listConversations(userId: number) {

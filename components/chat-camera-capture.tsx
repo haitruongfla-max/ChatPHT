@@ -27,8 +27,13 @@ export type CapturedChatMedia = {
 };
 
 const MAX_RECORDING_SECONDS = 300;
+const MIN_RECORDING_MILLISECONDS = 2_500;
 const CAPTURE_PROGRESS_RADIUS = 32;
 const CAPTURE_PROGRESS_CIRCUMFERENCE = 2 * Math.PI * CAPTURE_PROGRESS_RADIUS;
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
 
 function formatCaptureDuration(seconds: number) {
   const safeSeconds = Math.max(0, Math.min(MAX_RECORDING_SECONDS, Math.floor(seconds)));
@@ -48,10 +53,13 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
   const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordingRef = useRef(false);
+  const recordingRequested = useRef(false);
+  const stopRequested = useRef(false);
   const closing = useRef(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
   const [facing, setFacing] = useState<"back" | "front">("back");
+  const [cameraMode, setCameraMode] = useState<"picture" | "video">("picture");
   const [preparing, setPreparing] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -123,10 +131,12 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
   };
 
   const stopRecordingWhenReady = () => {
+    stopRequested.current = true;
     if (!cameraRef.current || !recordingRef.current) return;
     const elapsed = Date.now() - (recordingStartedAt.current ?? Date.now());
-    // Android camera encoders need a brief keyframe window. Stopping earlier produces an empty MP4 on some Xiaomi builds.
-    const remaining = Math.max(0, 1200 - elapsed);
+    // Xiaomi encoders can expose recordAsync before the first key frame is committed.
+    // Never stop until the video CameraView has had a full encoder/keyframe window.
+    const remaining = Math.max(0, MIN_RECORDING_MILLISECONDS - elapsed);
     if (remaining > 0) {
       if (!stopTimer.current) {
         stopTimer.current = setTimeout(() => {
@@ -140,7 +150,7 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
   };
 
   const startRecording = async () => {
-    if (!cameraRef.current || preparing || !cameraReady || recordingRef.current) return;
+    if (!cameraRef.current || preparing || !cameraReady || recordingRef.current || !recordingRequested.current || cameraMode !== "video") return;
 
     try {
       const microphone = microphonePermission?.granted
@@ -155,6 +165,7 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
       setRecordingSeconds(0);
       recordingRef.current = true;
       setRecording(true);
+      if (stopRequested.current) stopRecordingWhenReady();
       // SDK 54 documents `quality`; its local declaration currently omits this Android runtime option.
       const recordingOptions = {
         maxDuration: MAX_RECORDING_SECONDS,
@@ -173,6 +184,8 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
       if (persistentVideoUri !== video.uri) {
         await FileSystem.copyAsync({ from: video.uri, to: persistentVideoUri });
       }
+      // Give Android a brief chance to flush the MP4 atom after recordAsync resolves.
+      await wait(250);
       const info = await FileSystem.getInfoAsync(persistentVideoUri);
       const byteSize = info.exists && "size" in info ? info.size : 0;
       if (!byteSize || byteSize < 2048) {
@@ -198,10 +211,30 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
     } finally {
       recordingStartedAt.current = null;
       recordingRef.current = false;
+      recordingRequested.current = false;
+      stopRequested.current = false;
       if (stopTimer.current) clearTimeout(stopTimer.current);
       stopTimer.current = null;
       setRecording(false);
       setRecordingSeconds(0);
+      setCameraMode("picture");
+    }
+  };
+
+  const beginVideoMode = () => {
+    if (preparing || recordingRef.current || recordingRequested.current) return;
+    recordingRequested.current = true;
+    stopRequested.current = false;
+    // CameraView must complete a mode change before recordAsync is invoked.
+    // Calling it while a picture session is still configuring produces empty files on some Android devices.
+    setCameraReady(false);
+    setCameraMode("video");
+  };
+
+  const handleCameraReady = () => {
+    setCameraReady(true);
+    if (cameraMode === "video" && recordingRequested.current) {
+      void startRecording();
     }
   };
 
@@ -210,8 +243,8 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
     if (holdTimer.current) clearTimeout(holdTimer.current);
     holdTimer.current = setTimeout(() => {
       holdTimer.current = null;
-      void startRecording();
-    }, 280);
+      beginVideoMode();
+    }, 300);
   };
 
   const handleCapturePressOut = () => {
@@ -219,6 +252,12 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
       clearTimeout(holdTimer.current);
       holdTimer.current = null;
       void takePhoto();
+      return;
+    }
+    if (recordingRequested.current && !recordingRef.current) {
+      // The finger was released while CameraView was switching into video mode.
+      // Keep the request: startRecording will honor this deferred stop after its safe window.
+      stopRequested.current = true;
       return;
     }
     stopRecordingWhenReady();
@@ -232,7 +271,7 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={close}>
       <View style={styles.root}>
         {hasCameraPermission ? (
-          <CameraView ref={cameraRef} style={styles.camera} facing={facing} onCameraReady={() => setCameraReady(true)} />
+          <CameraView ref={cameraRef} style={styles.camera} facing={facing} mode={cameraMode} onCameraReady={handleCameraReady} />
         ) : (
           <View style={styles.permissionCard}>
             <MaterialIcons name="camera-alt" size={36} color="#BFDBFE" />

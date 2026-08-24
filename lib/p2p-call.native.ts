@@ -4,11 +4,11 @@ import {
   RTCPeerConnection,
   RTCSessionDescription,
   type MediaStreamTrack,
-} from "@livekit/react-native-webrtc";
-import { AndroidAudioTypePresets, AudioSession } from "@livekit/react-native";
-import { Platform } from "react-native";
+} from "react-native-webrtc";
 
-export type P2pSignalType = "offer" | "answer" | "ice";
+import { resetAndroidCallSpeakerRoute, setAndroidCallSpeakerRoute } from "@/lib/android-audio-route";
+
+export type P2pSignalType = "offer" | "answer" | "ice" | "screen-start" | "screen-stop";
 export type P2pSignal = { type: P2pSignalType; payload: string };
 export type P2pConnectionState = "idle" | "connecting" | "recovering" | "connected" | "failed" | "closed";
 export type P2pIceServer = { urls: string[]; username?: string; credential?: string };
@@ -20,45 +20,53 @@ type StartOptions = {
   onSignal: (signal: P2pSignal) => Promise<void> | void;
   onState: (state: P2pConnectionState) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
+  onRemoteScreenStream?: (stream: MediaStream | null) => void;
 };
 
 /**
- * WebRTC transport for one-to-one calls only. Signaling is supplied by the
- * protected server queue; this class never persists SDP/ICE on the device.
- * A public STUN server assists direct connectivity but does not guarantee it,
- * so callers must use the five-second fallback policy when it remains pending.
+ * Protected one-to-one WebRTC transport. SDP and ICE travel only through the
+ * authenticated server signal queue. It never creates an SFU room or token.
  */
 export class P2pCall {
   private peer: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
+  private screenStream: MediaStream | null = null;
+  private remoteScreenStream: MediaStream | null = null;
+  private screenSenders: Array<ReturnType<RTCPeerConnection["addTrack"]>> = [];
+  private remoteScreenTrackIds = new Set<string>();
+  private remoteTracks = new Map<string, MediaStreamTrack>();
   private options: StartOptions | null = null;
   private connected = false;
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
   private recoveryInProgress = false;
   private remoteDescriptionReady = false;
   private pendingRemoteCandidates: Record<string, unknown>[] = [];
+  private makingOffer = false;
+  private ignoreOffer = false;
+  private negotiationPending = false;
+  private negotiationInFlight = false;
+  private pendingIceRestart = false;
 
   async start(options: StartOptions) {
     await this.disconnect();
     this.options = options;
     this.remoteDescriptionReady = false;
     this.pendingRemoteCandidates = [];
+    this.makingOffer = false;
+    this.ignoreOffer = false;
+    this.negotiationPending = false;
+    this.negotiationInFlight = false;
+    this.pendingIceRestart = false;
     options.onState("connecting");
 
-    await this.configureAudio();
-
-    const audioProcessingConstraints = {
-      echoCancellation: true,
-      noiseSuppression: true,
-    };
     const stream = await mediaDevices.getUserMedia({
-      // Request the platform's WebRTC audio processing for the direct path as
-      // well. The LiveKit fallback already requests equivalent constraints.
-      audio: audioProcessingConstraints as unknown as boolean,
+      // WebRTC maps these constraints to Android's voice-processing path when supported.
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, googEchoCancellation: true, googNoiseSuppression: true, googAutoGainControl: true } as unknown as boolean,
       video: options.kind === "video" ? { facingMode: "user", frameRate: 30, width: 1280, height: 720 } : false,
     });
     this.localStream = stream;
+    await setAndroidCallSpeakerRoute(options.kind === "video");
 
     const peer = new RTCPeerConnection({
       iceServers: options.iceServers?.length
@@ -67,16 +75,20 @@ export class P2pCall {
     });
     this.peer = peer;
     stream.getTracks().forEach((track) => peer.addTrack(track, stream));
-    peer.onicecandidate = (event) => {
+
+    peer.onicecandidate = (event: { candidate?: unknown }) => {
       const candidate = (event as unknown as { candidate?: unknown }).candidate;
       if (candidate) void options.onSignal({ type: "ice", payload: JSON.stringify(candidate) });
     };
-    peer.ontrack = (event) => {
-      const remote = (event as unknown as { streams?: MediaStream[] }).streams?.[0] ?? null;
-      if (remote) {
-        this.remoteStream = remote;
-        options.onRemoteStream(remote);
+    peer.ontrack = (event: { track?: MediaStreamTrack }) => {
+      const track = event.track;
+      if (!track) return;
+      this.remoteTracks.set(track.id, track);
+      if (this.remoteScreenTrackIds.has(track.id)) {
+        this.publishRemoteScreenTrack(track);
+        return;
       }
+      this.publishRemoteCallTrack(track);
     };
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState;
@@ -94,11 +106,7 @@ export class P2pCall {
       }
     };
 
-    if (options.isCaller) {
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      await options.onSignal({ type: "offer", payload: JSON.stringify(offer) });
-    }
+    if (options.isCaller) await this.queueOffer();
   }
 
   async handleSignal(signal: P2pSignal) {
@@ -106,23 +114,50 @@ export class P2pCall {
     const options = this.options;
     if (!peer || !options) throw new Error("Kết nối P2P chưa sẵn sàng.");
     const payload = JSON.parse(signal.payload) as Record<string, unknown>;
+    if (signal.type === "screen-start") {
+      const trackId = typeof payload.trackId === "string" ? payload.trackId : "";
+      if (!trackId) return;
+      this.remoteScreenTrackIds.add(trackId);
+      const track = this.remoteTracks.get(trackId);
+      if (track) this.publishRemoteScreenTrack(track);
+      return;
+    }
+    if (signal.type === "screen-stop") {
+      const trackId = typeof payload.trackId === "string" ? payload.trackId : "";
+      if (trackId) this.remoteScreenTrackIds.delete(trackId);
+      const currentTrack = this.remoteScreenStream?.getVideoTracks()[0] ?? null;
+      if (!trackId || currentTrack?.id === trackId) {
+        this.remoteScreenStream = null;
+        options.onRemoteScreenStream?.(null);
+      }
+      return;
+    }
     if (signal.type === "offer") {
-      if (options.isCaller) return;
+      const offerCollision = this.makingOffer || peer.signalingState !== "stable";
+      // The original caller is the impolite peer. This keeps simultaneous
+      // camera/screen renegotiations from replacing a valid local offer.
+      this.ignoreOffer = offerCollision && options.isCaller;
+      if (this.ignoreOffer) return;
+      if (offerCollision) await peer.setLocalDescription({ type: "rollback" } as never);
       await peer.setRemoteDescription(new RTCSessionDescription(payload as { type: string; sdp: string }));
       this.remoteDescriptionReady = true;
       await this.applyPendingIceCandidates();
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       await options.onSignal({ type: "answer", payload: JSON.stringify(answer) });
+      await this.flushQueuedOffer();
       return;
     }
     if (signal.type === "answer") {
-      if (!options.isCaller) return;
+      if (!options.isCaller || peer.signalingState !== "have-local-offer") return;
       await peer.setRemoteDescription(new RTCSessionDescription(payload as { type: string; sdp: string }));
       this.remoteDescriptionReady = true;
+      this.ignoreOffer = false;
       await this.applyPendingIceCandidates();
+      await this.flushQueuedOffer();
       return;
     }
+    if (this.ignoreOffer) return;
     if (!this.remoteDescriptionReady) {
       this.pendingRemoteCandidates.push(payload);
       return;
@@ -142,19 +177,20 @@ export class P2pCall {
     return this.localStream;
   }
 
+  getRemoteScreenStream() {
+    return this.remoteScreenStream;
+  }
+
+  hasScreenShare() {
+    return Boolean(this.screenStream?.getVideoTracks().some((track) => track.readyState === "live"));
+  }
+
   async setMicrophoneEnabled(enabled: boolean) {
     this.localStream?.getAudioTracks().forEach((track) => { track.enabled = enabled; });
   }
 
   async setSpeakerEnabled(enabled: boolean) {
-    if (Platform.OS === "ios") {
-      await AudioSession.selectAudioOutput(enabled ? "force_speaker" : "default");
-      return;
-    }
-    const outputs = await AudioSession.getAudioOutputs();
-    const preferred = enabled ? "speaker" : "earpiece";
-    const selected = outputs.includes(preferred) ? preferred : outputs.includes("speaker") ? "speaker" : outputs[0];
-    if (selected) await AudioSession.selectAudioOutput(selected);
+    await setAndroidCallSpeakerRoute(enabled);
   }
 
   async setCameraEnabled(enabled: boolean) {
@@ -173,6 +209,54 @@ export class P2pCall {
     await track.applyConstraints(quality === "hd" ? { width: 1280, height: 720, frameRate: 30 } : { width: 640, height: 360, frameRate: 20 });
   }
 
+  /** Starts MediaProjection through WebRTC, then renegotiates the same 1:1 peer. */
+  async startScreenShare() {
+    const peer = this.peer;
+    if (!peer || !this.connected) throw new Error("Hãy đợi cuộc gọi P2P kết nối rồi mới chia sẻ màn hình.");
+    if (this.hasScreenShare()) return this.screenStream;
+    const getDisplayMedia = (mediaDevices as typeof mediaDevices & {
+      getDisplayMedia?: (constraints: { video: boolean; audio: boolean }) => Promise<MediaStream>;
+    }).getDisplayMedia;
+    if (!getDisplayMedia) throw new Error("Thiết bị không hỗ trợ MediaProjection để chia sẻ màn hình.");
+    const screenStream = await getDisplayMedia({ video: true, audio: false });
+    const tracks = screenStream.getVideoTracks();
+    if (tracks.length === 0) {
+      screenStream.getTracks().forEach((track) => track.stop());
+      throw new Error("Android chưa cấp track màn hình. Hãy chấp nhận hộp thoại ghi màn hình rồi thử lại.");
+    }
+    this.screenStream = screenStream;
+    this.screenSenders = tracks.map((track) => peer.addTrack(track, screenStream));
+    tracks.forEach((track) => { track.onended = () => { void this.stopScreenShare(); }; });
+    try {
+      await this.options?.onSignal({ type: "screen-start", payload: JSON.stringify({ trackId: tracks[0].id }) });
+      await this.queueOffer();
+      return screenStream;
+    } catch (error) {
+      await this.stopScreenShare();
+      throw error;
+    }
+  }
+
+  /** Stops MediaProjection and renegotiates so the peer removes the screen track. */
+  async stopScreenShare() {
+    const peer = this.peer;
+    const stream = this.screenStream;
+    if (!stream) return;
+    this.screenStream = null;
+    const trackIds = stream.getVideoTracks().map((track) => track.id);
+    try {
+      await this.options?.onSignal({ type: "screen-stop", payload: JSON.stringify({ trackId: trackIds[0] ?? "" }) });
+    } catch {
+      // Local cleanup must still run if the peer loses signaling while stopping MediaProjection.
+    }
+    this.screenSenders.forEach((sender) => {
+      try { peer?.removeTrack(sender); } catch { /* peer already closed */ }
+    });
+    this.screenSenders = [];
+    stream.getTracks().forEach((track) => track.stop());
+    if (peer && this.connected) await this.queueOffer();
+  }
+
   async disconnect(options: { preserveAudioSession?: boolean } = {}) {
     this.connected = false;
     this.recoveryInProgress = false;
@@ -182,31 +266,23 @@ export class P2pCall {
     this.peer = null;
     this.remoteDescriptionReady = false;
     this.pendingRemoteCandidates = [];
+    this.negotiationPending = false;
+    this.negotiationInFlight = false;
+    this.pendingIceRestart = false;
+    this.remoteScreenTrackIds.clear();
+    this.remoteTracks.clear();
     this.remoteStream = null;
+    this.remoteScreenStream = null;
+    this.screenSenders = [];
+    this.screenStream?.getTracks().forEach((track) => track.stop());
+    this.screenStream = null;
     this.localStream?.getTracks().forEach((track) => track.stop());
     this.localStream = null;
     this.options?.onRemoteStream(null);
+    this.options?.onRemoteScreenStream?.(null);
     this.options?.onState("closed");
     this.options = null;
-    if (!options.preserveAudioSession) await AudioSession.stopAudioSession().catch(() => undefined);
-  }
-
-  /** Restores routing after an attempted LiveKit handoff fails while P2P is still live. */
-  async restoreAudioSession() {
-    if (!this.localStream) return;
-    await this.configureAudio();
-  }
-
-  private async configureAudio() {
-    await AudioSession.configureAudio({
-      android: {
-        preferredOutputList: ["speaker", "bluetooth", "headset", "earpiece"],
-        audioTypeOptions: { ...AndroidAudioTypePresets.communication, forceHandleAudioRouting: true },
-      },
-      ios: { defaultOutput: "speaker" },
-    });
-    await AudioSession.setDefaultRemoteAudioTrackVolume(1);
-    await AudioSession.startAudioSession();
+    if (!options.preserveAudioSession) await resetAndroidCallSpeakerRoute();
   }
 
   private async recoverIceOrFail() {
@@ -216,21 +292,17 @@ export class P2pCall {
     this.recoveryInProgress = true;
     options.onState("recovering");
     try {
-      // The caller renews ICE candidates and renegotiates. The callee accepts
-      // this standard offer via the existing protected signaling channel.
       if (options.isCaller) {
         const restartable = peer as RTCPeerConnection & { restartIce?: () => void };
         restartable.restartIce?.();
-        const offer = await peer.createOffer({ iceRestart: true });
-        await peer.setLocalDescription(offer);
-        await options.onSignal({ type: "offer", payload: JSON.stringify(offer) });
+        await this.queueOffer({ iceRestart: true });
       }
       this.recoveryTimer = setTimeout(() => {
         if (!this.connected) {
           this.recoveryInProgress = false;
           options.onState("failed");
         }
-      }, 6_000);
+      }, 8_000);
     } catch {
       this.recoveryInProgress = false;
       options.onState("failed");
@@ -242,8 +314,62 @@ export class P2pCall {
     if (!peer || !this.remoteDescriptionReady || this.pendingRemoteCandidates.length === 0) return;
     const candidates = this.pendingRemoteCandidates;
     this.pendingRemoteCandidates = [];
-    for (const candidate of candidates) {
-      await peer.addIceCandidate(candidate);
+    for (const candidate of candidates) await peer.addIceCandidate(candidate);
+  }
+
+  private async queueOffer(options: { iceRestart?: boolean } = {}) {
+    this.negotiationPending = true;
+    this.pendingIceRestart ||= Boolean(options.iceRestart);
+    await this.flushQueuedOffer();
+  }
+
+  private async flushQueuedOffer() {
+    const peer = this.peer;
+    const onSignal = this.options?.onSignal;
+    if (!peer || !onSignal || !this.negotiationPending || this.negotiationInFlight || peer.signalingState !== "stable") return;
+    const iceRestart = this.pendingIceRestart;
+    this.negotiationPending = false;
+    this.pendingIceRestart = false;
+    this.negotiationInFlight = true;
+    this.makingOffer = true;
+    try {
+      const offer = await peer.createOffer(iceRestart ? { iceRestart: true } : {});
+      await peer.setLocalDescription(offer);
+      await onSignal({ type: "offer", payload: JSON.stringify(offer) });
+    } finally {
+      this.makingOffer = false;
+      this.negotiationInFlight = false;
     }
+  }
+
+  private publishRemoteCallTrack(track: MediaStreamTrack) {
+    if (!this.remoteStream) this.remoteStream = new MediaStream();
+    if (!this.remoteStream.getTracks().some((item) => item.id === track.id)) this.remoteStream.addTrack(track);
+    track.onended = () => {
+      this.remoteTracks.delete(track.id);
+      this.remoteStream?.removeTrack(track);
+      if (!this.remoteStream || this.remoteStream.getTracks().length === 0) {
+        this.remoteStream = null;
+        this.options?.onRemoteStream(null);
+      } else {
+        this.options?.onRemoteStream(this.remoteStream);
+      }
+    };
+    this.options?.onRemoteStream(this.remoteStream);
+  }
+
+  private publishRemoteScreenTrack(track: MediaStreamTrack) {
+    this.remoteStream?.removeTrack(track);
+    const screen = new MediaStream();
+    screen.addTrack(track);
+    this.remoteScreenStream = screen;
+    track.onended = () => {
+      if (this.remoteScreenStream?.getTracks().some((item) => item.id === track.id)) {
+        this.remoteScreenStream = null;
+        this.options?.onRemoteScreenStream?.(null);
+      }
+    };
+    this.options?.onRemoteStream(this.remoteStream);
+    this.options?.onRemoteScreenStream?.(screen);
   }
 }

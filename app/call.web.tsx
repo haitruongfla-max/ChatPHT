@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
 /**
- * WebRTC for ChatPHT is provided by the native LiveKit integration.  The web
+ * WebRTC for ChatPHT uses the native Android P2P integration. The web
  * preview intentionally stays out of that bundle, so it can remain a reliable
  * place to use chat, media, security settings, and the AI assistant.
  */

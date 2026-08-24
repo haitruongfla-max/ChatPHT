@@ -8,6 +8,7 @@ export const ENV = {
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   p2pTurnUrls: process.env.P2P_TURN_URLS ?? "",
+  p2pTurnSharedSecret: process.env.P2P_TURN_SHARED_SECRET ?? "",
   p2pTurnUsername: process.env.P2P_TURN_USERNAME ?? "",
   p2pTurnCredential: process.env.P2P_TURN_CREDENTIAL ?? "",
 };

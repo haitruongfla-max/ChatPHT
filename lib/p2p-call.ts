@@ -1,6 +1,8 @@
-export type P2pSignalType = "offer" | "answer" | "ice";
+import type { MediaStream } from "react-native-webrtc";
+
+export type P2pSignalType = "offer" | "answer" | "ice" | "screen-start" | "screen-stop";
 export type P2pSignal = { type: P2pSignalType; payload: string };
-export type P2pConnectionState = "idle" | "connecting" | "connected" | "failed" | "closed";
+export type P2pConnectionState = "idle" | "connecting" | "recovering" | "connected" | "failed" | "closed";
 export type P2pIceServer = { urls: string[]; username?: string; credential?: string };
 export type P2pStartOptions = {
   isCaller: boolean;
@@ -8,22 +10,27 @@ export type P2pStartOptions = {
   iceServers?: P2pIceServer[];
   onSignal: (signal: P2pSignal) => Promise<void> | void;
   onState: (state: P2pConnectionState) => void;
-  onRemoteStream: (stream: import("@livekit/react-native-webrtc").MediaStream | null) => void;
+  onRemoteStream: (stream: MediaStream | null) => void;
+  onRemoteScreenStream?: (stream: MediaStream | null) => void;
 };
 
 const unavailable = () => { throw new Error("Gọi P2P chỉ khả dụng trên iOS hoặc Android."); };
 
+/** Web-only facade. Native implementations are resolved from p2p-call.native.ts. */
 export class P2pCall {
   async start(_options: P2pStartOptions) { return unavailable(); }
   async handleSignal(_signal: P2pSignal) { return unavailable(); }
   isConnected() { return false; }
-  getLocalStream() { return null; }
-  getRemoteStream() { return null; }
+  getLocalStream(): MediaStream | null { return null; }
+  getRemoteStream(): MediaStream | null { return null; }
+  getRemoteScreenStream(): MediaStream | null { return null; }
+  hasScreenShare() { return false; }
   async setMicrophoneEnabled(_enabled: boolean) { return unavailable(); }
   async setSpeakerEnabled(_enabled: boolean) { return unavailable(); }
   async setCameraEnabled(_enabled: boolean) { return unavailable(); }
   async switchCamera() { return unavailable(); }
   async setVideoQuality(_quality: "sd" | "hd") { return unavailable(); }
+  async startScreenShare(): Promise<MediaStream> { return unavailable(); }
+  async stopScreenShare() { return unavailable(); }
   async disconnect(_options: { preserveAudioSession?: boolean } = {}) { return undefined; }
-  async restoreAudioSession() { return unavailable(); }
 }
