@@ -29,6 +29,7 @@ export type PublicProfile = {
 };
 
 export type CallKind = "audio" | "video";
+export type P2pCallMode = "audio" | "video" | "screen";
 export type CallStatus = "ringing" | "active" | "declined" | "ended" | "missed";
 export type P2pSignalType = "offer" | "answer" | "ice" | "screen-start" | "screen-stop";
 // Android may need time to surface a full-screen incoming call and request media permissions.
@@ -40,7 +41,7 @@ export function isIdempotentP2pAnswerStatus(status: CallStatus) {
 
 export type CallSessionSummary = Pick<
   CallSession,
-  "id" | "conversationId" | "room" | "kind" | "provider" | "isGroup" | "status" | "expiresAt" | "answeredAt" | "endedAt" | "createdAt"
+  "id" | "conversationId" | "room" | "kind" | "p2pMode" | "provider" | "isGroup" | "status" | "expiresAt" | "answeredAt" | "endedAt" | "createdAt"
 > & {
   direction: "incoming" | "outgoing";
   isCaller: boolean;
@@ -863,6 +864,7 @@ function toCallSessionSummary(call: CallSession, userId: number, peer: PublicPro
     conversationId: call.conversationId,
     room: call.room,
     kind: call.kind,
+    p2pMode: call.p2pMode,
     provider: call.provider,
     isGroup: false,
     status: call.status,
@@ -884,8 +886,9 @@ async function hydrateCallSession(call: CallSession, userId: number): Promise<Ca
   return toCallSessionSummary(call, userId, toPublicProfile(peerUser));
 }
 
-export async function createCallSession(conversationId: number, callerId: number, kind: CallKind) {
+export async function createCallSession(conversationId: number, callerId: number, kind: CallKind, p2pMode: P2pCallMode) {
   const db = requireDb(await getDb());
+  if ((p2pMode === "video") !== (kind === "video")) throw new Error("Chế độ P2P không khớp với loại cuộc gọi.");
   const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
   if (!conversation || conversation.kind !== "direct") throw new Error("ChatPHT hiện chỉ hỗ trợ gọi P2P trong hội thoại 1:1.");
   const peer = await getConversationPeer(conversationId, callerId);
@@ -905,6 +908,7 @@ export async function createCallSession(conversationId: number, callerId: number
     recipientId: peer.id,
     room: `chatpht-call-${id}`,
     kind,
+    p2pMode,
     provider: "p2p",
     status: "ringing",
     expiresAt: new Date(now.getTime() + P2P_RING_TIMEOUT_MS),

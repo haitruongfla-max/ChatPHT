@@ -26,9 +26,10 @@ function openNotification(data: unknown) {
     const payload = data as Record<string, unknown>;
     const callId = typeof payload.callId === "string" ? payload.callId : null;
     const kind = payload.kind === "video" ? "video" : "audio";
+    const p2pMode = payload.p2pMode === "screen" ? "screen" : payload.p2pMode === "video" ? "video" : "audio";
     if (payload.type === "incoming_call" && callId) {
       const group = payload.group === "1" || payload.group === true ? "1" : "0";
-      router.push({ pathname: "/call", params: { callId, kind, direction: "incoming", group } });
+      router.push({ pathname: "/call", params: { callId, kind, p2pMode, direction: "incoming", group } });
       return;
     }
   }

@@ -109,7 +109,7 @@ describe("native P2P renegotiation", () => {
     expect(signals.map((signal) => signal.type)).toEqual(["offer", "screen-start"]);
     expect(peer.offerCalls).toHaveLength(1);
 
-    await call.handleSignal({ type: "answer", payload: JSON.stringify({ type: "answer", sdp: "initial-answer" }) });
+    await call.handleSignal({ type: "answer", payload: JSON.stringify({ description: { type: "answer", sdp: "initial-answer" }, offerId: 1 }) });
     expect(signals.map((signal) => signal.type)).toEqual(["offer", "screen-start", "offer"]);
     expect(peer.offerCalls).toHaveLength(2);
   });
@@ -168,7 +168,7 @@ describe("native P2P renegotiation", () => {
       const remoteDescription = description as { type: string };
       peer.signalingState = remoteDescription.type === "answer" ? "stable" : "have-remote-offer";
     });
-    const answer = { type: "answer" as const, payload: JSON.stringify({ type: "answer", sdp: "same-answer" }) };
+    const answer = { type: "answer" as const, payload: JSON.stringify({ description: { type: "answer", sdp: "same-answer" }, offerId: 1 }) };
 
     const first = call.handleSignal(answer);
     const duplicate = call.handleSignal(answer);
@@ -178,6 +178,23 @@ describe("native P2P renegotiation", () => {
     releaseFirstAnswer?.();
     await Promise.all([first, duplicate]);
     expect(setRemoteDescription).toHaveBeenCalledTimes(1);
+  });
+
+  it("never applies an answer belonging to a stale offer even while the peer awaits a local answer", async () => {
+    const call = new P2pCall();
+    await call.start({
+      isCaller: true,
+      kind: "audio",
+      mode: "audio",
+      onSignal: () => undefined,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    });
+    const peer = mocks.peerInstances[0]!;
+
+    await call.handleSignal({ type: "answer", payload: JSON.stringify({ description: { type: "answer", sdp: "stale-answer" }, offerId: 99 }) });
+
+    expect(peer.signalingState).toBe("have-local-offer");
   });
 
   it("pre-gathers ICE candidates to reduce the Android startup signaling race", async () => {

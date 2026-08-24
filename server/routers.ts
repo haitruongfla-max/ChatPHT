@@ -295,11 +295,11 @@ export const appRouter = router({
   }),
   calls: router({
     start: protectedProcedure
-      .input(z.object({ conversationId: z.number().int().positive(), kind: z.enum(["audio", "video"]) }))
+      .input(z.object({ conversationId: z.number().int().positive(), kind: z.enum(["audio", "video"]), p2pMode: z.enum(["audio", "video", "screen"]) }))
       .mutation(async ({ ctx, input }) => {
         try {
-          const call = await db.createCallSession(input.conversationId, ctx.user.id, input.kind);
-          void dispatchIncomingCallPushNotification({ conversationId: input.conversationId, senderId: ctx.user.id, callId: call.id, kind: input.kind });
+          const call = await db.createCallSession(input.conversationId, ctx.user.id, input.kind, input.p2pMode);
+          void dispatchIncomingCallPushNotification({ conversationId: input.conversationId, senderId: ctx.user.id, callId: call.id, kind: input.kind, p2pMode: input.p2pMode });
           return call;
         } catch (error) {
           return appError(error, "Không thể bắt đầu cuộc gọi.");

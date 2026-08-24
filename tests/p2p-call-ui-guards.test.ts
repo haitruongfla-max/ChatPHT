@@ -38,8 +38,20 @@ describe("P2P call screen guards", () => {
     expect(chatScreen).toContain('beginP2pAction("video")');
     expect(chatScreen).toContain('beginP2pAction("screen")');
     expect(chatScreen).not.toContain('beginCall("video", true)');
+    expect(chatScreen).toContain('p2pMode: mode');
     expect(callScreen).toContain('const mode = toP2pCallMode');
+    expect(callScreen).toContain('details.data?.p2pMode ?? routeMode');
+    expect(callScreen).not.toContain('p2pScreenShare');
     expect(callScreen).toContain('const startsWithScreenShare = mode === "screen"');
     expect(callScreen).toContain('const kind = callKindForP2pMode(mode)');
+  });
+
+  it("preserves the server-selected mode through active and push-driven incoming navigation", () => {
+    const incomingWatcher = readFileSync(resolve(process.cwd(), "components/incoming-call-watcher.native.tsx"), "utf8");
+    const pushManager = readFileSync(resolve(process.cwd(), "components/push-notification-manager.tsx"), "utf8");
+
+    expect(incomingWatcher).toContain("p2pMode: call?.p2pMode");
+    expect(pushManager).toContain('payload.p2pMode === "screen"');
+    expect(pushManager).toContain("params: { callId, kind, p2pMode, direction: \"incoming\", group }");
   });
 });

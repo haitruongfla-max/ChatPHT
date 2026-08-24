@@ -25,15 +25,17 @@ function CallerAvatar({ name, avatarUrl, style }: { name: string; avatarUrl: str
 }
 
 export default function CallScreen() {
-  const params = useLocalSearchParams<{ callId?: string; kind?: CallKind; p2pMode?: P2pCallMode; direction?: Direction; name?: string; avatar?: string; p2pScreenShare?: string }>();
+  const params = useLocalSearchParams<{ callId?: string; kind?: CallKind; p2pMode?: P2pCallMode; direction?: Direction; name?: string; avatar?: string }>();
   const callId = params.callId ?? "";
-  // Retain legacy p2pScreenShare only for an already-open older route; all
-  // new routes carry a mutually exclusive p2pMode.
-  const mode = toP2pCallMode(params.p2pMode ?? (params.p2pScreenShare === "1" ? "screen" : params.kind));
-  const kind = callKindForP2pMode(mode);
+  // A route is only an initial hint. The authenticated call session is the
+  // source of truth, so a stale navigation state cannot turn audio into screen.
+  const routeMode = toP2pCallMode(params.p2pMode ?? params.kind);
   const direction = params.direction === "incoming" ? "incoming" : "outgoing";
   const resumed = activeCall.get(callId);
   const p2p = useRef(resumed?.call ?? new P2pCall()).current;
+  const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: 800 });
+  const mode = toP2pCallMode(details.data?.p2pMode ?? routeMode);
+  const kind = callKindForP2pMode(mode);
   const [connected, setConnected] = useState(Boolean(resumed?.connected));
   const [muted, setMuted] = useState(resumed?.muted ?? false);
   const [speaker, setSpeaker] = useState(resumed?.speaker ?? kind === "video");
@@ -55,7 +57,6 @@ export default function CallScreen() {
   const finalized = useRef(false);
   const answerInFlight = useRef(false);
   const handledSignals = useRef(new Set<number>());
-  const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: 800 });
   const answer = trpc.calls.answer.useMutation();
   const end = trpc.calls.end.useMutation();
   const decline = trpc.calls.decline.useMutation();

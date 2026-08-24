@@ -35,6 +35,7 @@ export function IncomingCallWatcher() {
       params: {
         callId: call?.id ?? "",
         kind: call?.kind,
+        p2pMode: call?.p2pMode,
         direction: "incoming",
         name: call?.peer?.displayName ?? "Người dùng ChatPHT",
         avatar: call?.peer?.avatarUrl ?? "",

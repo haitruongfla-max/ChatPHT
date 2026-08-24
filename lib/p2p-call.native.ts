@@ -48,6 +48,8 @@ export class P2pCall {
   private negotiationPending = false;
   private negotiationInFlight = false;
   private pendingIceRestart = false;
+  private nextOfferId = 0;
+  private awaitingAnswerForOfferId: number | null = null;
   // Signal polling can deliver a batch while Android has not yet committed the
   // preceding SDP operation. Serialize it so a duplicate answer never calls
   // setRemoteDescription while the peer is already becoming stable.
@@ -63,6 +65,8 @@ export class P2pCall {
     this.negotiationPending = false;
     this.negotiationInFlight = false;
     this.pendingIceRestart = false;
+    this.nextOfferId = 0;
+    this.awaitingAnswerForOfferId = null;
     options.onState("connecting");
 
     // Screen sharing owns MediaProjection in P2pScreenShare. Its base call
@@ -158,18 +162,27 @@ export class P2pCall {
       this.ignoreOffer = offerCollision && options.isCaller;
       if (this.ignoreOffer) return;
       if (offerCollision) await peer.setLocalDescription({ type: "rollback" } as never);
-      await peer.setRemoteDescription(new RTCSessionDescription(payload as { type: string; sdp: string }));
+      const description = (payload.description ?? payload) as { type: string; sdp: string };
+      const offerId = typeof payload.offerId === "number" ? payload.offerId : null;
+      await peer.setRemoteDescription(new RTCSessionDescription(description));
       this.remoteDescriptionReady = true;
       await this.applyPendingIceCandidates();
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
-      await options.onSignal({ type: "answer", payload: JSON.stringify(answer) });
+      await options.onSignal({ type: "answer", payload: JSON.stringify({ description: peer.localDescription ?? answer, offerId }) });
       await this.flushQueuedOffer();
       return;
     }
     if (signal.type === "answer") {
-      if (!options.isCaller || peer.signalingState !== "have-local-offer") return;
-      await peer.setRemoteDescription(new RTCSessionDescription(payload as { type: string; sdp: string }));
+      const offerId = typeof payload.offerId === "number" ? payload.offerId : null;
+      // Only an answer tied to the currently pending offer may mutate SDP.
+      // Permit one legacy raw answer for the first offer so an updated caller
+      // can still establish the initial call with the prior APK version.
+      const isLegacyInitialAnswer = offerId === null && this.awaitingAnswerForOfferId === 1;
+      if (!options.isCaller || peer.signalingState !== "have-local-offer" || (!isLegacyInitialAnswer && offerId !== this.awaitingAnswerForOfferId)) return;
+      const description = (payload.description ?? payload) as { type: string; sdp: string };
+      await peer.setRemoteDescription(new RTCSessionDescription(description));
+      this.awaitingAnswerForOfferId = null;
       this.remoteDescriptionReady = true;
       this.ignoreOffer = false;
       await this.applyPendingIceCandidates();
@@ -264,6 +277,8 @@ export class P2pCall {
     this.negotiationPending = false;
     this.negotiationInFlight = false;
     this.pendingIceRestart = false;
+    this.nextOfferId = 0;
+    this.awaitingAnswerForOfferId = null;
     this.remoteScreenTrackIds.clear();
     this.remoteTracks.clear();
     this.remoteStream = null;
@@ -334,7 +349,9 @@ export class P2pCall {
     try {
       const offer = await peer.createOffer(iceRestart ? { iceRestart: true } : {});
       await peer.setLocalDescription(offer);
-      await onSignal({ type: "offer", payload: JSON.stringify(offer) });
+      const offerId = ++this.nextOfferId;
+      this.awaitingAnswerForOfferId = offerId;
+      await onSignal({ type: "offer", payload: JSON.stringify({ description: peer.localDescription ?? offer, offerId }) });
     } finally {
       this.makingOffer = false;
       this.negotiationInFlight = false;

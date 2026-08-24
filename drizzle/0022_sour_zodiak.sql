@@ -1,0 +1,1 @@
+ALTER TABLE `call_sessions` ADD `p2pMode` enum('audio','video','screen') DEFAULT 'audio' NOT NULL;

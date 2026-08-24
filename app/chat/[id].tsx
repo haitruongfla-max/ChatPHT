@@ -369,7 +369,7 @@ export default function ChatScreen() {
     }
     const kind = callKindForP2pMode(mode);
     try {
-      const call = await startCall.mutateAsync({ conversationId, kind });
+      const call = await startCall.mutateAsync({ conversationId, kind, p2pMode: mode });
       router.push({
         pathname: "/call",
         params: {

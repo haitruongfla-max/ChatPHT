@@ -299,3 +299,6 @@
 - [x] Publish backend Live từ checkpoint đã kiểm chứng và xác minh trạng thái phát hành sau khi đồng bộ GitHub.
 - [x] Nâng versionCode, build APK Android signed cho bản tái cấu trúc ba mô-đun P2P và đính kèm vào GitHub Release.
 - [x] Xác minh asset APK mới, SHA-256 và khả năng cài đè từ versionCode 22 trước khi báo link tải.
+- [x] Chẩn đoán việc nút gọi thoại định tuyến nhầm sang luồng chia sẻ màn hình trên Android thực tế.
+- [x] Loại bỏ hoàn toàn khả năng áp dụng SDP answer trùng khi peer WebRTC đã ở trạng thái stable.
+- [ ] Bổ sung hồi quy theo đường đi thực tế từ nút chat đến màn gọi, rồi build APK signed tăng versionCode để người dùng kiểm thử.

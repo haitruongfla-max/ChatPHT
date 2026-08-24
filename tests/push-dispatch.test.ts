@@ -31,6 +31,7 @@ describe("private chat push dispatch", () => {
       conversationId: 18,
       callId: "d1e8f1a7-440a-4f13-8472-e130e70c5cac",
       kind: "video",
+      p2pMode: "video",
     })).toEqual({
       to: "ExponentPushToken[device-a]",
       title: "Cuộc gọi video đến",
@@ -44,6 +45,7 @@ describe("private chat push dispatch", () => {
         conversationId: 18,
         callId: "d1e8f1a7-440a-4f13-8472-e130e70c5cac",
         kind: "video",
+        p2pMode: "video",
         group: "0",
       },
     });
@@ -54,6 +56,7 @@ describe("private chat push dispatch", () => {
       conversationId: 29,
       callId: "6134ece2-91c7-4184-a271-fd1f2700bc76",
       kind: "audio",
+      p2pMode: "audio",
       isGroup: true,
     })).toMatchObject({
       title: "Cuộc gọi thoại nhóm",

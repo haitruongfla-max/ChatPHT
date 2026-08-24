@@ -148,6 +148,9 @@ export const callSessions = mysqlTable(
     recipientId: int("recipientId").notNull(),
     room: varchar("room", { length: 96 }).notNull().unique(),
     kind: mysqlEnum("kind", ["audio", "video"]).notNull(),
+    // Do not infer screen share from kind: both screen and audio use an audio
+    // base stream, but are separate actions and media lifecycles.
+    p2pMode: mysqlEnum("p2pMode", ["audio", "video", "screen"]).default("audio").notNull(),
     // Keep the legacy value in the database enum so existing call history remains readable.
     // Every newly created call is P2P and no service-room token is issued at runtime.
     provider: mysqlEnum("provider", ["livekit", "p2p"]).default("p2p").notNull(),

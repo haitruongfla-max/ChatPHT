@@ -31,8 +31,8 @@ describe("P2P signaling router", () => {
     const call = { id: callId, conversationId: 33, kind: "video", provider: "p2p" };
     vi.mocked(db.createCallSession).mockResolvedValue(call as any);
 
-    await expect(callerFor(7).calls.start({ conversationId: 33, kind: "video" })).resolves.toEqual(call);
-    expect(db.createCallSession).toHaveBeenCalledWith(33, 7, "video");
+    await expect(callerFor(7).calls.start({ conversationId: 33, kind: "video", p2pMode: "video" })).resolves.toEqual(call);
+    expect(db.createCallSession).toHaveBeenCalledWith(33, 7, "video", "video");
   });
 
   it("does not expose group-call, Room token, or standalone screen-share procedures", () => {
