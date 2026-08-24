@@ -283,4 +283,4 @@
 - [x] Đánh giá gói `ChatPHT_V109_SCREEN_SHARE_LIVEKIT.zip`, lập ma trận so sánh với chia sẻ màn hình P2P 1:1 hiện tại và loại trừ thành phần làm giảm bảo mật hoặc xung đột kiến trúc.
 - [x] Tích hợp chọn lọc chỉ các cải tiến chia sẻ màn hình vượt trội, tương thích với Android/P2P/MySQL/tRPC mà không ảnh hưởng giao diện, chat/media riêng tư hoặc quota.
 - [x] Bổ sung hồi quy, kiểm tra toàn diện và checkpoint riêng cho đợt nâng cấp chia sẻ màn hình nếu có thay đổi mã nguồn an toàn.
-- [ ] Đồng bộ checkpoint chia sẻ màn hình P2P mới nhất lên kho GitHub hiện có mà không phát hành APK hoặc triển khai backend.
+- [x] Đồng bộ checkpoint chia sẻ màn hình P2P mới nhất lên kho GitHub hiện có mà không phát hành APK hoặc triển khai backend.
