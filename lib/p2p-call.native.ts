@@ -48,6 +48,10 @@ export class P2pCall {
   private negotiationPending = false;
   private negotiationInFlight = false;
   private pendingIceRestart = false;
+  // Signal polling can deliver a batch while Android has not yet committed the
+  // preceding SDP operation. Serialize it so a duplicate answer never calls
+  // setRemoteDescription while the peer is already becoming stable.
+  private signalQueue: Promise<void> = Promise.resolve();
 
   async start(options: StartOptions) {
     await this.disconnect({ preservePreStartSignals: true });
@@ -117,6 +121,12 @@ export class P2pCall {
   }
 
   async handleSignal(signal: P2pSignal) {
+    const task = this.signalQueue.then(() => this.handleSignalSerial(signal));
+    this.signalQueue = task.catch(() => undefined);
+    await task;
+  }
+
+  private async handleSignalSerial(signal: P2pSignal) {
     const peer = this.peer;
     const options = this.options;
     if (!peer || !options) {
@@ -331,7 +341,7 @@ export class P2pCall {
   private async flushPreStartSignals() {
     const signals = this.preStartSignals;
     this.preStartSignals = [];
-    for (const signal of signals) await this.handleSignal(signal);
+    for (const signal of signals) await this.handleSignalSerial(signal);
   }
 
   private async queueOffer(options: { iceRestart?: boolean } = {}) {

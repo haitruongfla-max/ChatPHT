@@ -33,8 +33,8 @@ describe("Android P2P call configuration", () => {
   it("keeps the P2P release upgradeable from versionCode 20 and the signed asset name stable", () => {
     const appConfig = source("app.config.ts");
     const workflow = source(".github/workflows/build-ota-base-apk.yml");
-    expect(appConfig).toContain("versionCode: 21");
-    expect(workflow).toContain('default: "v1.0.17-p2p-vc21"');
+    expect(appConfig).toContain("versionCode: 22");
+    expect(workflow).toContain('default: "v1.0.18-p2p-vc22"');
     expect(workflow).toContain("APK_OUTPUT: ./app-release.apk");
     expect(workflow).toContain('"$APK_OUTPUT#app-release.apk"');
   });

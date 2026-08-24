@@ -287,3 +287,7 @@
 - [x] Nâng Android lên versionCode lớn hơn 20, kiểm tra chất lượng và đồng bộ cấu hình phát hành lên GitHub.
 - [x] Chạy workflow GitHub Actions tạo APK Android đã ký, xác minh release asset, SHA-256 và khả năng cài đè từ versionCode 20.
 - [x] Chỉ publish backend Live sau khi người dùng xác nhận thao tác phát hành, rồi báo cáo link APK và hướng dẫn cài đặt.
+- [x] Chẩn đoán điều phối gọi thoại, gọi video và chia sẻ màn hình P2P để mỗi nút chỉ khởi tạo đúng một chức năng riêng.
+- [x] Chặn answer SDP trùng hoặc sai trạng thái signaling, đặc biệt lỗi `setRemoteDescription(answer)` khi peer đã `stable`.
+- [x] Bổ sung hồi quy cho ba hành động P2P riêng biệt và xác nhận chat/media/quota không bị ảnh hưởng.
+- [ ] Nâng versionCode, build signed APK sửa lỗi, đồng bộ GitHub và Publish backend theo yêu cầu người dùng.

@@ -30,4 +30,15 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain("Bản xem trước được ẩn để tránh hiệu ứng lặp.");
     expect(callScreen).toContain('const corner = localStream;');
   });
+
+  it("keeps voice, video, and screen share as explicit separate actions", () => {
+    const chatScreen = readFileSync(resolve(process.cwd(), "app/chat/[id].tsx"), "utf8");
+
+    expect(chatScreen).toContain('beginP2pAction("audio")');
+    expect(chatScreen).toContain('beginP2pAction("video")');
+    expect(chatScreen).toContain('beginP2pAction("screen")');
+    expect(chatScreen).not.toContain('beginCall("video", true)');
+    expect(callScreen).toContain('const startsWithScreenShare = params.p2pScreenShare === "1"');
+    expect(callScreen).toContain('kind === "video" && !startsWithScreenShare');
+  });
 });

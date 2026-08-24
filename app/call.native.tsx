@@ -59,6 +59,7 @@ export default function CallScreen() {
   const isGroup = details.data?.isGroup === true;
   const isCaller = details.data?.isCaller === true || direction === "outgoing";
   const isAnswered = details.data?.status === "active";
+  const startsWithScreenShare = params.p2pScreenShare === "1";
   const p2pActive = p2pState !== "idle" && p2pState !== "closed";
   const incomingSignals = trpc.calls.p2pSignal.drain.useQuery({ callId }, { enabled: Boolean(callId) && p2pActive, refetchInterval: p2pActive ? 300 : false });
   const iceConfig = trpc.calls.p2pIceConfig.useQuery({ callId }, { enabled: Boolean(callId) && isAnswered });
@@ -128,12 +129,12 @@ export default function CallScreen() {
   }, [connected, kind]);
 
   useEffect(() => {
-    if (params.p2pScreenShare !== "1" || autoScreenShareRequested.current || !connected || !isAnswered || kind !== "video") return;
+    if (!startsWithScreenShare || autoScreenShareRequested.current || !connected || !isAnswered) return;
     autoScreenShareRequested.current = true;
     void toggleScreenShare();
     // MediaProjection must be requested only after the P2P connection is established.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, isAnswered, kind, params.p2pScreenShare]);
+  }, [connected, isAnswered, startsWithScreenShare]);
 
   useEffect(() => {
     if (direction !== "outgoing" || started.current || !callId) return;
@@ -153,7 +154,7 @@ export default function CallScreen() {
   async function requestPermissions() {
     const microphone = await Camera.requestMicrophonePermissionsAsync();
     if (!microphone.granted) { Alert.alert("Cần quyền micro", "Hãy cấp quyền micro để gọi."); return false; }
-    if (kind === "video") {
+    if (kind === "video" && !startsWithScreenShare) {
       const camera = await Camera.requestCameraPermissionsAsync();
       if (!camera.granted) { Alert.alert("Cần quyền camera", "Hãy cấp quyền camera để gọi video."); return false; }
     }

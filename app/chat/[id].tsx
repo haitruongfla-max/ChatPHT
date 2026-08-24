@@ -361,11 +361,13 @@ export default function ChatScreen() {
       void utils.conversations.groupMembers.invalidate({ conversationId });
     }
   };
-  const beginCall = async (kind: "audio" | "video", startWithScreenShare = false) => {
+  const beginP2pAction = async (action: "audio" | "video" | "screen") => {
     if (isGroup) {
       Alert.alert("Gọi nhóm đã tắt", "ChatPHT hiện chỉ hỗ trợ gọi và chia sẻ màn hình P2P giữa hai người.");
       return;
     }
+    const kind = action === "video" ? "video" : "audio";
+    const startsWithScreenShare = action === "screen";
     try {
       const call = await startCall.mutateAsync({ conversationId, kind });
       router.push({
@@ -375,7 +377,7 @@ export default function ChatScreen() {
           kind,
           direction: "outgoing",
           name: header.title,
-          p2pScreenShare: startWithScreenShare ? "1" : "0",
+          ...(startsWithScreenShare ? { p2pScreenShare: "1" } : {}),
         },
       });
     } catch (error) {
@@ -817,7 +819,7 @@ export default function ChatScreen() {
             </Text>
           </View>
           {!isGroup ? <Pressable
-            onPress={() => void beginCall("audio")}
+            onPress={() => void beginP2pAction("audio")}
             disabled={isStartingCall}
             style={({ pressed }) => [styles.callButton, pressed && styles.pressed]}
             accessibilityRole="button"
@@ -826,7 +828,7 @@ export default function ChatScreen() {
             <MaterialIcons name="phone" size={20} color="#2563EB" />
           </Pressable> : null}
           {!isGroup ? <Pressable
-            onPress={() => void beginCall("video")}
+            onPress={() => void beginP2pAction("video")}
             disabled={isStartingCall}
             style={({ pressed }) => [styles.callButton, pressed && styles.pressed]}
             accessibilityRole="button"
@@ -835,7 +837,7 @@ export default function ChatScreen() {
             <MaterialIcons name="videocam" size={21} color="#2563EB" />
           </Pressable> : null}
           {!isGroup ? <Pressable
-            onPress={() => void beginCall("video", true)}
+            onPress={() => void beginP2pAction("screen")}
             disabled={isStartingCall}
             style={({ pressed }) => [styles.callButton, (pressed || isStartingCall) && styles.pressed]}
             accessibilityRole="button"

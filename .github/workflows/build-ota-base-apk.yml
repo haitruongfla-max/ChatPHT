@@ -6,7 +6,7 @@ on:
       release_tag:
         description: "GitHub Release tag cho APK nền OTA"
         required: true
-        default: "v1.0.17-p2p-vc21"
+        default: "v1.0.18-p2p-vc22"
 
 # GitHub Release cần quyền ghi nội dung; workflow không sử dụng Expo cloud build.
 permissions:
@@ -91,7 +91,7 @@ jobs:
             gh release upload "$RELEASE_TAG" "$APK_OUTPUT#app-release.apk" --clobber
           else
             gh release create "$RELEASE_TAG" "$APK_OUTPUT#app-release.apk" \
-              --title "ChatPHT 1.0.17 — P2P 1:1 (versionCode 21)" \
+              --title "ChatPHT 1.0.18 — P2P 1:1 (versionCode 22)" \
               --generate-notes \
               --target "$GITHUB_SHA"
           fi

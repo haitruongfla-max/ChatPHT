@@ -147,6 +147,35 @@ describe("native P2P renegotiation", () => {
     expect(signals.map((signal) => signal.type)).toEqual(["answer"]);
   });
 
+  it("serializes duplicate answers while Android is still committing the first remote SDP", async () => {
+    const call = new P2pCall();
+    await call.start({
+      isCaller: true,
+      kind: "video",
+      onSignal: () => undefined,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    });
+    const peer = mocks.peerInstances[0]!;
+    let releaseFirstAnswer: (() => void) | undefined;
+    const firstAnswerCommitted = new Promise<void>((resolve) => { releaseFirstAnswer = resolve; });
+    const setRemoteDescription = vi.spyOn(peer, "setRemoteDescription").mockImplementation(async (description) => {
+      await firstAnswerCommitted;
+      const remoteDescription = description as { type: string };
+      peer.signalingState = remoteDescription.type === "answer" ? "stable" : "have-remote-offer";
+    });
+    const answer = { type: "answer" as const, payload: JSON.stringify({ type: "answer", sdp: "same-answer" }) };
+
+    const first = call.handleSignal(answer);
+    const duplicate = call.handleSignal(answer);
+    await Promise.resolve();
+    expect(setRemoteDescription).toHaveBeenCalledTimes(1);
+
+    releaseFirstAnswer?.();
+    await Promise.all([first, duplicate]);
+    expect(setRemoteDescription).toHaveBeenCalledTimes(1);
+  });
+
   it("pre-gathers ICE candidates to reduce the Android startup signaling race", async () => {
     const call = new P2pCall();
     await call.start({
