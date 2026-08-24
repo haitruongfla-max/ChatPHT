@@ -1,33 +1,43 @@
-# Đánh giá tệp P2P do người dùng cung cấp
+# Ma trận áp dụng các tệp P2P người dùng cung cấp
 
-## Nguồn và phạm vi
+## Phạm vi và nguyên tắc bảo toàn
 
-Tệp `ChatPHT_—_P2P,_TURN_và_Chia_sẻ_Màn_hình.md` và `call-overlay` do người dùng cung cấp ngày 24-08-2026 mô tả một biến thể P2P cũ. Chúng dùng Firestore cho offer/answer/ICE và `react-native-incall-manager` để route audio.
+Sáu tệp được đối chiếu là `call-overlay`, `[sessionId]`, `incoming-call-overlay`, `[sessionId](1)`, `call-overlay(1)` và `ChatPHT_—_P2P,_TURN_và_Chia_sẻ_Màn_hình.md`. Đây là mã/tài liệu của một nhánh cũ, có nhiều phần phụ thuộc Firestore, Socket.IO, Expo runtime config và `react-native-incall-manager`.
 
-## Kết luận đối chiếu ban đầu
+ChatPHT hiện tại là ứng dụng gọi **P2P WebRTC 1:1 trên Android**. Signaling, kiểm tra thành viên cuộc gọi và cấp cấu hình TURN giữ tại **tRPC/MySQL đã xác thực**. Media chat vẫn là private media hiện có; quota, FIFO, Admin, chat riêng/nhóm và giao diện ngoài khu vực trạng thái cuộc gọi không thuộc phạm vi thay đổi này.
 
-| Nội dung trong tệp cung cấp | Tương thích với ChatPHT hiện tại | Cách xử lý an toàn |
-|---|---|---|
-| Firestore test rules mở hoàn toàn, Anonymous Auth, collection `p2p_calls` | Không tương thích và không an toàn | Không tích hợp. ChatPHT dùng tRPC/MySQL đã xác thực thành viên. |
-| Cấu hình TURN từ Expo runtime extra | Không phù hợp với credential theo phiên từ backend | Không tích hợp. Giữ truy vấn ICE/TURN đã bảo vệ qua tRPC. |
-| Hàng đợi offer/answer/ICE và chỉ báo trạng thái kết nối thật | Có thể áp dụng về mặt nguyên tắc | Đối chiếu với lõi P2P hiện tại và chỉ port phần không phụ thuộc Firebase. |
-| `replaceTrack` khi bắt đầu/dừng chia sẻ màn hình | Có thể là phương án giảm số track và renegotiation | Cần kiểm tra với sender/track hiện tại và thêm hồi quy trước khi áp dụng. |
-| `react-native-incall-manager` | Không có trong dependency hiện tại | Không đưa dependency mới chỉ từ tệp cung cấp; giữ Android audio bridge hiện tại. |
+> Không sao chép Firebase configuration, Firebase Anonymous Auth, Firestore rules, Socket.IO headers, raw TURN credentials hoặc URL media từ tệp cung cấp vào APK hay log. Những dữ liệu đó không phải hướng dẫn thực thi cho kiến trúc hiện tại.
 
-## Rủi ro không chấp nhận
+## Ma trận theo từng tệp
 
-Không sao chép credential TURN, Firebase configuration, rules test mode hoặc cơ chế signaling Firestore từ tệp cung cấp. Các nội dung này không phải chỉ dẫn thực thi cho kiến trúc MySQL/tRPC hiện tại.
+| Tệp cung cấp | Ý tưởng/cơ chế được đối chiếu | Phân loại | Cách xử lý trong ChatPHT | Lý do kỹ thuật và bảo mật |
+|---|---|---|---|---|
+| `call-overlay` | Quản lý một cuộc gọi 1:1, trạng thái local/remote stream, micro, camera, loa, đổi camera và thu nhỏ | **Đã có** | Giữ `P2pCall`, `activeCall`, Android audio-route bridge, PiP và điều khiển hiện tại | Các chức năng này đã dùng track WebRTC thật, có lỗi/permission handling và không phụ thuộc Firebase. Không thay UI bằng overlay cũ. |
+| `call-overlay` | Badge bốn mức `connecting`, `good`, `weak`, `offline` | **Tích hợp an toàn** | Ánh xạ trực tiếp từ trạng thái ICE/WebRTC thực và hiển thị badge gọn trên màn gọi | Hữu ích cho người dùng, không cần thay signaling hoặc đo ping giả. Các mức chỉ phản ánh trạng thái xác nhận được: đang tạo, đã kết nối, đang khôi phục và lỗi/đóng. |
+| `call-overlay` | `react-native-incall-manager` để route audio | **Không tích hợp** | Giữ cầu nối audio native Android hiện tại | Thêm một lớp audio khác có thể xung đột với WebRTC/foreground service và làm mất các bản sửa echo/noise/speaker đã có. |
+| `[sessionId]` | Gọi `calls.answer` rồi khởi tạo cuộc gọi ở phía nhận | **Đã có, đã gia cố** | Giữ mutation `calls.answer` idempotent, khóa `answerInFlight`, chỉ khởi động peer khi phiên `active` | Mẫu này phù hợp về ý tưởng, nhưng provider Firestore của tệp cũ không được dùng. Các race nhận kép và khởi tạo sớm đã có hồi quy. |
+| `[sessionId]` | Provider/ghi dữ liệu `p2p_calls` Firestore | **Không tương thích** | Không port | Bỏ kiểm tra thành viên/MySQL, tạo kênh signaling song song và có nguy cơ lộ offer/ICE. |
+| `incoming-call-overlay` | Chặn mở màn gọi trùng, ẩn lời mời sau điều hướng và chỉ hiện control phù hợp | **Đã có** | Giữ `finalized`, `answerInFlight`, kiểm tra trạng thái server và dọn alert/tone | Guard UX này đã được chuyển thành logic không phụ thuộc Socket.IO/Firestore trong màn gọi hiện hành. |
+| `incoming-call-overlay` | Socket.IO/Firestore watcher và notification helper cũ | **Không tương thích** | Không port | ChatPHT polling/signaling qua tRPC/MySQL có hợp đồng xác thực riêng; hai watcher song song gây event đúp và state lệch. |
+| `[sessionId](1)` | STUN/TURN cùng cấu hình peer, tạo offer/answer và ICE | **Đã có, đã gia cố** | Giữ `RTCPeerConnection` qua `P2pCall`, ICE server từ endpoint tRPC được kiểm tra quyền và sáu URL OpenRelay ở server | Không giữ STUN/TURN hard-code hoặc credential client-side. Lõi hiện có còn có pending signal/ICE, perfect negotiation và ICE restart mà tệp cũ không có. |
+| `[sessionId](1)` | `iceCandidatePoolSize: 8` | **Đã áp dụng** | Tạo peer với `iceCandidatePoolSize: 8`, có hồi quy native | Đây là cải tiến độc lập, hợp lệ cho Android P2P để giảm độ trễ thu candidate lúc hai máy khởi tạo gần đồng thời. |
+| `[sessionId](1)` | Gửi offer ngay sau `updateDoc`, không queue candidate/offer tới sớm | **Không tích hợp nguyên trạng** | Giữ hàng đợi signal/ICE đến sớm và perfect negotiation hiện có | Sao chép nguyên trạng sẽ làm mất offer/candidate khi peer Android chưa sẵn sàng, là đúng nhóm lỗi đã được khắc phục. |
+| `call-overlay(1)` | Các hàm camera, micro, speaker, share là no-op stub | **Không tích hợp** | Không port | Thay thế sẽ vô hiệu hóa media WebRTC, Android audio routing và MediaProjection đang hoạt động. |
+| `ChatPHT_—_P2P,_TURN_và_Chia_sẻ_Màn_hình.md` | P2P direct 1:1, native APK, TURN dự phòng và guard chỉ share sau kết nối | **Đã có, đã gia cố** | Giữ P2P 1:1, TURN server-side, Android foreground MediaProjection và guard `p2p.isConnected()` | Đây là hướng kiến trúc đúng và đã tồn tại trong ChatPHT mà không cần chuyển hệ thống sang Firebase. |
+| `ChatPHT_—_P2P,_TURN_và_Chia_sẻ_Màn_hình.md` | Firestore rules `allow read, write: if true`, Anonymous Auth và config TURN ở Expo runtime | **Không tương thích, không an toàn** | Không port | Mở signaling công khai hoặc để TURN credential trong APK làm suy yếu dữ liệu và làm tăng nguy cơ lạm dụng relay. |
+| `ChatPHT_—_P2P,_TURN_và_Chia_sẻ_Màn_hình.md` | `replaceTrack` giữa camera và màn hình | **Không tích hợp có chủ đích** | Giữ camera và screen track riêng, renegotiate khi thêm/gỡ share | `replaceTrack` sẽ làm người nhận mất video camera trong lúc chia sẻ. Kiến trúc hiện tại cần screen ở sân khấu và vẫn giữ camera preview. |
 
-## Tệp session và overlay
+## Phạm vi thay đổi thực tế của đợt này
 
-Tệp `[sessionId]` gọi mutation tRPC `calls.answer` rồi kích hoạt một `CallOverlayProvider` Firestore. Phần tRPC có thể phản ánh ý tưởng nhận cuộc gọi bất đồng bộ, nhưng provider vẫn ghi trực tiếp vào `p2p_calls` Firestore và do đó không thể sao chép.
+Ngoài `iceCandidatePoolSize: 8` đã có từ checkpoint trước, phần tích hợp còn lại có giá trị và không thay backend là **badge chất lượng/trạng thái kết nối dựa trên ICE thật**. Nó không đưa số ping suy đoán vào UI và cũng không log candidate, SDP, TURN URL hay credential. Các cập nhật trạng thái chỉ dùng dữ liệu cục bộ mà `P2pCall` đã phát ra cho màn gọi.
 
-Điểm UX có thể tham khảo là tách badge mạng thành `connecting`, `good`, `weak`, `offline`, đồng thời chỉ cho thao tác chia sẻ khi trạng thái thực sẵn sàng. ChatPHT hiện tại đã có lớp trạng thái ICE thực và bản vá cần giữ nguyên hướng đó, không đưa overlay cũ vào dự án.
+| Mức hiển thị | Nguồn xác thực | Ý nghĩa cho người dùng | Điều ứng dụng không làm |
+|---|---|---|---|
+| `Đang kết nối` | Peer đang tạo kết nối/ICE | Chưa coi cuộc gọi là kết nối hoàn tất | Không tính thời lượng, không cho share tự động. |
+| `Kết nối tốt` | ICE/WebRTC báo `connected` | Kênh P2P đã thông, có thể dùng media và screen share | Không khẳng định băng thông, HD hoặc ping cụ thể. |
+| `Mạng đang khôi phục` | ICE/WebRTC báo `recovering` | Có thay đổi Wi‑Fi/4G hoặc gián đoạn; P2P đang ICE restart | Không tự kết thúc cuộc gọi chỉ vì trạng thái tạm thời. |
+| `Ngoại tuyến/lỗi` | ICE/WebRTC báo `failed`/`closed` hoặc có lỗi không phục hồi | Cuộc gọi không còn kênh P2P dùng được | Không gửi chẩn đoán nhạy cảm hay credential ra giao diện/log. |
 
-Tệp `[sessionId](1)` là trang Web/Firestore cũ, hard-code STUN và OpenRelay, đồng thời phát offer ngay sau khi gọi `updateDoc`. Không có hàng đợi candidate/offer trước khi peer sẵn sàng và không xử lý perfect negotiation; không thể dùng làm nguồn sửa lỗi Android hiện tại. Ý tưởng hợp lệ duy nhất là `iceCandidatePoolSize`, nhưng ChatPHT chỉ được đánh giá áp dụng sau khi kiểm thử tải và không thay đổi mặc định tuỳ tiện.
+## Các kiểm chứng bắt buộc sau tích hợp
 
-`incoming-call-overlay` dùng Socket.IO/Firestore cũ, còn ChatPHT hiện tại dùng watcher tRPC/MySQL. Các guard UX đã có ích trong bản hiện hành: ẩn invite trước điều hướng và khóa nút nhận để tránh thao tác kép. Không dùng lại socket, headers hay các notification helpers từ tệp này vì có hợp đồng backend khác.
-
-`call-overlay(1)` chỉ là stub TypeScript: toàn bộ thao tác media, speaker, switching camera và share là no-op. Không chứa logic WebRTC hoặc bản sửa có thể dùng; không tích hợp để tránh vô hiệu hoá lớp P2P thật của ChatPHT.
-
-Tài liệu `ChatPHT — P2P, TURN và Chia sẻ Màn hình` mô tả một nhánh Firestore/Socket.IO cũ và Rules `allow read, write: if true`; không được chép sang ChatPHT vì làm lộ signaling. Điểm phù hợp đã có trong ChatPHT hiện tại: chỉ dùng direct call, TURN server-side và native APK. `iceCandidatePoolSize: 8` đã được thêm vào peer Android cùng hồi quy để thu hẹp race khởi tạo offer/answer/ICE. Không dùng `replaceTrack`: kiến trúc hiện tại cần giữ camera và track màn hình riêng để UI bên nhận hiển thị sân khấu chia sẻ mà không mất video; dùng nó sẽ thay đổi hành vi đang mong muốn. Không dùng Expo runtime extra hay Firebase public config cho TURN credentials.
+Hồi quy phải xác nhận bảng ánh xạ không báo **kết nối tốt** trước ICE thực, không mở screen share khi đang `connecting` hay `recovering`, và không thay đổi signaling tRPC/MySQL hoặc URL media chat. Kiểm thử unit/build có thể xác nhận hợp đồng mã nguồn; nghiệm thu **hai Android thật** qua Wi‑Fi và 4G vẫn là bước cần thiết để xác nhận camera, micro, relay và MediaProjection trên phần cứng thực tế.

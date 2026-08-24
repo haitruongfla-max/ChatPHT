@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getCallConnectionStatus } from "../lib/call-connection-status";
+import { getCallConnectionStatus, getP2pNetworkQuality } from "../lib/call-connection-status";
 
 describe("call connection status", () => {
   it("mô tả rõ bước thiết lập video và các thiết bị đang được mở", () => {
@@ -40,6 +40,31 @@ describe("call connection status", () => {
       phase: "error",
       title: "Không thể kết nối",
       description: "Mạng không ổn định. Vui lòng thử lại.",
+    });
+  });
+
+  it("ánh xạ chất lượng mạng chỉ từ trạng thái ICE/WebRTC đã xác thực", () => {
+    expect(getP2pNetworkQuality("idle")).toMatchObject({ level: "connecting", label: "Đang kết nối" });
+    expect(getP2pNetworkQuality("connecting")).toMatchObject({ level: "connecting" });
+    expect(getP2pNetworkQuality("connected")).toMatchObject({ level: "good", label: "Kết nối P2P tốt" });
+    expect(getP2pNetworkQuality("recovering")).toMatchObject({ level: "weak", label: "Mạng đang khôi phục" });
+    expect(getP2pNetworkQuality("failed")).toMatchObject({ level: "offline", label: "Kết nối đã ngắt" });
+    expect(getP2pNetworkQuality("closed")).toMatchObject({ level: "offline" });
+  });
+
+  it("ưu tiên trạng thái khôi phục thay vì báo lỗi kết nối chung chung", () => {
+    expect(getCallConnectionStatus({
+      kind: "video",
+      direction: "incoming",
+      detailsLoading: false,
+      isConnecting: false,
+      connected: false,
+      isAnswered: true,
+      error: null,
+      networkState: "recovering",
+    })).toMatchObject({
+      phase: "recovering",
+      title: "Đang khôi phục kết nối",
     });
   });
 });

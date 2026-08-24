@@ -277,3 +277,6 @@
 - [x] Bổ sung hồi quy tự động cho timeout P2P, nhận cuộc gọi idempotent, trạng thái ICE/chia sẻ màn hình và URI media ổn định.
 - [x] Đối chiếu các tệp call overlay/session người dùng cung cấp với kiến trúc P2P MySQL/tRPC hiện tại; chỉ trích xuất thay đổi không phụ thuộc Firestore/LiveKit cũ.
 - [x] Tích hợp các cải tiến P2P phù hợp từ tệp cung cấp, bổ sung hồi quy và giữ nguyên toàn bộ luồng chat/media đang hoạt động.
+- [x] Lập ma trận đối chiếu đầy đủ toàn bộ tệp P2P người dùng cung cấp với mã MySQL/tRPC hiện tại, phân loại từng cơ chế theo khả năng tích hợp không phá vỡ ứng dụng.
+- [x] Tích hợp mọi cơ chế P2P còn tương thích và có lợi từ tệp cung cấp, chỉ dùng adapter cho tRPC/MySQL thay vì Firebase/Firestore hoặc LiveKit cũ.
+- [x] Xác nhận bằng hồi quy rằng giao diện, chat, media riêng tư, quota và signaling hiện có không thay đổi ngoài các nâng cấp P2P đã chọn.

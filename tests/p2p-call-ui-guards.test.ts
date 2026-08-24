@@ -16,4 +16,11 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain("answerInFlight.current");
     expect(callScreen).toContain("!p2p.isConnected()");
   });
+
+  it("shows a local ICE-derived quality badge and never returns an answered recipient to the incoming screen", () => {
+    expect(callScreen).toContain("getP2pNetworkQuality(p2pState)");
+    expect(callScreen).toContain("<NetworkQualityBadge quality={networkQuality} inverse={fullVideo} />");
+    expect(callScreen).toContain('direction === "incoming" && !isAnswered');
+    expect(callScreen).toContain('if (state === "recovering") setConnectionError(null);');
+  });
 });

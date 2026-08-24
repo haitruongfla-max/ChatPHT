@@ -1,12 +1,42 @@
+import type { P2pConnectionState } from "@/lib/p2p-call";
+
 export type CallConnectionKind = "audio" | "video";
 export type CallConnectionDirection = "incoming" | "outgoing";
-export type CallConnectionPhase = "preparing" | "connecting" | "ringing" | "connected" | "error";
+export type CallConnectionPhase = "preparing" | "connecting" | "ringing" | "recovering" | "connected" | "error";
+
+export type P2pNetworkQualityLevel = "connecting" | "good" | "weak" | "offline";
+
+export type P2pNetworkQuality = {
+  level: P2pNetworkQualityLevel;
+  label: string;
+  description: string;
+};
 
 export type CallConnectionStatus = {
   phase: CallConnectionPhase;
   title: string;
   description: string;
 };
+
+/**
+ * Maps only verified WebRTC state to user-facing feedback. It deliberately
+ * avoids estimating ping or exposing SDP, ICE candidates, TURN URLs or secrets.
+ */
+export function getP2pNetworkQuality(state: P2pConnectionState): P2pNetworkQuality {
+  switch (state) {
+    case "connected":
+      return { level: "good", label: "Kết nối P2P tốt", description: "Kênh thoại/video trực tiếp đang hoạt động." };
+    case "recovering":
+      return { level: "weak", label: "Mạng đang khôi phục", description: "Đang khôi phục P2P sau khi mạng thay đổi." };
+    case "failed":
+    case "closed":
+      return { level: "offline", label: "Kết nối đã ngắt", description: "Kênh P2P không còn dùng được." };
+    case "idle":
+    case "connecting":
+    default:
+      return { level: "connecting", label: "Đang kết nối", description: "Đang thiết lập kênh P2P bảo mật." };
+  }
+}
 
 export function getCallConnectionStatus({
   kind,
@@ -16,6 +46,7 @@ export function getCallConnectionStatus({
   connected,
   isAnswered,
   error,
+  networkState,
 }: {
   kind: CallConnectionKind;
   direction: CallConnectionDirection;
@@ -24,8 +55,17 @@ export function getCallConnectionStatus({
   connected: boolean;
   isAnswered: boolean;
   error: string | null;
+  networkState?: P2pConnectionState;
 }): CallConnectionStatus {
   const callType = kind === "video" ? "cuộc gọi video" : "cuộc gọi thoại";
+
+  if (networkState === "recovering") {
+    return {
+      phase: "recovering",
+      title: "Đang khôi phục kết nối",
+      description: "Đã phát hiện thay đổi mạng. ChatPHT đang khôi phục kênh P2P…",
+    };
+  }
 
   if (error) {
     return {
