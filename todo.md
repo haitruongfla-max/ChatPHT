@@ -301,4 +301,4 @@
 - [x] Xác minh asset APK mới, SHA-256 và khả năng cài đè từ versionCode 22 trước khi báo link tải.
 - [x] Chẩn đoán việc nút gọi thoại định tuyến nhầm sang luồng chia sẻ màn hình trên Android thực tế.
 - [x] Loại bỏ hoàn toàn khả năng áp dụng SDP answer trùng khi peer WebRTC đã ở trạng thái stable.
-- [ ] Bổ sung hồi quy theo đường đi thực tế từ nút chat đến màn gọi, rồi build APK signed tăng versionCode để người dùng kiểm thử.
+- [x] Bổ sung hồi quy theo đường đi thực tế từ nút chat đến màn gọi, rồi build APK signed tăng versionCode để người dùng kiểm thử.
