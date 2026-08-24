@@ -24,7 +24,11 @@ const mocks = vi.hoisted(() => {
     removeTrack = vi.fn();
     close = vi.fn();
 
-    constructor() { peerInstances.push(this); }
+    configuration: Record<string, unknown>;
+    constructor(configuration: Record<string, unknown> = {}) {
+      this.configuration = configuration;
+      peerInstances.push(this);
+    }
     addTrack(track: any) { return { track }; }
     async createOffer(options: { iceRestart?: boolean } = {}) {
       this.offerCalls.push(options);
@@ -141,5 +145,18 @@ describe("native P2P renegotiation", () => {
     });
 
     expect(signals.map((signal) => signal.type)).toEqual(["answer"]);
+  });
+
+  it("pre-gathers ICE candidates to reduce the Android startup signaling race", async () => {
+    const call = new P2pCall();
+    await call.start({
+      isCaller: true,
+      kind: "video",
+      onSignal: () => undefined,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    });
+
+    expect(mocks.peerInstances[0]?.configuration).toMatchObject({ iceCandidatePoolSize: 8 });
   });
 });

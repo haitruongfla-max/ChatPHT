@@ -275,3 +275,5 @@
 - [x] Khắc phục ảnh/media trong chat nhấp nháy hoặc tải lại liên tục, giữ cache và URI ổn định khi danh sách tin nhắn cập nhật.
 - [ ] Bổ sung hồi quy cho timeout cuộc gọi, trạng thái chia sẻ màn hình và định danh/cache ảnh chat; nghiệm thu hai Android thật qua Wi-Fi/4G.
 - [x] Bổ sung hồi quy tự động cho timeout P2P, nhận cuộc gọi idempotent, trạng thái ICE/chia sẻ màn hình và URI media ổn định.
+- [x] Đối chiếu các tệp call overlay/session người dùng cung cấp với kiến trúc P2P MySQL/tRPC hiện tại; chỉ trích xuất thay đổi không phụ thuộc Firestore/LiveKit cũ.
+- [x] Tích hợp các cải tiến P2P phù hợp từ tệp cung cấp, bổ sung hồi quy và giữ nguyên toàn bộ luồng chat/media đang hoạt động.

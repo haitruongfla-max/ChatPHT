@@ -73,6 +73,9 @@ export class P2pCall {
       iceServers: options.iceServers?.length
         ? options.iceServers
         : [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }],
+      // Gather candidates as soon as the peer is created. This narrows the
+      // startup race on Android where offer/answer and signal polling overlap.
+      iceCandidatePoolSize: 8,
     });
     this.peer = peer;
     stream.getTracks().forEach((track) => peer.addTrack(track, stream));
