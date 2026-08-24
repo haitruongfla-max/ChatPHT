@@ -30,11 +30,11 @@ describe("Android P2P call configuration", () => {
     expect(call).toContain("setAndroidCallSpeakerRoute");
   });
 
-  it("keeps the P2P release upgradeable from versionCode 19 and the signed asset name stable", () => {
+  it("keeps the P2P release upgradeable from versionCode 20 and the signed asset name stable", () => {
     const appConfig = source("app.config.ts");
     const workflow = source(".github/workflows/build-ota-base-apk.yml");
-    expect(appConfig).toContain("versionCode: 20");
-    expect(workflow).toContain('default: "v1.0.16-p2p-vc20"');
+    expect(appConfig).toContain("versionCode: 21");
+    expect(workflow).toContain('default: "v1.0.17-p2p-vc21"');
     expect(workflow).toContain("APK_OUTPUT: ./app-release.apk");
     expect(workflow).toContain('"$APK_OUTPUT#app-release.apk"');
   });
