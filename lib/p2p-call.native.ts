@@ -1,7 +1,7 @@
 import { MediaStream, RTCPeerConnection, RTCSessionDescription, type MediaStreamTrack } from "react-native-webrtc";
 
 import { resetAndroidCallSpeakerRoute } from "@/lib/android-audio-route";
-import { P2pAudioCall } from "./p2p-audio-call";
+import { P2pVoiceSession } from "./p2p-voice-session.native";
 import type { P2pCallMode } from "./p2p-call-mode";
 import { P2pScreenCall } from "./p2p-screen-call";
 import { P2pVideoCall } from "./p2p-video-call";
@@ -41,7 +41,7 @@ export class P2pCall {
   private remoteCameraStream: MediaStream | null = null;
   private pendingScreenAudioTracks: MediaStreamTrack[] = [];
   private sessionMode: P2pCallMode | null = null;
-  private audioCall: P2pAudioCall | null = null;
+  private voiceSession: P2pVoiceSession | null = null;
   private videoCall: P2pVideoCall | null = null;
   private screenCall: P2pScreenCall | null = null;
   private options: StartOptions | null = null;
@@ -61,12 +61,37 @@ export class P2pCall {
   private signalQueue: Promise<void> = Promise.resolve();
   private signalSendQueue: Promise<void> = Promise.resolve();
   private statsTimer: ReturnType<typeof setInterval> | null = null;
+  private startPromise: Promise<void> | null = null;
+  private startMode: P2pCallMode | null = null;
+  private sessionGeneration = 0;
 
   async start(options: StartOptions) {
+    if (this.startPromise) {
+      if (this.startMode !== options.mode) throw new Error("Phiên P2P đang khởi tạo với chế độ khác.");
+      await this.startPromise;
+      return;
+    }
+    if (this.peer && this.options && this.sessionMode === options.mode) return;
     if (this.sessionMode && this.sessionMode !== options.mode) {
       throw new Error("Phiên P2P đang hoạt động với chế độ khác. Đã chặn để không mở nhầm chia sẻ màn hình.");
     }
+
+    const starting = this.startNewSession(options);
+    this.startPromise = starting;
+    this.startMode = options.mode;
+    try {
+      await starting;
+    } finally {
+      if (this.startPromise === starting) {
+        this.startPromise = null;
+        this.startMode = null;
+      }
+    }
+  }
+
+  private async startNewSession(options: StartOptions) {
     await this.disconnect({ preservePreStartSignals: true });
+    const generation = ++this.sessionGeneration;
     this.sessionMode = options.mode;
     this.options = options;
     this.remoteDescriptionReady = false;
@@ -82,6 +107,10 @@ export class P2pCall {
     options.onState("connecting");
 
     const stream = await this.startImmutableMediaSession(options.mode, options.isCaller);
+    if (!this.isCurrentSession(generation)) {
+      await this.stopMediaSessions();
+      throw new Error("P2P_SESSION_REPLACED");
+    }
     this.localStream = stream;
     options.onBootstrapPhase?.("media-ready");
 
@@ -96,10 +125,12 @@ export class P2pCall {
     this.getPublishStreams(stream).forEach((source) => source.getTracks().forEach((track) => peer.addTrack(track, source)));
 
     peer.onicecandidate = (event: { candidate?: unknown }) => {
+      if (!this.isCurrentSession(generation, peer)) return;
       const candidate = (event as unknown as { candidate?: unknown }).candidate;
       if (candidate) void this.sendSignal({ type: "ice", payload: JSON.stringify(candidate) }).catch(() => undefined);
     };
     peer.ontrack = (event: { track?: MediaStreamTrack; streams?: MediaStream[] }) => {
+      if (!this.isCurrentSession(generation, peer)) return;
       if (!event.track) return;
       if (options.mode === "screen") {
         this.publishScreenRemoteTrack(event.track, event.streams?.[0] ?? null);
@@ -108,6 +139,7 @@ export class P2pCall {
       this.publishRemoteTrack(event.track);
     };
     peer.onconnectionstatechange = () => {
+      if (!this.isCurrentSession(generation, peer)) return;
       const state = peer.connectionState;
       if (state === "connected") {
         this.connected = true;
@@ -128,6 +160,10 @@ export class P2pCall {
 
     await this.flushPreStartSignals();
     if (options.isCaller) await this.queueOffer();
+  }
+
+  private isCurrentSession(generation: number, peer?: RTCPeerConnection) {
+    return generation === this.sessionGeneration && (!peer || this.peer === peer);
   }
 
   async handleSignal(signal: P2pSignal) {
@@ -199,14 +235,14 @@ export class P2pCall {
   }
 
   async setMicrophoneEnabled(enabled: boolean) {
-    if (this.audioCall) return this.audioCall.setMicrophoneEnabled(enabled);
+    if (this.voiceSession) return this.voiceSession.setMicrophoneEnabled(enabled);
     if (this.videoCall) return this.videoCall.setMicrophoneEnabled(enabled);
     if (this.screenCall) return this.screenCall.setMicrophoneEnabled(enabled);
     throw new Error("Chưa có phiên P2P để đổi microphone.");
   }
 
   async setSpeakerEnabled(enabled: boolean) {
-    if (this.audioCall) return this.audioCall.setSpeakerEnabled(enabled);
+    if (this.voiceSession) return this.voiceSession.setSpeakerEnabled(enabled);
     if (this.videoCall) return this.videoCall.setSpeakerEnabled(enabled);
     if (this.screenCall) return this.screenCall.setSpeakerEnabled(enabled);
     throw new Error("Chưa có phiên P2P để đổi loa.");
@@ -236,6 +272,9 @@ export class P2pCall {
   }
 
   async disconnect(options: { preserveAudioSession?: boolean; preservePreStartSignals?: boolean } = {}) {
+    this.sessionGeneration += 1;
+    this.startPromise = null;
+    this.startMode = null;
     this.connected = false;
     this.stopStatsPolling();
     this.recoveryInProgress = false;
@@ -256,12 +295,7 @@ export class P2pCall {
     this.pendingScreenAudioTracks = [];
     this.sessionMode = null;
     this.options?.onStats?.({ latencyMs: null });
-    await this.audioCall?.stop({ preserveAudioRoute: true });
-    await this.videoCall?.stop({ preserveAudioRoute: true });
-    await this.screenCall?.stop();
-    this.audioCall = null;
-    this.videoCall = null;
-    this.screenCall = null;
+    await this.stopMediaSessions();
     this.localStream = null;
     this.options?.onRemoteStream(null);
     this.options?.onRemoteCameraStream?.(null);
@@ -272,8 +306,8 @@ export class P2pCall {
 
   private async startImmutableMediaSession(mode: P2pCallMode, isCaller: boolean) {
     if (mode === "audio") {
-      this.audioCall = new P2pAudioCall();
-      return this.audioCall.start();
+      this.voiceSession = new P2pVoiceSession();
+      return this.voiceSession.start();
     }
     if (mode === "video") {
       this.videoCall = new P2pVideoCall();
@@ -281,6 +315,15 @@ export class P2pCall {
     }
     this.screenCall = new P2pScreenCall();
     return this.screenCall.start({ isCaller });
+  }
+
+  private async stopMediaSessions() {
+    await this.voiceSession?.stop({ preserveAudioRoute: true });
+    await this.videoCall?.stop({ preserveAudioRoute: true });
+    await this.screenCall?.stop();
+    this.voiceSession = null;
+    this.videoCall = null;
+    this.screenCall = null;
   }
 
   private getPublishStreams(fallback: MediaStream) {

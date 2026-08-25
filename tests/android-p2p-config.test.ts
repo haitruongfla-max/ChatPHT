@@ -22,12 +22,12 @@ describe("Android P2P call configuration", () => {
 
   it("keeps Android camera capture and call audio safeguards enabled", () => {
     const camera = source("components/chat-camera-capture.tsx");
-    const audioCall = source("lib/p2p-audio-call.ts");
+    const voiceSession = source("lib/p2p-voice-session.native.ts");
     expect(camera).toContain("}, 300)");
     expect(camera).toContain("maxDuration: MAX_RECORDING_SECONDS");
-    expect(audioCall).toContain("autoGainControl: true");
-    expect(audioCall).toContain("noiseSuppression: true");
-    expect(audioCall).toContain("setAndroidCallSpeakerRoute");
+    expect(voiceSession).toContain("autoGainControl: true");
+    expect(voiceSession).toContain("noiseSuppression: true");
+    expect(voiceSession).toContain("setAndroidCallSpeakerRoute");
   });
 
   it("keeps the P2P route and TURN release upgradeable from versionCode 31 and the signed asset name stable", () => {

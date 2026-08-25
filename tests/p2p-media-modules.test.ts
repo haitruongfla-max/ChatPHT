@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const source = (file: string) => readFileSync(resolve(process.cwd(), "lib", file), "utf8");
 
-const audioModule = source("p2p-audio-call.ts");
+const voiceModule = source("p2p-voice-session.native.ts");
 const videoModule = source("p2p-video-call.ts");
 const screenModule = source("p2p-screen-share.ts");
 const screenCallModule = source("p2p-screen-call.ts");
@@ -14,10 +14,11 @@ const androidAudioRoute = source("android-audio-route.native.ts");
 
 describe("P2P media module isolation", () => {
   it("keeps microphone-only calling separate from camera and MediaProjection", () => {
-    expect(audioModule).toContain("getUserMedia");
-    expect(audioModule).toContain("video: false");
-    expect(audioModule).not.toContain("getDisplayMedia");
-    expect(audioModule).not.toContain("_switchCamera");
+    expect(voiceModule).toContain("getUserMedia");
+    expect(voiceModule).toContain("video: false");
+    expect(voiceModule).toContain("startPromise");
+    expect(voiceModule).not.toContain("getDisplayMedia");
+    expect(voiceModule).not.toContain("_switchCamera");
   });
 
   it("keeps video calling responsible for camera only, not MediaProjection", () => {
@@ -47,7 +48,7 @@ describe("P2P media module isolation", () => {
     expect(coordinator).toContain('if (mode === "audio")');
     expect(coordinator).toContain('if (mode === "video")');
     expect(coordinator).toContain("this.videoCall.start()");
-    expect(coordinator).toContain("this.audioCall.start()");
+    expect(coordinator).toContain("this.voiceSession.start()");
     expect(coordinator).toContain("this.screenCall.start({ isCaller })");
     expect(coordinator).toContain("setScreenCameraEnabled");
     expect(coordinator).toContain('this.sessionMode !== "screen"');

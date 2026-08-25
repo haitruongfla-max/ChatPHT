@@ -236,6 +236,23 @@ describe("native P2P renegotiation", () => {
     expect(signals.map((signal) => signal.type)).toEqual(["answer"]);
   });
 
+  it("coalesces duplicate starts for the same audio call so Android captures one microphone and creates one peer", async () => {
+    const call = new P2pCall();
+    const options = {
+      isCaller: true,
+      kind: "audio" as const,
+      mode: "audio" as const,
+      onSignal: () => undefined,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    };
+
+    await Promise.all([call.start(options), call.start(options)]);
+
+    expect(mocks.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(mocks.peerInstances).toHaveLength(1);
+  });
+
   it("bridges an accepted 1:1 call from caller offer through recipient answer and ICE", async () => {
     const signalsToRecipient: Array<{ type: "offer" | "answer" | "ice"; payload: string }> = [];
     const signalsToCaller: Array<{ type: "offer" | "answer" | "ice"; payload: string }> = [];

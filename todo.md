@@ -363,3 +363,11 @@
 - [x] Bỏ gate quyền micro phụ thuộc Expo Camera cho audio/screen; để WebRTC/MediaProjection là nguồn quyền thực tế và ghi telemetry lỗi bootstrap tối thiểu, không có dữ liệu media hay secret.
 - [x] Bổ sung chỉ báo relay an toàn có TURN/không TURN và mode credential ở backend, không lộ URL, username hoặc credential; dùng để phân biệt lỗi NAT/TURN thật sau signaling.
 - [ ] Sau source gate, phát hành APK versionCode lớn hơn 31 để kiểm thử riêng audio trước, sau đó video và screen theo telemetry.
+- [x] Lập bản đồ toàn bộ dependency của call hiện hành, gồm route/UI, signaling tRPC/MySQL, transport WebRTC, media modules, Android permission/lifecycle và test, trước khi thay thế thành phần nào.
+- [x] Cô lập nền tảng gọi cũ sau checkpoint riêng; giữ giao thức signaling xác thực và các module dùng chung ngoài call không bị xóa.
+- [x] Hoàn tất source gate voice: thay module voice cũ bằng session microphone-only idempotent, chặn peer/capture trùng, giữ signaling xác thực và đạt TypeScript, lint, backend build, Android export/config cùng full regression.
+- [ ] Xây lại voice P2P microphone-only tuần tự và kiểm thử các nhánh gọi/nhận/từ chối/hủy/bận/timeout/mute/loa/mất mạng/cleanup trước khi chuyển sang video.
+- [ ] Xây lại video P2P camera+microphone sau khi voice có bằng chứng hai Android; kiểm thử camera, mute, loa, lifecycle và cleanup độc lập.
+- [ ] Xây lại screen P2P với MediaProjection riêng sau khi video có bằng chứng hai Android; kiểm thử quyền hệ thống, xem ở máy nhận, dừng share và cleanup.
+- [ ] Hoàn thiện UI call gốc theo bố cục yêu cầu sau khi media thật đã được nghiệm thu; không dùng thương hiệu hay asset bên thứ ba.
+- [ ] Chạy regression toàn ứng dụng, phát hành APK signed mới và chỉ kết luận từng mode sau telemetry cùng thử nghiệm hai Android thật.
