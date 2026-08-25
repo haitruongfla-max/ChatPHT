@@ -382,3 +382,4 @@
 - [x] Giữ bản voice đầu tiên không có video call, camera call, MediaProjection, screen share hoặc Socket.IO call; các lớp đó chỉ được xét sau nghiệm thu Android ở lớp trước.
 - [x] Hoàn tất source gate voice clean-slate: diff sạch, TypeScript, lint, backend build, Android export/config và 96 kiểm thử qua (2 credential test skip chủ đích).
 - [ ] Checkpoint, đồng bộ GitHub và build APK thử nghiệm voice-only versionCode 35; không dùng hoặc quảng bá APK vc34 bị lỗi.
+- [x] Cô lập module WebRTC native khỏi route web: preview web dùng fallback an toàn, route Android tải màn voice native khi chạy trên thiết bị; TypeScript, export web và preview không còn crash.

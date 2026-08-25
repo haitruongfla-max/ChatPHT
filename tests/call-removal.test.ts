@@ -55,7 +55,7 @@ describe("Voice P2P được tái xây từ nền không-call", () => {
     expect(chat).toContain("!isGroup");
     expect(layout).toContain('name="voice-call"');
     expect(chat).not.toMatch(/beginP2pAction|Gọi video|Chia sẻ màn hình/);
-    const voiceScreen = source("app/voice-call.tsx");
+    const voiceScreen = source("components/voice-call-screen.native.tsx");
     expect(voiceScreen).toContain("pendingSignals");
     expect(voiceScreen).not.toContain("if (!peer || !drain.data)");
   });
