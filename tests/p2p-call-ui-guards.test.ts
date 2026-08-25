@@ -12,9 +12,14 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain('state === "recovering"');
   });
 
-  it("blocks duplicate answer mutations before P2P is initialized", () => {
+  it("blocks duplicate answer mutations and starts transport once without depending on a React state race", () => {
     expect(callScreen).toContain("answerInFlight.current");
-    expect(callScreen).toContain('p2pState === "idle"');
+    expect(callScreen).toContain("p2pStarted.current");
+    expect(callScreen).toContain("p2pStartInFlight.current");
+    expect(callScreen).not.toContain('p2pState === "idle" && !isConnecting');
+    expect(callScreen).toContain("shouldDrainSignals");
+    expect(callScreen).toContain("signalDiagnosticStatus(signalDiagnostics)");
+    expect(callScreen).toContain("P2P_SIGNAL_SEND_FAILED");
   });
 
   it("shows a WebRTC-derived latency badge and never returns an answered recipient to the incoming screen", () => {

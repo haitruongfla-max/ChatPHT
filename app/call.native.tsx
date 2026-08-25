@@ -9,12 +9,26 @@ import { RTCView, type MediaStream } from "react-native-webrtc";
 import { activeCall } from "@/lib/active-call";
 import { getCallConnectionStatus, getP2pNetworkQuality, type P2pNetworkQuality } from "@/lib/call-connection-status";
 import { createCallTonePlayer, stopAllCallAlerts, stopCallTone } from "@/lib/call-sounds";
-import { P2pCall, type P2pConnectionState, type P2pNetworkStats, type P2pSignal } from "@/lib/p2p-call";
+import { P2pCall, type P2pConnectionState, type P2pNetworkStats, type P2pSignal, type P2pSignalProgress } from "@/lib/p2p-call";
 import { callKindForP2pMode, toP2pCallMode, type P2pCallMode } from "@/lib/p2p-call-mode";
 import { trpc } from "@/lib/trpc";
 
 type CallKind = "audio" | "video";
 type Direction = "incoming" | "outgoing";
+type P2pSignalDiagnostics = Record<"offerSent" | "offerReceived" | "answerSent" | "answerReceived" | "iceSent" | "iceReceived", number>;
+
+const EMPTY_SIGNAL_DIAGNOSTICS: P2pSignalDiagnostics = { offerSent: 0, offerReceived: 0, answerSent: 0, answerReceived: 0, iceSent: 0, iceReceived: 0 };
+
+function signalDiagnosticKey({ direction, type }: P2pSignalProgress): keyof P2pSignalDiagnostics {
+  return `${type}${direction === "sent" ? "Sent" : "Received"}` as keyof P2pSignalDiagnostics;
+}
+
+function signalDiagnosticStatus(diagnostics: P2pSignalDiagnostics) {
+  if (diagnostics.answerReceived > 0 || diagnostics.answerSent > 0) return "Đang hoàn tất kết nối P2P…";
+  if (diagnostics.offerReceived > 0) return "Đã nhận yêu cầu kết nối P2P…";
+  if (diagnostics.offerSent > 0) return "Đã gửi yêu cầu kết nối P2P…";
+  return "Đang khởi tạo kết nối P2P…";
+}
 
 function callDuration(seconds: number) {
   return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
@@ -57,6 +71,7 @@ export default function CallScreen() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [p2pState, setP2pState] = useState<P2pConnectionState>("idle");
+  const [signalDiagnostics, setSignalDiagnostics] = useState<P2pSignalDiagnostics>(EMPTY_SIGNAL_DIAGNOSTICS);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [remoteScreenCameraStream, setRemoteScreenCameraStream] = useState<MediaStream | null>(null);
@@ -64,6 +79,8 @@ export default function CallScreen() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const ringbackTone = useRef<Awaited<ReturnType<typeof createCallTonePlayer>> | null>(null);
   const started = useRef(Boolean(resumed?.connected));
+  const p2pStarted = useRef(Boolean(resumed?.connected));
+  const p2pStartInFlight = useRef(false);
   const finalized = useRef(false);
   const answerInFlight = useRef(false);
   const handledSignals = useRef(new Set<number>());
@@ -74,8 +91,8 @@ export default function CallScreen() {
   const isGroup = details.data?.isGroup === true;
   const isCaller = details.data?.isCaller === true || direction === "outgoing";
   const isAnswered = details.data?.status === "active";
-  const p2pActive = p2pState !== "idle" && p2pState !== "closed";
-  const incomingSignals = trpc.calls.p2pSignal.drain.useQuery({ callId }, { enabled: Boolean(callId) && p2pActive, refetchInterval: p2pActive ? 300 : false });
+  const shouldDrainSignals = Boolean(callId) && isAnswered && !isGroup && !modeConflict && !finalized.current;
+  const incomingSignals = trpc.calls.p2pSignal.drain.useQuery({ callId }, { enabled: shouldDrainSignals, refetchInterval: shouldDrainSignals ? 300 : false });
   const iceConfig = trpc.calls.p2pIceConfig.useQuery({ callId }, { enabled: Boolean(callId) && isAnswered });
   const name = details.data?.peer?.displayName || params.name?.trim() || "Người dùng ChatPHT";
   const avatarUrl = details.data?.peer?.avatarUrl ?? (params.avatar?.trim() || null);
@@ -101,8 +118,8 @@ export default function CallScreen() {
       if (handledSignals.current.has(signal.id)) continue;
       handledSignals.current.add(signal.id);
       if (signal.type !== "offer" && signal.type !== "answer" && signal.type !== "ice") continue;
-      void p2p.handleSignal({ type: signal.type, payload: signal.payload }).catch((error) => {
-        setConnectionError(error instanceof Error ? error.message : "Không xử lý được tín hiệu P2P.");
+      void p2p.handleSignal({ type: signal.type, payload: signal.payload }).catch(() => {
+        setConnectionError("Không xử lý được tín hiệu P2P. Hãy kết thúc cuộc gọi và gọi lại.");
       });
     }
   }, [incomingSignals.data, p2p]);
@@ -155,14 +172,18 @@ export default function CallScreen() {
   }, [callId, direction]);
 
   useEffect(() => {
-    const shouldStart = !isGroup && !modeConflict && isAnswered && p2pState === "idle" && !isConnecting && !finalized.current;
-    if (!shouldStart) return;
-    void startP2p(!isCaller).catch((error) => {
+    const shouldStart = !isGroup && !modeConflict && isAnswered && !finalized.current;
+    if (!shouldStart || p2pStarted.current || p2pStartInFlight.current) return;
+    p2pStarted.current = true;
+    p2pStartInFlight.current = true;
+    void startP2p(!isCaller).catch(() => {
       setP2pState("failed");
-      setConnectionError(error instanceof Error ? error.message : "Không thể khởi tạo P2P.");
+      setConnectionError("Không thể khởi tạo kết nối P2P. Hãy kiểm tra mạng, sau đó kết thúc cuộc gọi và gọi lại.");
+    }).finally(() => {
+      p2pStartInFlight.current = false;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnswered, isCaller, isConnecting, isGroup, modeConflict, p2pState]);
+  }, [isAnswered, isCaller, isGroup, modeConflict]);
 
   async function requestPermissions() {
     const microphone = await Camera.requestMicrophonePermissionsAsync();
@@ -180,13 +201,28 @@ export default function CallScreen() {
 
   async function startP2p(isAnswer: boolean) {
     setP2pState("connecting");
+    setSignalDiagnostics(EMPTY_SIGNAL_DIAGNOSTICS);
     const result = iceConfig.data ?? (await iceConfig.refetch()).data;
     await p2p.start({
       isCaller: !isAnswer,
       kind,
       mode,
       iceServers: result?.iceServers,
-      onSignal: async (signal: P2pSignal) => { await sendSignal.mutateAsync({ callId, ...signal }); },
+      onSignal: async (signal: P2pSignal) => {
+        try {
+          await sendSignal.mutateAsync({ callId, ...signal });
+        } catch {
+          throw new Error("P2P_SIGNAL_SEND_FAILED");
+        }
+      },
+      onSignalProgress: (progress) => {
+        const key = signalDiagnosticKey(progress);
+        setSignalDiagnostics((current) => ({ ...current, [key]: current[key] + 1 }));
+      },
+      onSignalError: ({ type }) => {
+        const phase = type === "offer" ? "khởi tạo" : type === "answer" ? "phản hồi" : "mạng";
+        setConnectionError(`Không gửi được tín hiệu ${phase} P2P. Hãy kiểm tra mạng rồi gọi lại.`);
+      },
       onState: (state) => {
         setP2pState(state);
         setConnected(state === "connected");
@@ -260,7 +296,7 @@ export default function CallScreen() {
   async function toggleVideoQuality() { const next = videoQuality === "hd" ? "sd" : "hd"; try { await p2p.setVideoQuality(next); setVideoQuality(next); activeCall.update(callId, { videoQuality: next }); } catch { Alert.alert("Chưa thể đổi chất lượng", "Vui lòng thử lại."); } }
 
   const connectionStatus = getCallConnectionStatus({ kind: mode, direction, detailsLoading: details.isLoading, isConnecting, connected, isAnswered, error: connectionError, networkState: p2pState });
-  const subtitle = connected && isAnswered ? callDuration(seconds) : connectionStatus.title;
+  const subtitle = connected && isAnswered ? callDuration(seconds) : isAnswered && !connectionError ? signalDiagnosticStatus(signalDiagnostics) : connectionStatus.title;
   if (details.isLoading && !connected) return <SafeAreaView style={styles.safe}><StatusBar barStyle="dark-content" /><View style={styles.center}><ActivityIndicator color="#2563EB" /><Text style={styles.statusText}>Đang chuẩn bị P2P…</Text></View></SafeAreaView>;
   if (isGroup) return <SafeAreaView style={styles.safe}><View style={styles.center}><MaterialIcons name="groups" size={42} color="#64748B" /><Text style={styles.groupTitle}>Gọi nhóm đã được dừng</Text><Text style={styles.groupBody}>ChatPHT hiện chỉ dùng gọi và chia sẻ màn hình P2P cho một người với một người.</Text><Pressable style={styles.primaryButton} onPress={() => router.back()}><Text style={styles.primaryButtonText}>Quay lại</Text></Pressable></View></SafeAreaView>;
   if (modeConflict) return <SafeAreaView style={styles.safe}><View style={styles.center}><MaterialIcons name="call-end" size={42} color="#C53030" /><Text style={styles.groupTitle}>Đã chặn mở sai chế độ</Text><Text style={styles.groupBody}>Yêu cầu cuộc gọi không khớp với phiên đã lưu. ChatPHT không mở media để tránh thoại hoặc video bị chuyển thành chia sẻ màn hình.</Text><Pressable style={styles.primaryButton} onPress={() => void finish("ended")}><Text style={styles.primaryButtonText}>Đóng phiên</Text></Pressable></View></SafeAreaView>;

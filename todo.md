@@ -326,4 +326,14 @@
 - [x] Đối chiếu release 1.0.22 với mã nguồn/commit và package `com.app.swiftchat`; video không hiện package/version nên vẫn cần người dùng xác nhận bản cài thực tế khi nghiệm thu.
 - [x] Truy vết và sửa ranh giới cuối cùng giữa `calls.start`, persisted `p2pMode`, active-call snapshot và route `/call`: chặn response sai mode trước navigation, dùng mode server trả về và hiển thị nhãn mode bất biến.
 - [x] Bổ sung hồi quy end-to-end tĩnh từ từng nút chat tới mode server và màn gọi, rồi chạy source gate 140/140.
-- [x] Tăng metadata lên 1.0.23/versionCode 27 và hoàn tất source gate; build APK kiểm chứng cùng nghiệm thu hai Android vẫn là bước phát hành kế tiếp.
+- [x] Tăng metadata lên 1.0.23/versionCode 27, hoàn tất source gate và phát hành APK kiểm chứng signed; đã xác minh checksum, ZIP và package `com.app.swiftchat`, còn nghiệm thu hai Android thật.
+- [ ] Ghi nhận quan sát thiết bị: giao diện ba mode đúng nhưng cả ba cùng dừng ở “Đang kết nối”, xác định điểm chung signaling/ICE trước khi sửa UI từng mode.
+- [ ] Truy vết tRPC call start/answer, hàng đợi signal drain/send, ICE candidate và TURN credential trong điều kiện hai thiết bị thật.
+- [ ] Sửa theo thứ tự một lỗi gốc của handshake trước, sau đó xác minh audio, video và MediaProjection dùng transport đã kết nối.
+- [ ] Bổ sung trạng thái lỗi kỹ thuật an toàn cho người dùng, không lộ SDP, ICE candidate hoặc thông tin TURN.
+- [ ] Bổ sung hồi quy signal end-to-end và chỉ build APK mới sau source gate cùng checklist hai Android.
+- [x] Sửa bootstrap client để mỗi thiết bị khởi tạo transport đúng một lần ngay khi phiên 1:1 chuyển `active`, không phụ thuộc vào race state React.
+- [x] Mở drain tín hiệu từ pha active/starting và đưa các tín hiệu đến sớm vào hàng đợi transport trước khi media sẵn sàng.
+- [x] Bọc gửi offer/answer/ICE bằng hàng đợi có bắt lỗi, đếm pha chẩn đoán an toàn và hiển thị lỗi kết nối không lộ SDP/ICE/TURN.
+- [x] Bổ sung hồi quy vòng đời accepted → offer → answer → ICE và lỗi gửi signal.
+- [ ] Chỉ phát hành APK sau khi có bằng chứng số lượng signal thật từ hai Android cho một phiên được chấp nhận.

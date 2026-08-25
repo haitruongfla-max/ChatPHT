@@ -8,6 +8,8 @@ import { P2pVideoCall } from "./p2p-video-call";
 
 export type P2pSignalType = "offer" | "answer" | "ice";
 export type P2pSignal = { type: P2pSignalType; payload: string };
+export type P2pSignalProgress = { direction: "sent" | "received"; type: P2pSignalType };
+export type P2pSignalError = { type: P2pSignalType };
 export type P2pConnectionState = "idle" | "connecting" | "recovering" | "connected" | "failed" | "closed";
 export type P2pIceServer = { urls: string[]; username?: string; credential?: string };
 export type P2pNetworkStats = { latencyMs: number | null };
@@ -18,6 +20,8 @@ type StartOptions = {
   mode: P2pCallMode;
   iceServers?: P2pIceServer[];
   onSignal: (signal: P2pSignal) => Promise<void> | void;
+  onSignalProgress?: (progress: P2pSignalProgress) => void;
+  onSignalError?: (error: P2pSignalError) => void;
   onState: (state: P2pConnectionState) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
   onRemoteCameraStream?: (stream: MediaStream | null) => void;
@@ -53,6 +57,7 @@ export class P2pCall {
   private nextOfferId = 0;
   private awaitingAnswerForOfferId: number | null = null;
   private signalQueue: Promise<void> = Promise.resolve();
+  private signalSendQueue: Promise<void> = Promise.resolve();
   private statsTimer: ReturnType<typeof setInterval> | null = null;
 
   async start(options: StartOptions) {
@@ -71,6 +76,7 @@ export class P2pCall {
     this.pendingIceRestart = false;
     this.nextOfferId = 0;
     this.awaitingAnswerForOfferId = null;
+    this.signalSendQueue = Promise.resolve();
     options.onState("connecting");
 
     const stream = await this.startImmutableMediaSession(options.mode, options.isCaller);
@@ -87,7 +93,7 @@ export class P2pCall {
 
     peer.onicecandidate = (event: { candidate?: unknown }) => {
       const candidate = (event as unknown as { candidate?: unknown }).candidate;
-      if (candidate) void options.onSignal({ type: "ice", payload: JSON.stringify(candidate) });
+      if (candidate) void this.sendSignal({ type: "ice", payload: JSON.stringify(candidate) }).catch(() => undefined);
     };
     peer.ontrack = (event: { track?: MediaStreamTrack; streams?: MediaStream[] }) => {
       if (!event.track) return;
@@ -133,6 +139,7 @@ export class P2pCall {
       this.preStartSignals.push(signal);
       return;
     }
+    options.onSignalProgress?.({ direction: "received", type: signal.type });
     const payload = JSON.parse(signal.payload) as Record<string, unknown>;
     if (signal.type === "offer") {
       const offerCollision = this.makingOffer || peer.signalingState !== "stable";
@@ -146,7 +153,7 @@ export class P2pCall {
       await this.applyPendingIceCandidates();
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
-      await options.onSignal({ type: "answer", payload: JSON.stringify({ description: peer.localDescription ?? answer, offerId }) });
+      await this.sendSignal({ type: "answer", payload: JSON.stringify({ description: peer.localDescription ?? answer, offerId }) });
       await this.flushQueuedOffer();
       return;
     }
@@ -360,8 +367,7 @@ export class P2pCall {
 
   private async flushQueuedOffer() {
     const peer = this.peer;
-    const onSignal = this.options?.onSignal;
-    if (!peer || !onSignal || !this.negotiationPending || this.negotiationInFlight || peer.signalingState !== "stable") return;
+    if (!peer || !this.options || !this.negotiationPending || this.negotiationInFlight || peer.signalingState !== "stable") return;
     const iceRestart = this.pendingIceRestart;
     this.negotiationPending = false;
     this.pendingIceRestart = false;
@@ -372,11 +378,29 @@ export class P2pCall {
       await peer.setLocalDescription(offer);
       const offerId = ++this.nextOfferId;
       this.awaitingAnswerForOfferId = offerId;
-      await onSignal({ type: "offer", payload: JSON.stringify({ description: peer.localDescription ?? offer, offerId }) });
+      await this.sendSignal({ type: "offer", payload: JSON.stringify({ description: peer.localDescription ?? offer, offerId }) });
     } finally {
       this.makingOffer = false;
       this.negotiationInFlight = false;
     }
+  }
+
+  /** Serializes outbound signaling and reports only its category, never SDP/ICE/TURN data. */
+  private async sendSignal(signal: P2pSignal) {
+    const options = this.options;
+    if (!options) return;
+    const task = this.signalSendQueue.then(async () => {
+      if (this.options !== options) return;
+      try {
+        await options.onSignal(signal);
+        options.onSignalProgress?.({ direction: "sent", type: signal.type });
+      } catch {
+        options.onSignalError?.({ type: signal.type });
+        throw new Error("P2P_SIGNAL_SEND_FAILED");
+      }
+    });
+    this.signalSendQueue = task.catch(() => undefined);
+    await task;
   }
 
   private publishRemoteTrack(track: MediaStreamTrack) {

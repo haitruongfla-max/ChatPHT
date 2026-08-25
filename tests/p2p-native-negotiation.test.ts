@@ -236,6 +236,75 @@ describe("native P2P renegotiation", () => {
     expect(signals.map((signal) => signal.type)).toEqual(["answer"]);
   });
 
+  it("bridges an accepted 1:1 call from caller offer through recipient answer and ICE", async () => {
+    const signalsToRecipient: Array<{ type: "offer" | "answer" | "ice"; payload: string }> = [];
+    const signalsToCaller: Array<{ type: "offer" | "answer" | "ice"; payload: string }> = [];
+    const callerProgress = vi.fn();
+    const recipientProgress = vi.fn();
+    const caller = new P2pCall();
+    const recipient = new P2pCall();
+
+    // This is the transport sequence invoked immediately after calls.get returns status: active.
+    await caller.start({
+      isCaller: true,
+      kind: "audio",
+      mode: "audio",
+      onSignal: async (signal) => { signalsToRecipient.push(signal); },
+      onSignalProgress: callerProgress,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    });
+    expect(signalsToRecipient.map((signal) => signal.type)).toEqual(["offer"]);
+
+    await recipient.handleSignal(signalsToRecipient[0]!);
+    await recipient.start({
+      isCaller: false,
+      kind: "audio",
+      mode: "audio",
+      onSignal: async (signal) => { signalsToCaller.push(signal); },
+      onSignalProgress: recipientProgress,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    });
+    expect(signalsToCaller.map((signal) => signal.type)).toEqual(["answer"]);
+
+    await caller.handleSignal(signalsToCaller[0]!);
+    expect(mocks.peerInstances[0]?.signalingState).toBe("stable");
+    expect(callerProgress).toHaveBeenCalledWith({ direction: "sent", type: "offer" });
+    expect(recipientProgress).toHaveBeenCalledWith({ direction: "received", type: "offer" });
+    expect(recipientProgress).toHaveBeenCalledWith({ direction: "sent", type: "answer" });
+    expect(callerProgress).toHaveBeenCalledWith({ direction: "received", type: "answer" });
+
+    const callerPeer = mocks.peerInstances[0]!;
+    callerPeer.onicecandidate?.({ candidate: { candidate: "caller-ice" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    const ice = signalsToRecipient.find((signal) => signal.type === "ice");
+    expect(ice).toBeDefined();
+    await recipient.handleSignal(ice!);
+    expect(mocks.peerInstances[1]?.addIceCandidate).toHaveBeenCalledWith({ candidate: "caller-ice" });
+    expect(callerProgress).toHaveBeenCalledWith({ direction: "sent", type: "ice" });
+    expect(recipientProgress).toHaveBeenCalledWith({ direction: "received", type: "ice" });
+  });
+
+  it("surfaces a signal send failure without exposing signaling payload or credentials", async () => {
+    const onSignalError = vi.fn();
+    const call = new P2pCall();
+
+    await expect(call.start({
+      isCaller: true,
+      kind: "audio",
+      mode: "audio",
+      onSignal: async () => { throw new Error("credential=private-value"); },
+      onSignalError,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    })).rejects.toThrow("P2P_SIGNAL_SEND_FAILED");
+
+    expect(onSignalError).toHaveBeenCalledWith({ type: "offer" });
+    expect(String(onSignalError.mock.calls)).not.toContain("private-value");
+  });
+
   it("serializes duplicate answers while Android is still committing the first remote SDP", async () => {
     const call = new P2pCall();
     await call.start({
