@@ -9,7 +9,7 @@ type PushPayload = {
   sound: "default";
   priority: "high";
   ttl: number;
-  channelId: "messages" | "calls";
+  channelId: "messages";
   data: Record<string, number | string>;
 };
 
@@ -51,19 +51,6 @@ export function buildNewMessagePushPayload(token: string, conversationId: number
   };
 }
 
-export function buildIncomingCallPushPayload(token: string, input: { conversationId: number; callId: string; kind: "audio" | "video"; p2pMode: "audio" | "video" | "screen"; isGroup?: boolean }): PushPayload {
-  return {
-    to: token,
-    title: input.isGroup ? (input.kind === "video" ? "Cuộc gọi video nhóm" : "Cuộc gọi thoại nhóm") : (input.kind === "video" ? "Cuộc gọi video đến" : "Cuộc gọi thoại đến"),
-    body: input.isGroup ? "Mở ChatPHT để tham gia phòng gọi nhóm" : "Mở ChatPHT để nhận hoặc từ chối cuộc gọi",
-    sound: "default",
-    priority: "high",
-    ttl: 60,
-    channelId: "calls",
-    data: { type: "incoming_call", conversationId: input.conversationId, callId: input.callId, kind: input.kind, p2pMode: input.p2pMode, group: input.isGroup ? "1" : "0" },
-  };
-}
-
 function isExpoPushToken(token: string) {
   return /^(?:Expo|Exponent)PushToken\[[^\]]+\]$/.test(token);
 }
@@ -83,24 +70,6 @@ export async function dispatchNewMessagePushNotifications(input: { conversationI
     return { sent: await getAcceptedPushCount(response, tokens.length, "message notification(s)") };
   } catch (error) {
     console.warn("[Push] Could not dispatch a new-message notification.", error);
-    return { sent: 0 };
-  }
-}
-
-/** Push errors must never prevent the caller from creating a call session. */
-export async function dispatchIncomingCallPushNotification(input: { conversationId: number; senderId: number; callId: string; kind: "audio" | "video"; p2pMode: "audio" | "video" | "screen"; isGroup?: boolean }) {
-  try {
-    const devices = await db.listConversationRecipientDevices(input.conversationId, input.senderId);
-    const tokens = [...new Set(devices.map((device) => device.token).filter(isExpoPushToken))];
-    if (!tokens.length) return { sent: 0 };
-    const response = await fetch(EXPO_PUSH_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(tokens.map((token) => buildIncomingCallPushPayload(token, input))),
-    });
-    return { sent: await getAcceptedPushCount(response, tokens.length, "incoming-call notification(s)") };
-  } catch (error) {
-    console.warn("[Push] Could not dispatch an incoming-call notification.", error);
     return { sent: 0 };
   }
 }

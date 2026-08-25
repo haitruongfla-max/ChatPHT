@@ -371,3 +371,9 @@
 - [ ] Xây lại screen P2P với MediaProjection riêng sau khi video có bằng chứng hai Android; kiểm thử quyền hệ thống, xem ở máy nhận, dừng share và cleanup.
 - [ ] Hoàn thiện UI call gốc theo bố cục yêu cầu sau khi media thật đã được nghiệm thu; không dùng thương hiệu hay asset bên thứ ba.
 - [ ] Chạy regression toàn ứng dụng, phát hành APK signed mới và chỉ kết luận từng mode sau telemetry cùng thử nghiệm hai Android thật.
+- [x] Dừng lộ trình tái xây voice/video/screen P2P theo yêu cầu mới của người dùng; các mục gọi còn mở bên trên được thay bằng gỡ bỏ hoàn toàn tính năng.
+- [x] Lập danh sách tham chiếu giao diện, route, native module, notification và test dành riêng cho gọi thoại, gọi video và chia sẻ màn hình.
+- [x] Gỡ các nút gọi, route/overlay/incoming screen, coordinator, native WebRTC/MediaProjection và dependency chỉ phục vụ ba tính năng gọi, không chạm các luồng chat/media khác.
+- [x] Cô lập an toàn backend call/signaling/telemetry và cấu hình relay: không xóa schema hoặc dữ liệu lịch sử MySQL, không để client mới gọi các endpoint này.
+- [x] Bổ sung hồi quy bảo đảm không còn bề mặt gọi, trong khi chat riêng/nhóm, media riêng tư, quota/FIFO, Admin, auth và notifications vẫn hoạt động; 92 test đạt, 2 test credential được bỏ qua có chủ đích.
+- [ ] Tăng versionCode, checkpoint, đồng bộ GitHub và phát hành APK signed không còn ba tính năng gọi; xác minh asset, checksum, ZIP và package trước khi gửi link.

@@ -2,13 +2,12 @@ import * as Updates from "expo-updates";
 import { useEffect, useRef } from "react";
 import { Alert, AppState, Platform } from "react-native";
 
-import { activeCall } from "@/lib/active-call";
 import { canCheckForOtaUpdate, OTA_FOREGROUND_CHECK_INTERVAL_MS } from "@/lib/ota-update-policy";
 
 /**
  * EAS Updates already checks on launch through app.config.ts. This manager adds a
  * controlled foreground check so a long-running session can receive a JS/TS OTA
- * update without interrupting an active call. Native changes still require an APK.
+ * update. Native changes still require an APK.
  */
 export function OtaUpdateManager() {
   const lastCheckAt = useRef(0);
@@ -23,7 +22,7 @@ export function OtaUpdateManager() {
         isNative: Platform.OS !== "web",
         isEnabled: Updates.isEnabled,
         isCheckRunning: checkRunning.current,
-        hasActiveCall: activeCall.get() !== null,
+        hasActiveCall: false,
       });
       if (!allowed) return;
 
@@ -31,14 +30,14 @@ export function OtaUpdateManager() {
       lastCheckAt.current = now;
       try {
         const result = await Updates.checkForUpdateAsync();
-        if (!result.isAvailable || activeCall.get()) return;
+        if (!result.isAvailable) return;
 
         const fetched = await Updates.fetchUpdateAsync();
-        if (!fetched.isNew || activeCall.get()) return;
+        if (!fetched.isNew) return;
 
         Alert.alert(
           "Bản cập nhật đã sẵn sàng",
-          "ChatPHT đã tải bản cập nhật an toàn. Chọn cập nhật để mở lại ứng dụng; cuộc gọi đang diễn ra sẽ không bị ngắt tự động.",
+          "ChatPHT đã tải bản cập nhật an toàn. Chọn cập nhật để mở lại ứng dụng.",
           [
             { text: "Để sau", style: "cancel" },
             {

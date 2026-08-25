@@ -6,7 +6,7 @@ on:
       release_tag:
         description: "GitHub Release tag cho APK nền OTA"
         required: true
-        default: "v1.0.28-p2p-route-turn-vc32"
+        default: "v1.0.29-call-removal-vc33"
 
 # GitHub Release cần quyền ghi nội dung; workflow không sử dụng Expo cloud build.
 permissions:
@@ -21,7 +21,7 @@ jobs:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
       APK_OUTPUT: ./app-release.apk
-      # Expo Android lint và native WebRTC cần nhiều heap hơn mức mặc định của Gradle.
+      # Expo Android build dùng một worker để không vượt bộ nhớ runner GitHub tiêu chuẩn.
       # Chạy một worker để không vượt bộ nhớ runner GitHub tiêu chuẩn.
       GRADLE_OPTS: >-
         -Dorg.gradle.jvmargs=-Xmx3g
@@ -91,7 +91,7 @@ jobs:
             gh release upload "$RELEASE_TAG" "$APK_OUTPUT#app-release.apk" --clobber
           else
             gh release create "$RELEASE_TAG" "$APK_OUTPUT#app-release.apk" \
-              --title "ChatPHT 1.0.27 — P2P Telemetry & Audio Route Test (versionCode 31)" \
+              --title "ChatPHT 1.0.29 — Gỡ tính năng gọi (versionCode 33)" \
               --generate-notes \
               --target "$GITHUB_SHA"
           fi

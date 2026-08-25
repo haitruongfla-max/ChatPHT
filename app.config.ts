@@ -45,7 +45,7 @@ const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
   owner: "truongbbbs-team",
-  version: "1.0.28",
+  version: "1.0.29",
   runtimeVersion: {
     // Bất kỳ thay đổi native nào sẽ có runtime mới, chặn OTA không tương thích.
     policy: "fingerprint",
@@ -67,8 +67,8 @@ const config: ExpoConfig = {
       "ITSAppUsesNonExemptEncryption": false,
       "NSPhotoLibraryUsageDescription": "ChatPHT cần truy cập thư viện để bạn gửi ảnh và video trong cuộc trò chuyện riêng tư.",
       "NSPhotoLibraryAddUsageDescription": "ChatPHT cần quyền thêm ảnh và video bạn chọn lưu vào thư viện điện thoại.",
-      "NSMicrophoneUsageDescription": "ChatPHT cần micro để bạn thực hiện cuộc gọi thoại và video riêng tư.",
-      "NSCameraUsageDescription": "ChatPHT cần camera để bạn thực hiện cuộc gọi video riêng tư."
+      "NSMicrophoneUsageDescription": "ChatPHT cần micro để quay video có tiếng và gửi media trong cuộc trò chuyện riêng tư.",
+      "NSCameraUsageDescription": "ChatPHT cần camera để chụp ảnh và quay video gửi trong cuộc trò chuyện riêng tư."
     }
   },
   android: {
@@ -82,9 +82,9 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
     googleServicesFile: "./google-services.json",
-    // versionCode phải tăng để Android có thể cài đè bản kiểm chứng P2P trước đó.
-    versionCode: 32,
-    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE", "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PROJECTION", "FOREGROUND_SERVICE_MICROPHONE", "FOREGROUND_SERVICE_CAMERA"],
+    // versionCode phải tăng để Android có thể cài đè phiên bản đã cài.
+    versionCode: 33,
+    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE"],
     intentFilters: [
       {
         action: "VIEW",
@@ -112,18 +112,10 @@ const config: ExpoConfig = {
     "expo-font",
     "expo-web-browser",
     [
-      "@config-plugins/react-native-webrtc",
-      {
-        cameraPermission: "ChatPHT cần camera để bạn gọi video 1:1.",
-        microphonePermission: "ChatPHT cần micro để bạn gọi thoại, gọi video và chia sẻ màn hình 1:1.",
-      },
-    ],
-    "./plugins/with-chatpht-android-p2p",
-    [
       "expo-camera",
       {
-        cameraPermission: "ChatPHT cần camera để bạn gọi video, chụp ảnh và quay video gửi trong hội thoại riêng tư.",
-        microphonePermission: "ChatPHT cần micro để bạn gọi thoại, gọi video và quay video có tiếng.",
+        cameraPermission: "ChatPHT cần camera để bạn chụp ảnh và quay video gửi trong hội thoại riêng tư.",
+        microphonePermission: "ChatPHT cần micro để bạn quay video có tiếng gửi trong hội thoại riêng tư.",
         recordAudioAndroid: true,
       },
     ],
@@ -156,7 +148,6 @@ const config: ExpoConfig = {
         supportsPictureInPicture: true,
       },
     ],
-    ["expo-pip", {}],
     [
       "expo-image-picker",
       {

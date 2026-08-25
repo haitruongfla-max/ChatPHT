@@ -5,7 +5,7 @@ vi.mock("../server/db", () => ({
 }));
 
 import * as db from "../server/db";
-import { buildIncomingCallPushPayload, buildNewMessagePushPayload, dispatchNewMessagePushNotifications } from "../server/push";
+import { buildNewMessagePushPayload, dispatchNewMessagePushNotifications } from "../server/push";
 
 describe("private chat push dispatch", () => {
   beforeEach(() => {
@@ -23,46 +23,6 @@ describe("private chat push dispatch", () => {
       ttl: 86_400,
       channelId: "messages",
       data: { conversationId: 18 },
-    });
-  });
-
-  it("builds a high-priority incoming-call notification with ringtone channel and safe navigation data", () => {
-    expect(buildIncomingCallPushPayload("ExponentPushToken[device-a]", {
-      conversationId: 18,
-      callId: "d1e8f1a7-440a-4f13-8472-e130e70c5cac",
-      kind: "video",
-      p2pMode: "video",
-    })).toEqual({
-      to: "ExponentPushToken[device-a]",
-      title: "Cuộc gọi video đến",
-      body: "Mở ChatPHT để nhận hoặc từ chối cuộc gọi",
-      sound: "default",
-      priority: "high",
-      ttl: 60,
-      channelId: "calls",
-      data: {
-        type: "incoming_call",
-        conversationId: 18,
-        callId: "d1e8f1a7-440a-4f13-8472-e130e70c5cac",
-        kind: "video",
-        p2pMode: "video",
-        group: "0",
-      },
-    });
-  });
-
-  it("labels a group call without exposing participant identities and marks its navigation context", () => {
-    expect(buildIncomingCallPushPayload("ExponentPushToken[group-device]", {
-      conversationId: 29,
-      callId: "6134ece2-91c7-4184-a271-fd1f2700bc76",
-      kind: "audio",
-      p2pMode: "audio",
-      isGroup: true,
-    })).toMatchObject({
-      title: "Cuộc gọi thoại nhóm",
-      body: "Mở ChatPHT để tham gia phòng gọi nhóm",
-      channelId: "calls",
-      data: { type: "incoming_call", conversationId: 29, group: "1" },
     });
   });
 

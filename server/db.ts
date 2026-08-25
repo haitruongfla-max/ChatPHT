@@ -1,5 +1,4 @@
 import { and, desc, eq, inArray, isNotNull, isNull, like, lt, ne, or, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   callSessions,
@@ -8,11 +7,8 @@ import {
   friendRequests,
   messageReactions,
   messages,
-  p2pCallTelemetry,
-  p2pSignals,
   pushDevices,
   storageSettings,
-  type CallSession,
   type InsertUser,
   type User,
   users,
@@ -27,51 +23,6 @@ export type PublicProfile = {
   avatarUrl: string | null;
   role: "user" | "admin";
   accessExpiresAt: Date | null;
-};
-
-export type CallKind = "audio" | "video";
-export type P2pCallMode = "audio" | "video" | "screen";
-export type CallStatus = "ringing" | "active" | "declined" | "ended" | "missed";
-export type P2pSignalType = "offer" | "answer" | "ice" | "screen-start" | "screen-stop";
-export const P2P_TELEMETRY_EVENTS = [
-  "relay-protected",
-  "relay-fallback",
-  "media-ready",
-  "peer-ready",
-  "offer-created",
-  "signal-offer-sent",
-  "signal-answer-sent",
-  "signal-ice-sent",
-  "signal-offer-received",
-  "signal-answer-received",
-  "signal-ice-received",
-  "signal-offer-failed",
-  "signal-answer-failed",
-  "signal-ice-failed",
-  "state-connecting",
-  "state-connected",
-  "state-recovering",
-  "state-failed",
-  "bootstrap-failed",
-  "relay-turn-configured",
-  "relay-stun-only",
-] as const;
-export type P2pTelemetryEvent = (typeof P2P_TELEMETRY_EVENTS)[number];
-// Android may need time to surface a full-screen incoming call and request media permissions.
-export const P2P_RING_TIMEOUT_MS = 180_000;
-
-export function isIdempotentP2pAnswerStatus(status: CallStatus) {
-  return status === "active";
-}
-
-export type CallSessionSummary = Pick<
-  CallSession,
-  "id" | "conversationId" | "room" | "kind" | "p2pMode" | "provider" | "isGroup" | "status" | "expiresAt" | "answeredAt" | "endedAt" | "createdAt"
-> & {
-  direction: "incoming" | "outgoing";
-  isCaller: boolean;
-  peer: PublicProfile | null;
-  group: { title: string; participantCount: number } | null;
 };
 
 export function toPublicProfile(user: User): PublicProfile {
@@ -883,218 +834,12 @@ export async function getConversationPeer(conversationId: number, userId: number
   return peer ? toPublicProfile(peer) : undefined;
 }
 
-function toCallSessionSummary(call: CallSession, userId: number, peer: PublicProfile): CallSessionSummary {
-  return {
-    id: call.id,
-    conversationId: call.conversationId,
-    room: call.room,
-    kind: call.kind,
-    p2pMode: call.p2pMode,
-    provider: call.provider,
-    isGroup: false,
-    status: call.status,
-    expiresAt: call.expiresAt,
-    answeredAt: call.answeredAt,
-    endedAt: call.endedAt,
-    createdAt: call.createdAt,
-    direction: call.callerId === userId ? "outgoing" : "incoming",
-    isCaller: call.callerId === userId,
-    peer,
-    group: null,
-  };
-}
-
-async function hydrateCallSession(call: CallSession, userId: number): Promise<CallSessionSummary> {
-  if (call.isGroup) throw new Error("Cuộc gọi nhóm cũ không còn được hỗ trợ.");
-  const peerUser = await getUserById(call.callerId === userId ? call.recipientId : call.callerId);
-  if (!peerUser) throw new Error("Không tìm thấy người dùng của cuộc gọi.");
-  return toCallSessionSummary(call, userId, toPublicProfile(peerUser));
-}
-
-export async function createCallSession(conversationId: number, callerId: number, kind: CallKind, p2pMode: P2pCallMode) {
-  const db = requireDb(await getDb());
-  if ((p2pMode === "video") !== (kind === "video")) throw new Error("Chế độ P2P không khớp với loại cuộc gọi.");
-  const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
-  if (!conversation || conversation.kind !== "direct") throw new Error("ChatPHT hiện chỉ hỗ trợ gọi P2P trong hội thoại 1:1.");
-  const peer = await getConversationPeer(conversationId, callerId);
-  if (!peer) throw new Error("Bạn không có quyền gọi trong hội thoại này.");
-
-  const now = new Date();
-  await db
-    .update(callSessions)
-    .set({ status: "missed", endedAt: now })
-    .where(and(eq(callSessions.recipientId, peer.id), eq(callSessions.status, "ringing")));
-
-  const id = randomUUID();
-  await db.insert(callSessions).values({
-    id,
-    conversationId,
-    callerId,
-    recipientId: peer.id,
-    room: `chatpht-call-${id}`,
-    kind,
-    p2pMode,
-    provider: "p2p",
-    status: "ringing",
-    expiresAt: new Date(now.getTime() + P2P_RING_TIMEOUT_MS),
-  });
-  const created = (await db.select().from(callSessions).where(eq(callSessions.id, id)).limit(1))[0];
-  if (!created) throw new Error("Không thể tạo phiên gọi.");
-  return toCallSessionSummary(created, callerId, peer);
-}
-
 export async function getAdminOperationalStats() {
   const db = requireDb(await getDb());
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const callRows = await db.select({ provider: callSessions.provider, createdAt: callSessions.createdAt }).from(callSessions);
-  const today = callRows.filter((call) => call.createdAt >= startOfToday);
   const groupRows = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.kind, "group"));
-  const storage = await getStorageUsageSummary();
   return {
-    storage,
     groupsCreated: groupRows.length,
-    callsToday: {
-      p2p: today.filter((call) => call.provider === "p2p").length,
-    },
   };
-}
-
-export async function getCallSession(sessionId: string, userId: number) {
-  const db = requireDb(await getDb());
-  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (!call) return undefined;
-  if (call.isGroup) {
-    if (!(await isConversationMember(call.conversationId, userId))) return undefined;
-  } else if (call.callerId !== userId && call.recipientId !== userId) return undefined;
-  return hydrateCallSession(call, userId);
-}
-
-export async function listCallSessionsByConversation(conversationId: number, userId: number, limit = 60) {
-  if (!(await isConversationMember(conversationId, userId))) throw new Error("Bạn không có quyền xem lịch sử cuộc gọi này.");
-  const db = requireDb(await getDb());
-  const now = new Date();
-  await db
-    .update(callSessions)
-    .set({ status: "missed", endedAt: now })
-    .where(and(eq(callSessions.conversationId, conversationId), eq(callSessions.status, "ringing"), lt(callSessions.expiresAt, now)));
-  const calls = await db
-    .select()
-    .from(callSessions)
-    .where(eq(callSessions.conversationId, conversationId))
-    .orderBy(desc(callSessions.createdAt))
-    .limit(Math.min(Math.max(limit, 1), 100));
-  return Promise.all(calls.reverse().map((call) => hydrateCallSession(call, userId)));
-}
-
-export async function getIncomingCallSession(userId: number) {
-  const db = requireDb(await getDb());
-  const call = (
-    await db
-      .select()
-      .from(callSessions)
-      .where(and(eq(callSessions.recipientId, userId), eq(callSessions.status, "ringing")))
-      .orderBy(desc(callSessions.createdAt))
-      .limit(1)
-  )[0];
-  if (!call) return undefined;
-  if (call.expiresAt.getTime() <= Date.now()) {
-    await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, call.id));
-    return undefined;
-  }
-  return hydrateCallSession(call, userId);
-}
-
-export async function answerCallSession(sessionId: string, userId: number) {
-  const db = requireDb(await getDb());
-  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (!call || call.isGroup || call.recipientId !== userId) throw new Error("Cuộc gọi này không còn chờ phản hồi.");
-  // Android can retry a mutation after a slow network response or surface two
-  // acceptance events close together. The recipient accepting an already-active
-  // direct call is safe and must not be reported as an expired/missed call.
-  if (isIdempotentP2pAnswerStatus(call.status)) return hydrateCallSession(call, userId);
-  if (call.status !== "ringing") throw new Error("Cuộc gọi này không còn chờ phản hồi.");
-  if (call.expiresAt.getTime() <= Date.now()) {
-    await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, sessionId));
-    throw new Error("Cuộc gọi đã hết thời gian chờ.");
-  }
-  const answeredAt = new Date();
-  await db.update(callSessions).set({ status: "active", answeredAt }).where(eq(callSessions.id, sessionId));
-  const updated = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (!updated) throw new Error("Không thể nhận cuộc gọi.");
-  return hydrateCallSession(updated, userId);
-}
-
-export async function finishCallSession(sessionId: string, userId: number, status: Extract<CallStatus, "declined" | "ended">) {
-  const db = requireDb(await getDb());
-  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (!call) throw new Error("Bạn không có quyền cập nhật cuộc gọi này.");
-  if (call.isGroup) {
-    const [conversation] = await db.select().from(conversations).where(eq(conversations.id, call.conversationId)).limit(1);
-    if (!conversation || !(await isConversationMember(call.conversationId, userId)) || (call.callerId !== userId && conversation.createdBy !== userId)) {
-      throw new Error("Chỉ người tạo cuộc gọi hoặc chủ nhóm mới có thể kết thúc phòng nhóm.");
-    }
-  } else if (call.callerId !== userId && call.recipientId !== userId) throw new Error("Bạn không có quyền cập nhật cuộc gọi này.");
-  const finalStatus: CallStatus = status === "ended" && call.status === "ringing" ? "missed" : status;
-  await db.update(callSessions).set({ status: finalStatus, endedAt: new Date() }).where(eq(callSessions.id, sessionId));
-}
-
-export async function getJoinableCallSession(sessionId: string, userId: number) {
-  const db = requireDb(await getDb());
-  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (call?.isGroup) throw new Error("Hãy dùng luồng tham gia cuộc gọi nhóm.");
-  if (!call || (call.callerId !== userId && call.recipientId !== userId)) throw new Error("Bạn không có quyền tham gia cuộc gọi này.");
-  if (call.status === "ringing" && call.callerId !== userId) throw new Error("Hãy nhận cuộc gọi trước khi tham gia.");
-  if (call.status !== "ringing" && call.status !== "active") throw new Error("Cuộc gọi đã kết thúc.");
-  if (call.status === "ringing" && call.expiresAt.getTime() <= Date.now()) throw new Error("Cuộc gọi đã hết thời gian chờ.");
-  return call;
-}
-
-async function getAuthorizedP2pCall(sessionId: string, userId: number) {
-  const db = requireDb(await getDb());
-  const call = (await db.select().from(callSessions).where(eq(callSessions.id, sessionId)).limit(1))[0];
-  if (!call || call.isGroup || call.provider !== "p2p" || (call.callerId !== userId && call.recipientId !== userId)) {
-    throw new Error("Bạn không có quyền gửi tín hiệu cho cuộc gọi này.");
-  }
-  if (call.status !== "ringing" && call.status !== "active") throw new Error("Cuộc gọi đã kết thúc.");
-  if (call.status === "ringing" && call.expiresAt.getTime() <= Date.now()) {
-    await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, sessionId));
-    throw new Error("Cuộc gọi đã hết thời gian chờ.");
-  }
-  return call;
-}
-
-export async function authorizeP2pIceConfig(callId: string, userId: number) {
-  await getAuthorizedP2pCall(callId, userId);
-}
-
-export async function createP2pSignal({ callId, senderId, type, payload }: { callId: string; senderId: number; type: P2pSignalType; payload: string }) {
-  const db = requireDb(await getDb());
-  const call = await getAuthorizedP2pCall(callId, senderId);
-  if ((type === "offer" && call.callerId !== senderId) || (type === "answer" && call.recipientId !== senderId)) {
-    throw new Error("Loại tín hiệu không hợp lệ cho vai trò cuộc gọi này.");
-  }
-  const recipientId = call.callerId === senderId ? call.recipientId : call.callerId;
-  await db.delete(p2pSignals).where(lt(p2pSignals.createdAt, new Date(Date.now() - 15 * 60_000)));
-  const [created] = await db.insert(p2pSignals).values({ callId, senderId, recipientId, type, payload }).$returningId();
-  return { id: created?.id ?? null, recipientId };
-}
-
-export async function drainP2pSignals(callId: string, userId: number) {
-  const db = requireDb(await getDb());
-  await getAuthorizedP2pCall(callId, userId);
-  const pending = await db.select().from(p2pSignals).where(and(eq(p2pSignals.callId, callId), eq(p2pSignals.recipientId, userId))).orderBy(p2pSignals.id).limit(100);
-  if (pending.length) await db.delete(p2pSignals).where(inArray(p2pSignals.id, pending.map((signal) => signal.id)));
-  return pending.map((signal) => ({ id: signal.id, senderId: signal.senderId, type: signal.type, payload: signal.payload, createdAt: signal.createdAt }));
-}
-
-/** Stores a short-lived diagnostic marker only; payloads and relay details are never persisted here. */
-export async function recordP2pTelemetry({ callId, reporterId, event }: { callId: string; reporterId: number; event: P2pTelemetryEvent }) {
-  const db = requireDb(await getDb());
-  await getAuthorizedP2pCall(callId, reporterId);
-  await db.delete(p2pCallTelemetry).where(lt(p2pCallTelemetry.createdAt, new Date(Date.now() - 48 * 60 * 60_000)));
-  await db.insert(p2pCallTelemetry).values({ callId, reporterId, event });
-  return { accepted: true };
 }
 
 export async function listConversations(userId: number) {
