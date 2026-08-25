@@ -12,9 +12,9 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain('state === "recovering"');
   });
 
-  it("blocks duplicate answer mutations and screen sharing before real P2P connectivity", () => {
+  it("blocks duplicate answer mutations before P2P is initialized", () => {
     expect(callScreen).toContain("answerInFlight.current");
-    expect(callScreen).toContain("!p2p.isConnected()");
+    expect(callScreen).toContain('p2pState === "idle"');
   });
 
   it("shows a local ICE-derived quality badge and never returns an answered recipient to the incoming screen", () => {
@@ -24,11 +24,14 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain('if (state === "recovering") setConnectionError(null);');
   });
 
-  it("gives screen sharing a focused stage in voice or video calls without mirroring the local display stream", () => {
-    expect(callScreen).toContain('kind === "video" || Boolean(localScreenStream) || Boolean(remoteScreenStream)');
-    expect(callScreen).toContain('const main = remoteScreenStream ?? (localScreenSharing ? null : remoteStream);');
-    expect(callScreen).toContain("Bản xem trước được ẩn để tránh hiệu ứng lặp.");
-    expect(callScreen).toContain('const corner = localStream;');
+  it("gives screen sharing its own visual stage and keeps camera preview video-only", () => {
+    expect(callScreen).toContain('const isVisualMode = mode === "video" || mode === "screen";');
+    expect(callScreen).toContain('<P2pVisualStage mode={mode} localStream={localStream} remoteStream={remoteStream} />');
+    expect(callScreen).toContain('mode === "screen" ? "P2P · MediaProjection"');
+    expect(callScreen).toContain('mode === "video" && localStream');
+    expect(callScreen).not.toContain("localScreenStream");
+    expect(callScreen).not.toContain("remoteScreenStream");
+    expect(callScreen).not.toContain("toggleScreenShare");
   });
 
   it("keeps voice, video, and screen share as explicit separate actions", () => {
@@ -42,8 +45,10 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain('const mode = toP2pCallMode');
     expect(callScreen).toContain('details.data?.p2pMode ?? routeMode');
     expect(callScreen).not.toContain('p2pScreenShare');
-    expect(callScreen).toContain('const startsWithScreenShare = mode === "screen"');
+    expect(callScreen).toContain('if (mode === "screen") return true;');
     expect(callScreen).toContain('const kind = callKindForP2pMode(mode)');
+    expect(callScreen).toContain('mode !== "screen" ? <View style={styles.controlRow}>');
+    expect(callScreen).not.toContain("startScreenShare");
   });
 
   it("preserves the server-selected mode through active and push-driven incoming navigation", () => {

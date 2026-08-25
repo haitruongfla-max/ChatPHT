@@ -302,3 +302,9 @@
 - [x] Chẩn đoán việc nút gọi thoại định tuyến nhầm sang luồng chia sẻ màn hình trên Android thực tế.
 - [x] Loại bỏ hoàn toàn khả năng áp dụng SDP answer trùng khi peer WebRTC đã ở trạng thái stable.
 - [x] Bổ sung hồi quy theo đường đi thực tế từ nút chat đến màn gọi, rồi build APK signed tăng versionCode để người dùng kiểm thử.
+- [x] Khóa nền ChatPHT 1.0.20: chỉ thay phần P2P 1:1, không sửa chat, media private, quota/FIFO, Admin, auth, notification hoặc backend Live.
+- [x] Thay điều phối gọi chung bằng phiên P2P bất biến theo mode: thoại chỉ microphone, video chỉ camera+microphone, chia sẻ chỉ MediaProjection của bên gửi.
+- [x] Loại bỏ API và trạng thái chia sẻ màn hình gắn thêm vào phiên thoại/video; không dùng route Expo mới trong đợt sửa này.
+- [x] Xác nhận màn gọi, nút chat, incoming, push và mini overlay giữ nguyên `p2pMode` mà không kích hoạt chéo media.
+- [x] Bổ sung hồi quy static/runtime cho cô lập media, nối tín hiệu và answer cũ/trùng; chạy toàn bộ quality gate không dùng watcher.
+- [ ] Chỉ tăng phiên bản, đồng bộ GitHub và build APK signed sau khi source gate đạt; sau đó nghiệm thu bắt buộc trên hai Android qua Wi-Fi/4G với package `com.app.swiftchat`.

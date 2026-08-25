@@ -1,12 +1,12 @@
 import { MediaStream, RTCPeerConnection, RTCSessionDescription, type MediaStreamTrack } from "react-native-webrtc";
 
-import { resetAndroidCallSpeakerRoute, setAndroidCallSpeakerRoute } from "@/lib/android-audio-route";
+import { resetAndroidCallSpeakerRoute } from "@/lib/android-audio-route";
 import { P2pAudioCall } from "./p2p-audio-call";
 import type { P2pCallMode } from "./p2p-call-mode";
-import { P2pScreenShare } from "./p2p-screen-share";
+import { P2pScreenCall } from "./p2p-screen-call";
 import { P2pVideoCall } from "./p2p-video-call";
 
-export type P2pSignalType = "offer" | "answer" | "ice" | "screen-start" | "screen-stop";
+export type P2pSignalType = "offer" | "answer" | "ice";
 export type P2pSignal = { type: P2pSignalType; payload: string };
 export type P2pConnectionState = "idle" | "connecting" | "recovering" | "connected" | "failed" | "closed";
 export type P2pIceServer = { urls: string[]; username?: string; credential?: string };
@@ -19,23 +19,19 @@ type StartOptions = {
   onSignal: (signal: P2pSignal) => Promise<void> | void;
   onState: (state: P2pConnectionState) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
-  onRemoteScreenStream?: (stream: MediaStream | null) => void;
 };
 
 /**
- * Protected one-to-one WebRTC transport. SDP and ICE travel only through the
- * authenticated server signal queue. It never creates an SFU room or token.
+ * Protected one-to-one WebRTC transport. A start call selects exactly one
+ * immutable media session. Signaling remains authenticated through MySQL/tRPC.
  */
 export class P2pCall {
   private peer: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
-  private remoteScreenStream: MediaStream | null = null;
-  private readonly audioCall = new P2pAudioCall();
-  private readonly videoCall = new P2pVideoCall();
-  private readonly screenShare = new P2pScreenShare();
-  private remoteScreenTrackIds = new Set<string>();
-  private remoteTracks = new Map<string, MediaStreamTrack>();
+  private audioCall: P2pAudioCall | null = null;
+  private videoCall: P2pVideoCall | null = null;
+  private screenCall: P2pScreenCall | null = null;
   private options: StartOptions | null = null;
   private connected = false;
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -50,9 +46,6 @@ export class P2pCall {
   private pendingIceRestart = false;
   private nextOfferId = 0;
   private awaitingAnswerForOfferId: number | null = null;
-  // Signal polling can deliver a batch while Android has not yet committed the
-  // preceding SDP operation. Serialize it so a duplicate answer never calls
-  // setRemoteDescription while the peer is already becoming stable.
   private signalQueue: Promise<void> = Promise.resolve();
 
   async start(options: StartOptions) {
@@ -69,19 +62,13 @@ export class P2pCall {
     this.awaitingAnswerForOfferId = null;
     options.onState("connecting");
 
-    // Screen sharing owns MediaProjection in P2pScreenShare. Its base call
-    // owns microphone only; it must never allocate a camera stream.
-    const stream = options.mode === "video"
-      ? await this.videoCall.start()
-      : await this.audioCall.start();
+    const stream = await this.startImmutableMediaSession(options.mode, options.isCaller);
     this.localStream = stream;
 
     const peer = new RTCPeerConnection({
       iceServers: options.iceServers?.length
         ? options.iceServers
         : [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }],
-      // Gather candidates as soon as the peer is created. This narrows the
-      // startup race on Android where offer/answer and signal polling overlap.
       iceCandidatePoolSize: 8,
     });
     this.peer = peer;
@@ -92,14 +79,7 @@ export class P2pCall {
       if (candidate) void options.onSignal({ type: "ice", payload: JSON.stringify(candidate) });
     };
     peer.ontrack = (event: { track?: MediaStreamTrack }) => {
-      const track = event.track;
-      if (!track) return;
-      this.remoteTracks.set(track.id, track);
-      if (this.remoteScreenTrackIds.has(track.id)) {
-        this.publishRemoteScreenTrack(track);
-        return;
-      }
-      this.publishRemoteCallTrack(track);
+      if (event.track) this.publishRemoteTrack(event.track);
     };
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState;
@@ -117,8 +97,6 @@ export class P2pCall {
       }
     };
 
-    // Signals are polled independently from local media and TURN setup. An
-    // early offer must survive until this peer is ready to apply it.
     await this.flushPreStartSignals();
     if (options.isCaller) await this.queueOffer();
   }
@@ -137,28 +115,8 @@ export class P2pCall {
       return;
     }
     const payload = JSON.parse(signal.payload) as Record<string, unknown>;
-    if (signal.type === "screen-start") {
-      const trackId = typeof payload.trackId === "string" ? payload.trackId : "";
-      if (!trackId) return;
-      this.remoteScreenTrackIds.add(trackId);
-      const track = this.remoteTracks.get(trackId);
-      if (track) this.publishRemoteScreenTrack(track);
-      return;
-    }
-    if (signal.type === "screen-stop") {
-      const trackId = typeof payload.trackId === "string" ? payload.trackId : "";
-      if (trackId) this.remoteScreenTrackIds.delete(trackId);
-      const currentTrack = this.remoteScreenStream?.getVideoTracks()[0] ?? null;
-      if (!trackId || currentTrack?.id === trackId) {
-        this.remoteScreenStream = null;
-        options.onRemoteScreenStream?.(null);
-      }
-      return;
-    }
     if (signal.type === "offer") {
       const offerCollision = this.makingOffer || peer.signalingState !== "stable";
-      // The original caller is the impolite peer. This keeps simultaneous
-      // camera/screen renegotiations from replacing a valid local offer.
       this.ignoreOffer = offerCollision && options.isCaller;
       if (this.ignoreOffer) return;
       if (offerCollision) await peer.setLocalDescription({ type: "rollback" } as never);
@@ -175,9 +133,6 @@ export class P2pCall {
     }
     if (signal.type === "answer") {
       const offerId = typeof payload.offerId === "number" ? payload.offerId : null;
-      // Only an answer tied to the currently pending offer may mutate SDP.
-      // Permit one legacy raw answer for the first offer so an updated caller
-      // can still establish the initial call with the prior APK version.
       const isLegacyInitialAnswer = offerId === null && this.awaitingAnswerForOfferId === 1;
       if (!options.isCaller || peer.signalingState !== "have-local-offer" || (!isLegacyInitialAnswer && offerId !== this.awaitingAnswerForOfferId)) return;
       const description = (payload.description ?? payload) as { type: string; sdp: string };
@@ -209,58 +164,31 @@ export class P2pCall {
     return this.localStream;
   }
 
-  getRemoteScreenStream() {
-    return this.remoteScreenStream;
-  }
-
-  hasScreenShare() {
-    return this.screenShare.isActive();
-  }
-
   async setMicrophoneEnabled(enabled: boolean) {
-    if (this.options?.mode === "video") await this.videoCall.setMicrophoneEnabled(enabled);
-    else await this.audioCall.setMicrophoneEnabled(enabled);
+    if (this.audioCall) return this.audioCall.setMicrophoneEnabled(enabled);
+    if (this.videoCall) return this.videoCall.setMicrophoneEnabled(enabled);
+    throw new Error("Phiên chia sẻ màn hình không sử dụng microphone.");
   }
 
   async setSpeakerEnabled(enabled: boolean) {
-    if (this.options?.mode === "video") await this.videoCall.setSpeakerEnabled(enabled);
-    else await this.audioCall.setSpeakerEnabled(enabled);
+    if (this.audioCall) return this.audioCall.setSpeakerEnabled(enabled);
+    if (this.videoCall) return this.videoCall.setSpeakerEnabled(enabled);
+    throw new Error("Phiên chia sẻ màn hình không phát âm thanh.");
   }
 
   async setCameraEnabled(enabled: boolean) {
+    if (!this.videoCall) throw new Error("Camera chỉ khả dụng trong cuộc gọi video.");
     await this.videoCall.setCameraEnabled(enabled);
   }
 
   async switchCamera() {
+    if (!this.videoCall) throw new Error("Đổi camera chỉ khả dụng trong cuộc gọi video.");
     await this.videoCall.switchCamera();
   }
 
   async setVideoQuality(quality: "sd" | "hd") {
+    if (!this.videoCall) throw new Error("Chất lượng video chỉ khả dụng trong cuộc gọi video.");
     await this.videoCall.setQuality(quality);
-  }
-
-  /** Delegates MediaProjection to its own module, then renegotiates the same 1:1 peer. */
-  async startScreenShare() {
-    const peer = this.peer;
-    if (!peer || !this.connected) throw new Error("Hãy đợi cuộc gọi P2P kết nối rồi mới chia sẻ màn hình.");
-    return this.screenShare.start({
-      peer,
-      isConnected: () => this.connected,
-      onSignal: async (signal) => { await this.options?.onSignal(signal); },
-      renegotiate: () => this.queueOffer(),
-    });
-  }
-
-  /** Stops the isolated MediaProjection module and renegotiates its screen track only. */
-  async stopScreenShare() {
-    const peer = this.peer;
-    if (!peer) return;
-    await this.screenShare.stop({
-      peer,
-      isConnected: () => this.connected,
-      onSignal: async (signal) => { await this.options?.onSignal(signal); },
-      renegotiate: () => this.queueOffer(),
-    });
   }
 
   async disconnect(options: { preserveAudioSession?: boolean; preservePreStartSignals?: boolean } = {}) {
@@ -268,7 +196,6 @@ export class P2pCall {
     this.recoveryInProgress = false;
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
     this.recoveryTimer = null;
-    await this.screenShare.dispose(this.peer);
     this.peer?.close();
     this.peer = null;
     this.remoteDescriptionReady = false;
@@ -279,18 +206,31 @@ export class P2pCall {
     this.pendingIceRestart = false;
     this.nextOfferId = 0;
     this.awaitingAnswerForOfferId = null;
-    this.remoteScreenTrackIds.clear();
-    this.remoteTracks.clear();
     this.remoteStream = null;
-    this.remoteScreenStream = null;
-    await this.audioCall.stop({ preserveAudioRoute: true });
-    await this.videoCall.stop({ preserveAudioRoute: true });
+    await this.audioCall?.stop({ preserveAudioRoute: true });
+    await this.videoCall?.stop({ preserveAudioRoute: true });
+    await this.screenCall?.stop();
+    this.audioCall = null;
+    this.videoCall = null;
+    this.screenCall = null;
     this.localStream = null;
     this.options?.onRemoteStream(null);
-    this.options?.onRemoteScreenStream?.(null);
     this.options?.onState("closed");
     this.options = null;
     if (!options.preserveAudioSession) await resetAndroidCallSpeakerRoute();
+  }
+
+  private async startImmutableMediaSession(mode: P2pCallMode, isCaller: boolean) {
+    if (mode === "audio") {
+      this.audioCall = new P2pAudioCall();
+      return this.audioCall.start();
+    }
+    if (mode === "video") {
+      this.videoCall = new P2pVideoCall();
+      return this.videoCall.start();
+    }
+    this.screenCall = new P2pScreenCall();
+    return this.screenCall.start({ isCaller });
   }
 
   private async recoverIceOrFail() {
@@ -358,11 +298,10 @@ export class P2pCall {
     }
   }
 
-  private publishRemoteCallTrack(track: MediaStreamTrack) {
+  private publishRemoteTrack(track: MediaStreamTrack) {
     if (!this.remoteStream) this.remoteStream = new MediaStream();
     if (!this.remoteStream.getTracks().some((item) => item.id === track.id)) this.remoteStream.addTrack(track);
     track.onended = () => {
-      this.remoteTracks.delete(track.id);
       this.remoteStream?.removeTrack(track);
       if (!this.remoteStream || this.remoteStream.getTracks().length === 0) {
         this.remoteStream = null;
@@ -372,20 +311,5 @@ export class P2pCall {
       }
     };
     this.options?.onRemoteStream(this.remoteStream);
-  }
-
-  private publishRemoteScreenTrack(track: MediaStreamTrack) {
-    this.remoteStream?.removeTrack(track);
-    const screen = new MediaStream();
-    screen.addTrack(track);
-    this.remoteScreenStream = screen;
-    track.onended = () => {
-      if (this.remoteScreenStream?.getTracks().some((item) => item.id === track.id)) {
-        this.remoteScreenStream = null;
-        this.options?.onRemoteScreenStream?.(null);
-      }
-    };
-    this.options?.onRemoteStream(this.remoteStream);
-    this.options?.onRemoteScreenStream?.(screen);
   }
 }

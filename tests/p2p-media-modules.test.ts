@@ -8,6 +8,7 @@ const source = (file: string) => readFileSync(resolve(process.cwd(), "lib", file
 const audioModule = source("p2p-audio-call.ts");
 const videoModule = source("p2p-video-call.ts");
 const screenModule = source("p2p-screen-share.ts");
+const screenCallModule = source("p2p-screen-call.ts");
 const coordinator = source("p2p-call.native.ts");
 
 describe("P2P media module isolation", () => {
@@ -24,17 +25,29 @@ describe("P2P media module isolation", () => {
     expect(videoModule).not.toContain("getDisplayMedia");
   });
 
-  it("keeps screen sharing responsible for MediaProjection only", () => {
+  it("keeps the screen capture leaf responsible for MediaProjection only", () => {
     expect(screenModule).toContain("getDisplayMedia");
     expect(screenModule).not.toContain("getUserMedia");
     expect(screenModule).toContain("audio: false");
+    expect(screenModule).not.toContain("RTCPeerConnection");
+    expect(screenModule).not.toContain("onSignal");
   });
 
-  it("uses explicit mode to select one base media module and starts screen sharing only on demand", () => {
-    expect(coordinator).toContain('options.mode === "video"');
+  it("creates a standalone screen session that cannot import microphone or camera modules", () => {
+    expect(screenCallModule).toContain("new P2pScreenShare()");
+    expect(screenCallModule).not.toContain("P2pAudioCall");
+    expect(screenCallModule).not.toContain("P2pVideoCall");
+    expect(screenCallModule).not.toContain("getUserMedia");
+  });
+
+  it("uses explicit immutable mode selection and exposes no dynamic screen-share upgrade API", () => {
+    expect(coordinator).toContain('if (mode === "audio")');
+    expect(coordinator).toContain('if (mode === "video")');
     expect(coordinator).toContain("this.videoCall.start()");
     expect(coordinator).toContain("this.audioCall.start()");
-    expect(coordinator).toContain("async startScreenShare()");
-    expect(coordinator).toContain("this.screenShare.start({");
+    expect(coordinator).toContain("this.screenCall.start({ isCaller })");
+    expect(coordinator).not.toContain("startScreenShare");
+    expect(coordinator).not.toContain("stopScreenShare");
+    expect(coordinator).not.toContain("remoteScreenStream");
   });
 });

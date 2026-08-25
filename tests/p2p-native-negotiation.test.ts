@@ -90,28 +90,26 @@ describe("native P2P renegotiation", () => {
     mocks.getDisplayMedia.mockClear();
   });
 
-  it("queues a screen-track offer until the original offer receives its answer", async () => {
+  it("starts a standalone screen session with MediaProjection as its only local source", async () => {
     const signals: Array<{ type: string; payload: string }> = [];
     const call = new P2pCall();
     await call.start({
       isCaller: true,
-      kind: "video",
-      mode: "video",
+      kind: "audio",
+      mode: "screen",
       onSignal: async (signal) => { signals.push(signal); },
       onState: () => undefined,
       onRemoteStream: () => undefined,
     });
     const peer = mocks.peerInstances[0]!;
-    peer.connectionState = "connected";
-    peer.onconnectionstatechange?.();
-
-    await call.startScreenShare();
-    expect(signals.map((signal) => signal.type)).toEqual(["offer", "screen-start"]);
+    expect(mocks.getDisplayMedia).toHaveBeenCalledWith({ video: true, audio: false });
+    expect(mocks.getUserMedia).not.toHaveBeenCalled();
+    expect(signals.map((signal) => signal.type)).toEqual(["offer"]);
     expect(peer.offerCalls).toHaveLength(1);
 
     await call.handleSignal({ type: "answer", payload: JSON.stringify({ description: { type: "answer", sdp: "initial-answer" }, offerId: 1 }) });
-    expect(signals.map((signal) => signal.type)).toEqual(["offer", "screen-start", "offer"]);
-    expect(peer.offerCalls).toHaveLength(2);
+    expect(peer.signalingState).toBe("stable");
+    expect(peer.offerCalls).toHaveLength(1);
   });
 
   it("drops ICE candidates belonging to a colliding offer that the caller intentionally ignores", async () => {

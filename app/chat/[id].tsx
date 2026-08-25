@@ -967,7 +967,7 @@ export default function ChatScreen() {
                             </View>
                             <View style={styles.screenShareInviteContent}>
                               <Text style={[styles.screenShareInviteTitle, mine && styles.mineScreenShareInviteTitle]}>Chia sẻ màn hình trước đây</Text>
-                              <Text style={[styles.screenShareInviteDetail, mine && styles.mineScreenShareInviteDetail]}>Phiên chia sẻ cũ không còn mở được. Hãy gọi video 1:1 và chọn Chia sẻ để bắt đầu phiên P2P mới.</Text>
+                              <Text style={[styles.screenShareInviteDetail, mine && styles.mineScreenShareInviteDetail]}>Phiên chia sẻ cũ không còn mở được. Hãy dùng nút Chia sẻ màn hình riêng trong cuộc trò chuyện 1:1 để bắt đầu phiên P2P mới.</Text>
                             </View>
                           </View>
                         ) : null}

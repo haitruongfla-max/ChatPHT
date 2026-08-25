@@ -1,7 +1,7 @@
 import type { MediaStream } from "react-native-webrtc";
 import type { P2pCallMode } from "@/lib/p2p-call-mode";
 
-export type P2pSignalType = "offer" | "answer" | "ice" | "screen-start" | "screen-stop";
+export type P2pSignalType = "offer" | "answer" | "ice";
 export type P2pSignal = { type: P2pSignalType; payload: string };
 export type P2pConnectionState = "idle" | "connecting" | "recovering" | "connected" | "failed" | "closed";
 export type P2pIceServer = { urls: string[]; username?: string; credential?: string };
@@ -13,7 +13,6 @@ export type P2pStartOptions = {
   onSignal: (signal: P2pSignal) => Promise<void> | void;
   onState: (state: P2pConnectionState) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
-  onRemoteScreenStream?: (stream: MediaStream | null) => void;
 };
 
 const unavailable = () => { throw new Error("Gọi P2P chỉ khả dụng trên iOS hoặc Android."); };
@@ -25,14 +24,10 @@ export class P2pCall {
   isConnected() { return false; }
   getLocalStream(): MediaStream | null { return null; }
   getRemoteStream(): MediaStream | null { return null; }
-  getRemoteScreenStream(): MediaStream | null { return null; }
-  hasScreenShare() { return false; }
   async setMicrophoneEnabled(_enabled: boolean) { return unavailable(); }
   async setSpeakerEnabled(_enabled: boolean) { return unavailable(); }
   async setCameraEnabled(_enabled: boolean) { return unavailable(); }
   async switchCamera() { return unavailable(); }
   async setVideoQuality(_quality: "sd" | "hd") { return unavailable(); }
-  async startScreenShare(): Promise<MediaStream> { return unavailable(); }
-  async stopScreenShare() { return unavailable(); }
   async disconnect(_options: { preserveAudioSession?: boolean } = {}) { return undefined; }
 }
