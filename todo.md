@@ -337,4 +337,4 @@
 - [x] Bọc gửi offer/answer/ICE bằng hàng đợi có bắt lỗi, đếm pha chẩn đoán an toàn và hiển thị lỗi kết nối không lộ SDP/ICE/TURN.
 - [x] Bổ sung hồi quy vòng đời accepted → offer → answer → ICE và lỗi gửi signal.
 - [ ] Chỉ phát hành APK sau khi có bằng chứng số lượng signal thật từ hai Android cho một phiên được chấp nhận.
-- [ ] Đồng bộ checkpoint sửa bootstrap signaling P2P đã qua source gate lên GitHub `main`, không tạo APK hoặc GitHub Release.
+- [x] Đồng bộ checkpoint sửa bootstrap signaling P2P đã qua source gate lên GitHub `main`, không tạo APK hoặc GitHub Release.
