@@ -2,7 +2,11 @@ import { createHmac } from "node:crypto";
 
 export const P2P_TURN_TTL_SECONDS = 24 * 60 * 60;
 
-const DEFAULT_STUN_URLS = ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"];
+const DEFAULT_STUN_URLS = [
+  "stun:stun.l.google.com:19302",
+  "stun:stun1.l.google.com:19302",
+  "stun:stun2.l.google.com:19302",
+];
 
 export type IceServer = {
   urls: string[];

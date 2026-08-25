@@ -371,3 +371,6 @@
 - [ ] Xây lại screen P2P với MediaProjection riêng sau khi video có bằng chứng hai Android; kiểm thử quyền hệ thống, xem ở máy nhận, dừng share và cleanup.
 - [ ] Hoàn thiện UI call gốc theo bố cục yêu cầu sau khi media thật đã được nghiệm thu; không dùng thương hiệu hay asset bên thứ ba.
 - [ ] Chạy regression toàn ứng dụng, phát hành APK signed mới và chỉ kết luận từng mode sau telemetry cùng thử nghiệm hai Android thật.
+- [x] Khôi phục dependency WebRTC từ lockfile rollback, thêm STUN Google thứ ba tại ICE endpoint server-side và giữ URL/credential TURN ngoài APK, log và telemetry.
+- [x] Thêm fast path Socket.IO websocket-only có bearer auth: server chỉ báo signal đã được MySQL lưu cho user-room người nhận, client dedupe signal ID rồi drain qua tRPC/MySQL; đạt hồi quy chuyên biệt và full source gate.
+- [ ] Chuẩn bị APK chẩn đoán voice-only từ source gate hiện tại, sau đó nghiệm thu hai Android thật 20–30 giây trước khi thay đổi video hoặc screen.

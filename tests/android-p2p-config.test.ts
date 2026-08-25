@@ -30,13 +30,14 @@ describe("Android P2P call configuration", () => {
     expect(voiceSession).toContain("setAndroidCallSpeakerRoute");
   });
 
-  it("keeps the P2P route and TURN release upgradeable from versionCode 31 and the signed asset name stable", () => {
+  it("keeps the P2P voice fast-path release upgradeable from versionCode 33 and the signed asset name stable", () => {
     const appConfig = source("app.config.ts");
     const workflow = source(".github/workflows/build-ota-base-apk.yml");
-    expect(appConfig).toContain("versionCode: 32");
-    expect(workflow).toContain('default: "v1.0.28-p2p-route-turn-vc32"');
+    expect(appConfig).toContain("versionCode: 34");
+    expect(workflow).toContain('default: "v1.0.30-p2p-voice-fastpath-vc34"');
     expect(workflow).toContain("APK_OUTPUT: ./app-release.apk");
     expect(workflow).toContain('"$APK_OUTPUT#app-release.apk"');
+    expect(workflow).toContain("P2P Voice Fast Path Test (versionCode 34)");
   });
 
   it("keeps manufacturer-specific fallback instructions and best-effort intents", () => {

@@ -13,6 +13,7 @@ import { P2pCall, type P2pBootstrapPhase, type P2pConnectionState, type P2pNetwo
 import { resolveP2pIceServers } from "@/lib/p2p-ice-bootstrap";
 import { callKindForP2pMode, toP2pCallMode, type P2pCallMode } from "@/lib/p2p-call-mode";
 import { releaseIncomingCallRoute } from "@/lib/incoming-call-route-gate";
+import { subscribeToP2pSignalAvailability } from "@/lib/p2p-signaling-realtime.native";
 import { trpc } from "@/lib/trpc";
 
 type CallKind = "audio" | "video";
@@ -162,6 +163,13 @@ export default function CallScreen() {
       });
     }
   }, [incomingSignals.data, p2p]);
+
+  useEffect(() => {
+    if (!shouldDrainSignals || !callId) return;
+    return subscribeToP2pSignalAvailability(callId, () => {
+      void incomingSignals.refetch();
+    });
+  }, [callId, incomingSignals.refetch, shouldDrainSignals]);
 
   useEffect(() => {
     const status = details.data?.status;

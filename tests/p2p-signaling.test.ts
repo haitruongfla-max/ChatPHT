@@ -10,7 +10,13 @@ vi.mock("../server/db", () => ({
   listConversationRecipientDevices: vi.fn(async () => []),
 }));
 
+vi.mock("../server/_core/realtime", () => ({
+  emitConversationBackgroundUpdated: vi.fn(),
+  emitP2pSignalAvailable: vi.fn(),
+}));
+
 import * as db from "../server/db";
+import { emitP2pSignalAvailable } from "../server/_core/realtime";
 import { appRouter } from "../server/routers";
 
 const callId = "45e72ca3-6109-4cf2-b861-6d565bc470a3";
@@ -51,6 +57,14 @@ describe("P2P signaling router", () => {
 
     await expect(callerFor(7).calls.p2pSignal.send({ callId, type: "offer", payload: "sdp-offer" })).resolves.toEqual({ id: 11, recipientId: 9 });
     expect(db.createP2pSignal).toHaveBeenCalledWith({ callId, type: "offer", payload: "sdp-offer", senderId: 7 });
+    expect(emitP2pSignalAvailable).toHaveBeenCalledWith({
+      recipientId: 9,
+      callId,
+      signalId: 11,
+      type: "offer",
+      createdAt: expect.any(String),
+    });
+    expect(emitP2pSignalAvailable).not.toHaveBeenCalledWith(expect.objectContaining({ payload: "sdp-offer" }));
   });
 
   it("relays screen-start and screen-stop only through the same authenticated P2P signal path", async () => {
@@ -83,7 +97,7 @@ describe("P2P signaling router", () => {
     vi.mocked(db.authorizeP2pIceConfig).mockResolvedValue(undefined);
 
     const configuration = await callerFor(9).calls.p2pIceConfig({ callId });
-    expect(configuration.iceServers[0]).toEqual({ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] });
+    expect(configuration.iceServers[0]).toEqual({ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"] });
     expect(typeof configuration.hasTurn).toBe("boolean");
     if (configuration.hasTurn) expect(configuration.turn?.credential).toEqual(expect.any(String));
     expect(db.authorizeP2pIceConfig).toHaveBeenCalledWith(callId, 9);

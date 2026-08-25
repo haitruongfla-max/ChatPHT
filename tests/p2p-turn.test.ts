@@ -63,7 +63,7 @@ describe("P2P TURN credentials", () => {
       hasTurn: true,
       turn: { authMode: "static", username: "openrelayproject", expiresAt: 0 },
       iceServers: [
-        { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+        { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"] },
         { urls: ["turns:relay.chatpht.example:443?transport=tcp"], username: "openrelayproject", credential: "openrelayproject" },
       ],
     });
@@ -79,7 +79,7 @@ describe("P2P TURN credentials", () => {
     }, { userId: 7, callId }, now)).toEqual({
       hasTurn: false,
       turn: null,
-      iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }],
+      iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"] }],
     });
   });
 

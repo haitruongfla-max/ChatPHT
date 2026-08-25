@@ -10,7 +10,7 @@ import * as db from "./db";
 import { runMediaCleanup } from "./media-cleanup";
 import { dispatchIncomingCallPushNotification, dispatchNewMessagePushNotifications } from "./push";
 import { createMediaAccessUrl } from "./media-access";
-import { emitConversationBackgroundUpdated } from "./_core/realtime";
+import { emitConversationBackgroundUpdated, emitP2pSignalAvailable } from "./_core/realtime";
 import { createOpaqueStorageKey, storageCreateUploadUrl, storageDelete, storagePut } from "./storage";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { ENV } from "./_core/env";
@@ -369,7 +369,15 @@ export const appRouter = router({
         .input(z.object({ callId: z.string().uuid(), type: z.enum(["offer", "answer", "ice", "screen-start", "screen-stop"]), payload: z.string().min(2).max(100_000) }))
         .mutation(async ({ ctx, input }) => {
           try {
-            return await db.createP2pSignal({ ...input, senderId: ctx.user.id });
+            const created = await db.createP2pSignal({ ...input, senderId: ctx.user.id });
+            emitP2pSignalAvailable({
+              recipientId: created.recipientId,
+              callId: input.callId,
+              signalId: created.id,
+              type: input.type,
+              createdAt: new Date().toISOString(),
+            });
+            return created;
           } catch (error) {
             return appError(error, "Không thể gửi tín hiệu kết nối riêng tư.");
           }
