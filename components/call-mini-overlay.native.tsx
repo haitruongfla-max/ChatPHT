@@ -5,7 +5,6 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { activeCall, type ActiveCallSnapshot } from "@/lib/active-call";
-import { p2pCallRoute } from "@/lib/p2p-call-route";
 import { trpc } from "@/lib/trpc";
 
 function formatDuration(seconds: number) {
@@ -40,7 +39,7 @@ export function CallMiniOverlay() {
   const restore = () => {
     activeCall.restore(snapshot.callId);
     router.push({
-      pathname: p2pCallRoute(snapshot.p2pMode) as never,
+      pathname: "/call",
       params: {
         callId: snapshot.callId,
         kind: snapshot.kind,

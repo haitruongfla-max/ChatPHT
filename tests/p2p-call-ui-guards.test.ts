@@ -24,32 +24,23 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain('if (state === "recovering") setConnectionError(null);');
   });
 
-  it("gives screen sharing a focused stage only in the isolated screen route without mirroring the local display stream", () => {
-    expect(callScreen).toContain('mode === "video" || (mode === "screen" && Boolean(localScreenStream || remoteScreenStream))');
+  it("gives screen sharing a focused stage in voice or video calls without mirroring the local display stream", () => {
+    expect(callScreen).toContain('kind === "video" || Boolean(localScreenStream) || Boolean(remoteScreenStream)');
     expect(callScreen).toContain('const main = remoteScreenStream ?? (localScreenSharing ? null : remoteStream);');
     expect(callScreen).toContain("Bản xem trước được ẩn để tránh hiệu ứng lặp.");
     expect(callScreen).toContain('const corner = localStream;');
-    expect(callScreen).toContain('mode === "screen" ? <Control label={localScreenStream');
-    expect(callScreen).not.toContain('kind === "video" || Boolean(localScreenStream)');
   });
 
-  it("routes voice, video, and screen share through three locked entry files", () => {
+  it("keeps voice, video, and screen share as explicit separate actions", () => {
     const chatScreen = readFileSync(resolve(process.cwd(), "app/chat/[id].tsx"), "utf8");
-    const audioRoute = readFileSync(resolve(process.cwd(), "app/call/audio.native.tsx"), "utf8");
-    const videoRoute = readFileSync(resolve(process.cwd(), "app/call/video.native.tsx"), "utf8");
-    const screenRoute = readFileSync(resolve(process.cwd(), "app/call/screen.native.tsx"), "utf8");
 
     expect(chatScreen).toContain('beginP2pAction("audio")');
     expect(chatScreen).toContain('beginP2pAction("video")');
     expect(chatScreen).toContain('beginP2pAction("screen")');
     expect(chatScreen).not.toContain('beginCall("video", true)');
-    expect(chatScreen).toContain('pathname: p2pCallRoute(mode) as never');
-    expect(audioRoute).toContain('lockedMode="audio"');
-    expect(videoRoute).toContain('lockedMode="video"');
-    expect(screenRoute).toContain('lockedMode="screen"');
-    expect(callScreen).toContain('export function P2pCallScreen({ lockedMode }');
-    expect(callScreen).toContain('const mode = lockedMode');
-    expect(callScreen).toContain('mode === "screen" ? setRemoteScreenStream : () => undefined');
+    expect(chatScreen).toContain('p2pMode: mode');
+    expect(callScreen).toContain('const mode = toP2pCallMode');
+    expect(callScreen).toContain('details.data?.p2pMode ?? routeMode');
     expect(callScreen).not.toContain('p2pScreenShare');
     expect(callScreen).toContain('const startsWithScreenShare = mode === "screen"');
     expect(callScreen).toContain('const kind = callKindForP2pMode(mode)');
@@ -59,10 +50,8 @@ describe("P2P call screen guards", () => {
     const incomingWatcher = readFileSync(resolve(process.cwd(), "components/incoming-call-watcher.native.tsx"), "utf8");
     const pushManager = readFileSync(resolve(process.cwd(), "components/push-notification-manager.tsx"), "utf8");
 
-    expect(incomingWatcher).toContain("p2pCallRoute(call?.p2pMode === \"screen\"");
     expect(incomingWatcher).toContain("p2pMode: call?.p2pMode");
     expect(pushManager).toContain('payload.p2pMode === "screen"');
-    expect(pushManager).toContain('pathname: p2pCallRoute(p2pMode) as never');
-    expect(pushManager).toContain('params: { callId, kind, direction: "incoming", group }');
+    expect(pushManager).toContain("params: { callId, kind, p2pMode, direction: \"incoming\", group }");
   });
 });

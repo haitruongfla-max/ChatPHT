@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { router } from "expo-router";
 import { startIncomingCallAlert, createCallTonePlayer, stopAllCallAlerts, stopCallTone } from "@/lib/call-sounds";
-import { p2pCallRoute } from "@/lib/p2p-call-route";
 import { trpc } from "@/lib/trpc";
 
 /** Opens the incoming-call screen once per ringing session while the app is active. */
@@ -32,7 +31,7 @@ export function IncomingCallWatcher() {
     if (handledId.current === call?.id) return;
     handledId.current = call?.id ?? null;
     router.push({
-      pathname: p2pCallRoute(call?.p2pMode === "screen" ? "screen" : call?.p2pMode === "video" ? "video" : "audio") as never,
+      pathname: "/call",
       params: {
         callId: call?.id ?? "",
         kind: call?.kind,

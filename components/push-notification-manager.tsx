@@ -5,7 +5,6 @@ import {
   storePushToken,
 } from "@/lib/push-notifications";
 import { trpc } from "@/lib/trpc";
-import { p2pCallRoute } from "@/lib/p2p-call-route";
 import { router, usePathname } from "expo-router";
 import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useRef } from "react";
@@ -30,7 +29,7 @@ function openNotification(data: unknown) {
     const p2pMode = payload.p2pMode === "screen" ? "screen" : payload.p2pMode === "video" ? "video" : "audio";
     if (payload.type === "incoming_call" && callId) {
       const group = payload.group === "1" || payload.group === true ? "1" : "0";
-      router.push({ pathname: p2pCallRoute(p2pMode) as never, params: { callId, kind, direction: "incoming", group } });
+      router.push({ pathname: "/call", params: { callId, kind, p2pMode, direction: "incoming", group } });
       return;
     }
   }

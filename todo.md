@@ -302,6 +302,3 @@
 - [x] Chẩn đoán việc nút gọi thoại định tuyến nhầm sang luồng chia sẻ màn hình trên Android thực tế.
 - [x] Loại bỏ hoàn toàn khả năng áp dụng SDP answer trùng khi peer WebRTC đã ở trạng thái stable.
 - [x] Bổ sung hồi quy theo đường đi thực tế từ nút chat đến màn gọi, rồi build APK signed tăng versionCode để người dùng kiểm thử.
-- [x] Xác minh khác biệt package giữa ảnh thiết bị (`tech.butterfly.app`) và APK ChatPHT phát hành (`com.app.swiftchat`) trước khi kết luận về bản sửa.
-- [x] Tạo ba route khởi tạo riêng hoàn toàn cho gọi thoại, gọi video và chia sẻ màn hình; không dùng mode chung hay fallback chung.
-- [x] Thêm hồi quy bảo đảm từng nút chỉ có thể mở đúng route/mô-đun của nó, rồi phát hành APK signed tăng versionCode để thử trên hai máy.
