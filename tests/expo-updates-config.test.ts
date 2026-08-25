@@ -14,9 +14,9 @@ describe("Cấu hình APK nền OTA", () => {
     expect(configSource).toContain("fallbackToCacheTimeout: 30_000");
   });
 
-  it("tăng versionCode cho APK 1.0.29 sau khi gỡ ba tính năng gọi", () => {
-    expect(configSource).toContain('version: "1.0.29"');
-    expect(configSource).toContain("versionCode: 33");
+  it("tăng versionCode cho APK voice-only sạch sau artifact vc34 lỗi", () => {
+    expect(configSource).toContain('version: "1.0.31"');
+    expect(configSource).toContain("versionCode: 35");
     expect(configSource).not.toContain("FOREGROUND_SERVICE_MEDIA_PROJECTION");
   });
 });

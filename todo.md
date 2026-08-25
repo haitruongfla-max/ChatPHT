@@ -377,3 +377,8 @@
 - [x] Cô lập an toàn backend call/signaling/telemetry và cấu hình relay: không xóa schema hoặc dữ liệu lịch sử MySQL, không để client mới gọi các endpoint này.
 - [x] Bổ sung hồi quy bảo đảm không còn bề mặt gọi, trong khi chat riêng/nhóm, media riêng tư, quota/FIFO, Admin, auth và notifications vẫn hoạt động; 92 test đạt, 2 test credential được bỏ qua có chủ đích.
 - [ ] Tăng versionCode, checkpoint, đồng bộ GitHub và phát hành APK signed không còn ba tính năng gọi; xác minh asset, checksum, ZIP và package trước khi gửi link.
+- [x] Rollback nền mã nguồn về checkpoint 1.0.29 đã gỡ sạch ba tính năng gọi, vì APK vc34 vẫn đóng gói toàn bộ subsystem P2P cũ và không phù hợp để vá tiếp.
+- [x] Thiết kế lại luồng voice P2P tối thiểu từ nền không-call: route riêng, một media owner microphone-only, signaling MySQL/tRPC xác thực, ICE server-side, queue signal sớm và cleanup idempotent.
+- [x] Giữ bản voice đầu tiên không có video call, camera call, MediaProjection, screen share hoặc Socket.IO call; các lớp đó chỉ được xét sau nghiệm thu Android ở lớp trước.
+- [x] Hoàn tất source gate voice clean-slate: diff sạch, TypeScript, lint, backend build, Android export/config và 96 kiểm thử qua (2 credential test skip chủ đích).
+- [ ] Checkpoint, đồng bộ GitHub và build APK thử nghiệm voice-only versionCode 35; không dùng hoặc quảng bá APK vc34 bị lỗi.

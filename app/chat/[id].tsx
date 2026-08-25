@@ -205,6 +205,7 @@ export default function ChatScreen() {
   const recall = trpc.messages.recall.useMutation();
   const removeConversation = trpc.conversations.remove.useMutation();
   const clearConversation = trpc.conversations.clearContent.useMutation();
+  const startVoiceCall = trpc.voice.start.useMutation();
   const requestWallpaperUpload = trpc.conversations.requestWallpaperUpload.useMutation();
   const setWallpaper = trpc.conversations.setWallpaper.useMutation();
   const pinGroupMessage = trpc.conversations.pinGroupMessage.useMutation();
@@ -643,6 +644,15 @@ export default function ChatScreen() {
     Alert.alert("Tùy chọn hội thoại", "Các thay đổi ảnh nền được đồng bộ cho mọi thành viên.", actions);
   };
 
+  const beginVoiceCall = async () => {
+    try {
+      const voiceCall = await startVoiceCall.mutateAsync({ conversationId });
+      router.push({ pathname: "/voice-call", params: { callId: voiceCall.id } });
+    } catch (error) {
+      Alert.alert("Không thể gọi thoại", error instanceof Error ? error.message : "Vui lòng thử lại.");
+    }
+  };
+
   const confirmRecall = (item: ChatMessage) =>
     Alert.alert(
       "Thu hồi tin nhắn?",
@@ -715,6 +725,17 @@ export default function ChatScreen() {
               {wallpaperProgress !== null ? `Đang tải ảnh nền ${wallpaperProgress}%` : header.subtitle}
             </Text>
           </View>
+          {!isGroup ? (
+            <Pressable
+              onPress={() => void beginVoiceCall()}
+              disabled={startVoiceCall.isPending}
+              style={({ pressed }) => [styles.callButton, (pressed || startVoiceCall.isPending) && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Gọi thoại"
+            >
+              <MaterialIcons name="call" size={20} color="#2563EB" />
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={openConversationMenu}
             style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}

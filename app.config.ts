@@ -45,7 +45,7 @@ const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
   owner: "truongbbbs-team",
-  version: "1.0.29",
+  version: "1.0.31",
   runtimeVersion: {
     // Bất kỳ thay đổi native nào sẽ có runtime mới, chặn OTA không tương thích.
     policy: "fingerprint",
@@ -83,7 +83,7 @@ const config: ExpoConfig = {
     package: env.androidPackage,
     googleServicesFile: "./google-services.json",
     // versionCode phải tăng để Android có thể cài đè phiên bản đã cài.
-    versionCode: 33,
+    versionCode: 35,
     permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE"],
     intentFilters: [
       {
@@ -111,6 +111,12 @@ const config: ExpoConfig = {
     "expo-asset",
     "expo-font",
     "expo-web-browser",
+    [
+      "@config-plugins/react-native-webrtc",
+      {
+        microphonePermission: "ChatPHT cần micro để gọi thoại 1:1.",
+      },
+    ],
     [
       "expo-camera",
       {

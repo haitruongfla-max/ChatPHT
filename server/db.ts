@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, isNotNull, isNull, like, lt, ne, or, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   callSessions,
@@ -7,6 +8,7 @@ import {
   friendRequests,
   messageReactions,
   messages,
+  p2pSignals,
   pushDevices,
   storageSettings,
   type InsertUser,
@@ -832,6 +834,164 @@ export async function getConversationPeer(conversationId: number, userId: number
   if (!peerMembership[0]) return undefined;
   const peer = await getUserById(peerMembership[0].userId);
   return peer ? toPublicProfile(peer) : undefined;
+}
+
+export type VoiceCallSummary = {
+  id: string;
+  conversationId: number;
+  status: "ringing" | "active" | "declined" | "ended" | "missed";
+  direction: "outgoing" | "incoming";
+  isCaller: boolean;
+  expiresAt: Date;
+  answeredAt: Date | null;
+  endedAt: Date | null;
+  createdAt: Date;
+  peer: PublicProfile;
+};
+
+const VOICE_RING_TIMEOUT_MS = 45_000;
+
+function asVoiceCallSummary(
+  call: typeof callSessions.$inferSelect,
+  userId: number,
+  peer: PublicProfile,
+): VoiceCallSummary {
+  return {
+    id: call.id,
+    conversationId: call.conversationId,
+    status: call.status,
+    direction: call.callerId === userId ? "outgoing" : "incoming",
+    isCaller: call.callerId === userId,
+    expiresAt: call.expiresAt,
+    answeredAt: call.answeredAt,
+    endedAt: call.endedAt,
+    createdAt: call.createdAt,
+    peer,
+  };
+}
+
+async function getAuthorizedVoiceCall(callId: string, userId: number) {
+  const db = requireDb(await getDb());
+  const call = (await db.select().from(callSessions).where(eq(callSessions.id, callId)).limit(1))[0];
+  if (!call || call.isGroup || call.kind !== "audio" || call.p2pMode !== "audio" || call.provider !== "p2p") {
+    throw new Error("Phiên gọi thoại không tồn tại.");
+  }
+  if (call.callerId !== userId && call.recipientId !== userId) throw new Error("Bạn không có quyền với phiên gọi thoại này.");
+  if (call.status === "ringing" && call.expiresAt.getTime() <= Date.now()) {
+    await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, callId));
+    throw new Error("Cuộc gọi đã hết thời gian chờ.");
+  }
+  return call;
+}
+
+async function voicePeerFor(call: typeof callSessions.$inferSelect, userId: number) {
+  const peerId = call.callerId === userId ? call.recipientId : call.callerId;
+  const peer = await getUserById(peerId);
+  if (!peer) throw new Error("Không tìm thấy người nhận cuộc gọi.");
+  return toPublicProfile(peer);
+}
+
+/** Creates a direct, microphone-only P2P call. No video or screen mode is accepted here. */
+export async function createVoiceCallSession(conversationId: number, callerId: number) {
+  const db = requireDb(await getDb());
+  const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
+  if (!conversation || conversation.kind !== "direct") throw new Error("Gọi thoại chỉ hỗ trợ hội thoại 1:1.");
+  const peer = await getConversationPeer(conversationId, callerId);
+  if (!peer) throw new Error("Bạn không có quyền gọi trong hội thoại này.");
+
+  const now = new Date();
+  await db
+    .update(callSessions)
+    .set({ status: "missed", endedAt: now })
+    .where(and(eq(callSessions.recipientId, peer.id), eq(callSessions.status, "ringing")));
+
+  const id = randomUUID();
+  await db.insert(callSessions).values({
+    id,
+    conversationId,
+    callerId,
+    recipientId: peer.id,
+    room: `voice-${id}`,
+    kind: "audio",
+    p2pMode: "audio",
+    provider: "p2p",
+    isGroup: false,
+    status: "ringing",
+    expiresAt: new Date(now.getTime() + VOICE_RING_TIMEOUT_MS),
+  });
+  const created = (await db.select().from(callSessions).where(eq(callSessions.id, id)).limit(1))[0];
+  if (!created) throw new Error("Không thể tạo phiên gọi thoại.");
+  return asVoiceCallSummary(created, callerId, peer);
+}
+
+export async function getVoiceCallSession(callId: string, userId: number) {
+  const call = await getAuthorizedVoiceCall(callId, userId);
+  return asVoiceCallSummary(call, userId, await voicePeerFor(call, userId));
+}
+
+export async function getIncomingVoiceCallSession(userId: number) {
+  const db = requireDb(await getDb());
+  const call = (
+    await db
+      .select()
+      .from(callSessions)
+      .where(and(eq(callSessions.recipientId, userId), eq(callSessions.status, "ringing"), eq(callSessions.kind, "audio"), eq(callSessions.p2pMode, "audio"), eq(callSessions.provider, "p2p")))
+      .orderBy(desc(callSessions.createdAt))
+      .limit(1)
+  )[0];
+  if (!call) return undefined;
+  if (call.expiresAt.getTime() <= Date.now()) {
+    await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, call.id));
+    return undefined;
+  }
+  return asVoiceCallSummary(call, userId, await voicePeerFor(call, userId));
+}
+
+export async function answerVoiceCallSession(callId: string, userId: number) {
+  const db = requireDb(await getDb());
+  const call = await getAuthorizedVoiceCall(callId, userId);
+  if (call.recipientId !== userId) throw new Error("Chỉ người nhận mới có thể nhận cuộc gọi.");
+  if (call.status === "active") return asVoiceCallSummary(call, userId, await voicePeerFor(call, userId));
+  if (call.status !== "ringing") throw new Error("Cuộc gọi này không còn chờ phản hồi.");
+  const answeredAt = new Date();
+  await db.update(callSessions).set({ status: "active", answeredAt }).where(eq(callSessions.id, callId));
+  const updated = (await db.select().from(callSessions).where(eq(callSessions.id, callId)).limit(1))[0];
+  if (!updated) throw new Error("Không thể nhận cuộc gọi.");
+  return asVoiceCallSummary(updated, userId, await voicePeerFor(updated, userId));
+}
+
+export async function finishVoiceCallSession(callId: string, userId: number, status: "declined" | "ended") {
+  const db = requireDb(await getDb());
+  const call = await getAuthorizedVoiceCall(callId, userId);
+  const finalStatus = status === "ended" && call.status === "ringing" ? "missed" : status;
+  await db.update(callSessions).set({ status: finalStatus, endedAt: new Date() }).where(eq(callSessions.id, callId));
+  return { success: true };
+}
+
+export async function createVoiceSignal(input: { callId: string; senderId: number; type: "offer" | "answer" | "ice"; payload: string }) {
+  const db = requireDb(await getDb());
+  const call = await getAuthorizedVoiceCall(input.callId, input.senderId);
+  if (call.status !== "ringing" && call.status !== "active") throw new Error("Cuộc gọi đã kết thúc.");
+  if ((input.type === "offer" && call.callerId !== input.senderId) || (input.type === "answer" && call.recipientId !== input.senderId)) {
+    throw new Error("Tín hiệu không hợp lệ cho vai trò cuộc gọi.");
+  }
+  const recipientId = call.callerId === input.senderId ? call.recipientId : call.callerId;
+  await db.delete(p2pSignals).where(lt(p2pSignals.createdAt, new Date(Date.now() - 15 * 60_000)));
+  const [created] = await db.insert(p2pSignals).values({ ...input, recipientId }).$returningId();
+  return { id: created?.id ?? null };
+}
+
+export async function drainVoiceSignals(callId: string, userId: number) {
+  const db = requireDb(await getDb());
+  await getAuthorizedVoiceCall(callId, userId);
+  const pending = await db
+    .select()
+    .from(p2pSignals)
+    .where(and(eq(p2pSignals.callId, callId), eq(p2pSignals.recipientId, userId)))
+    .orderBy(p2pSignals.id)
+    .limit(100);
+  if (pending.length) await db.delete(p2pSignals).where(inArray(p2pSignals.id, pending.map((signal) => signal.id)));
+  return pending.map((signal) => ({ id: signal.id, type: signal.type, payload: signal.payload, createdAt: signal.createdAt }));
 }
 
 export async function getAdminOperationalStats() {
