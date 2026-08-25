@@ -7,7 +7,6 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { Platform } from "react-native";
 import "@/lib/_core/nativewind-pressable";
-import "@/lib/webrtc-bootstrap";
 import { ThemeProvider } from "@/lib/theme-provider";
 import {
   SafeAreaFrameContext,
@@ -20,9 +19,6 @@ import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
 import { AppLockGate } from "@/components/app-lock-gate";
-import { BackgroundCallPermission } from "@/components/background-call-permission";
-import { IncomingCallWatcher } from "@/components/incoming-call-watcher";
-import { CallMiniOverlay } from "@/components/call-mini-overlay";
 import { PushNotificationManager } from "@/components/push-notification-manager";
 import { OtaUpdateManager } from "@/components/ota-update-manager";
 
@@ -99,13 +95,9 @@ export default function RootLayout() {
             <Stack.Screen name="requests" options={{ presentation: "card" }} />
             <Stack.Screen name="settings" options={{ presentation: "card" }} />
             <Stack.Screen name="chat/[id]" options={{ presentation: "card" }} />
-            <Stack.Screen name="call" options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }} />
           </Stack>
-          <IncomingCallWatcher />
           <PushNotificationManager />
           <OtaUpdateManager />
-          <BackgroundCallPermission />
-          <CallMiniOverlay />
           <AppLockGate />
           <StatusBar style="auto" />
         </QueryClientProvider>

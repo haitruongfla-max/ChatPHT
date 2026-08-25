@@ -60,14 +60,12 @@ describe("admin access controls", () => {
     expect(db.getStorageUsageSummary).toHaveBeenCalledTimes(1);
   });
 
-  it("returns operational call and group counts only to an administrator", async () => {
+  it("returns operational group count only to an administrator", async () => {
     vi.mocked(db.getAdminOperationalStats).mockResolvedValue({
-      storage: { usedBytes: 0, mediaCount: 0, quotaGb: 200, quotaBytes: 200 * 1024 * 1024 * 1024, unlimited: false, lastCleanupAt: null, recentMedia: [] },
       groupsCreated: 4,
-      callsToday: { p2p: 1 },
     });
 
-    await expect(callerFor("admin").admin.operationalStats()).resolves.toMatchObject({ groupsCreated: 4, callsToday: { p2p: 1 } });
+    await expect(callerFor("admin").admin.operationalStats()).resolves.toMatchObject({ groupsCreated: 4 });
     expect(db.getAdminOperationalStats).toHaveBeenCalledTimes(1);
   });
 

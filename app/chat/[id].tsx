@@ -20,7 +20,6 @@ import {
 import { runMediaUploadQueue } from "@/lib/media-upload-queue";
 import { preserveStableMediaUrl } from "@/lib/stable-media-url";
 import { subscribeToConversationBackground } from "@/lib/conversation-background-realtime.native";
-import { callKindForP2pMode, type P2pCallMode } from "@/lib/p2p-call-mode";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
@@ -63,21 +62,7 @@ type ChatMessage = {
   recipientReadAt: Date | null;
 };
 
-type CallHistory = {
-  id: string;
-  kind: "audio" | "video";
-  status: "ringing" | "active" | "declined" | "ended" | "missed";
-  createdAt: Date;
-  answeredAt: Date | null;
-  endedAt: Date | null;
-  direction: "incoming" | "outgoing";
-};
-
 type TimelineMessage = ChatMessage & { albumItems?: ChatMessage[] };
-
-type TimelineItem =
-  | (TimelineMessage & { entryType: "message" })
-  | (CallHistory & { entryType: "call" });
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
 
@@ -136,58 +121,6 @@ function MessageTime({ item, mine }: { item: ChatMessage; mine: boolean }) {
   );
 }
 
-function callDurationSummary(startedAt: Date | null, endedAt: Date | null) {
-  if (!startedAt || !endedAt) return null;
-  const totalSeconds = Math.max(0, Math.floor((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000));
-  if (totalSeconds < 60) return `${totalSeconds} giây`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return seconds ? `${minutes} phút ${seconds} giây` : `${minutes} phút`;
-}
-
-function CallHistoryItem({ call }: { call: CallHistory }) {
-  const isMissed = call.status === "missed";
-  const duration = callDurationSummary(call.answeredAt, call.endedAt);
-  const title =
-    call.status === "missed"
-      ? call.direction === "incoming"
-        ? "Cuộc gọi nhỡ"
-        : "Cuộc gọi không được trả lời"
-      : call.status === "declined"
-        ? call.direction === "incoming"
-          ? "Bạn đã từ chối cuộc gọi"
-          : "Cuộc gọi bị từ chối"
-        : call.status === "active"
-          ? "Cuộc gọi đang diễn ra"
-          : call.status === "ringing"
-            ? call.direction === "incoming"
-              ? "Cuộc gọi đến"
-              : "Đang gọi"
-            : `Cuộc gọi ${call.kind === "video" ? "video" : "thoại"} đã kết thúc`;
-  const icon: React.ComponentProps<typeof MaterialIcons>["name"] = isMissed
-    ? "call-missed"
-    : call.kind === "video"
-      ? "videocam"
-      : call.direction === "outgoing"
-        ? "call-made"
-        : "call-received";
-  const detail = [relativeTime(call.createdAt), duration].filter(Boolean).join(" · ");
-
-  return (
-    <View style={styles.callHistoryRow} accessibilityLabel={`${title}. ${detail}`}>
-      <View style={[styles.callHistoryCard, isMissed && styles.callHistoryMissed]}>
-        <View style={[styles.callHistoryIcon, isMissed && styles.callHistoryIconMissed]}>
-          <MaterialIcons name={icon} size={19} color={isMissed ? "#DC2626" : "#2563EB"} />
-        </View>
-        <View style={styles.callHistoryContent}>
-          <Text style={[styles.callHistoryTitle, isMissed && styles.callHistoryTitleMissed]}>{title}</Text>
-          <Text style={styles.callHistoryDetail}>{detail}</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
 export default function ChatScreen() {
   const { user, loading } = useAuth();
   const userId = user?.id;
@@ -195,7 +128,7 @@ export default function ChatScreen() {
   const rawId = routeParams.id;
   const conversationId = Number(rawId);
   const isGroup = routeParams.group === "1";
-  const listRef = useRef<FlatList<TimelineItem>>(null);
+  const listRef = useRef<FlatList<TimelineMessage>>(null);
   const lastTypingHeartbeatAt = useRef(0);
   const [draft, setDraft] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -230,13 +163,6 @@ export default function ChatScreen() {
   const utils = trpc.useUtils();
   const messages = trpc.messages.list.useQuery(
     { conversationId },
-    {
-      enabled: Boolean(user) && Number.isInteger(conversationId),
-      refetchInterval: 1000,
-    },
-  );
-  const callHistory = trpc.calls.listByConversation.useQuery(
-    { conversationId, limit: 60 },
     {
       enabled: Boolean(user) && Number.isInteger(conversationId),
       refetchInterval: 1000,
@@ -281,13 +207,11 @@ export default function ChatScreen() {
   const clearConversation = trpc.conversations.clearContent.useMutation();
   const requestWallpaperUpload = trpc.conversations.requestWallpaperUpload.useMutation();
   const setWallpaper = trpc.conversations.setWallpaper.useMutation();
-  const startCall = trpc.calls.start.useMutation();
   const pinGroupMessage = trpc.conversations.pinGroupMessage.useMutation();
   const group = groupDetails.data;
   const isGroupAdmin = Boolean(
     groupMembers.data?.some((member) => member.id === userId && (member.groupRole === "owner" || member.groupRole === "admin")),
   );
-  const isStartingCall = startCall.isPending;
   const header = useMemo(
     () => ({
       title: isGroup ? group?.title ?? "Nhóm chat" : "Hội thoại riêng tư",
@@ -297,7 +221,7 @@ export default function ChatScreen() {
     }),
     [group, isGroup],
   );
-  const timeline = useMemo<TimelineItem[]>(() => {
+  const timeline = useMemo<TimelineMessage[]>(() => {
     const sourceMessages = ((messages.data ?? []) as ChatMessage[]).map((message) =>
       preserveStableMediaUrl(stableMediaUrls.current, message),
     );
@@ -309,9 +233,8 @@ export default function ChatScreen() {
       const albumItems = sourceMessages.filter((candidate) => candidate.mediaBatchId === message.mediaBatchId);
       return [{ ...message, albumItems, entryType: "message" as const }];
     });
-    const callItems = ((callHistory.data ?? []) as CallHistory[]).map((call) => ({ ...call, entryType: "call" as const }));
-    return [...messageItems, ...callItems].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
-  }, [callHistory.data, messages.data]);
+    return messageItems;
+  }, [messages.data]);
   const pinnedMessage = useMemo(
     () => group?.pinnedMessageId
       ? ((messages.data ?? []) as ChatMessage[]).find((message) => message.id === group.pinnedMessageId) ?? null
@@ -355,39 +278,10 @@ export default function ChatScreen() {
 
   const refresh = () => {
     void utils.messages.list.invalidate({ conversationId });
-    void utils.calls.listByConversation.invalidate({ conversationId, limit: 60 });
     void utils.conversations.list.invalidate();
     if (isGroup) {
       void utils.conversations.groupDetails.invalidate({ conversationId });
       void utils.conversations.groupMembers.invalidate({ conversationId });
-    }
-  };
-  const beginP2pAction = async (mode: P2pCallMode) => {
-    if (isGroup) {
-      Alert.alert("Gọi nhóm đã tắt", "ChatPHT hiện chỉ hỗ trợ gọi và chia sẻ màn hình P2P giữa hai người.");
-      return;
-    }
-    const kind = callKindForP2pMode(mode);
-    try {
-      const call = await startCall.mutateAsync({ conversationId, kind, p2pMode: mode });
-      if (call.p2pMode !== mode || call.kind !== kind) {
-        throw new Error("Phiên gọi trả về không khớp với nút đã bấm. ChatPHT đã chặn điều hướng để không mở nhầm chế độ.");
-      }
-      router.push({
-        pathname: "/call",
-        params: {
-          callId: call.id,
-          kind: call.kind,
-          p2pMode: call.p2pMode,
-          direction: "outgoing",
-          name: header.title,
-        },
-      });
-    } catch (error) {
-      Alert.alert(
-        "Không thể bắt đầu cuộc gọi",
-        error instanceof Error ? error.message : "Vui lòng thử lại.",
-      );
     }
   };
   const pinMessage = async (messageId: number | null) => {
@@ -821,33 +715,6 @@ export default function ChatScreen() {
               {wallpaperProgress !== null ? `Đang tải ảnh nền ${wallpaperProgress}%` : header.subtitle}
             </Text>
           </View>
-          {!isGroup ? <Pressable
-            onPress={() => void beginP2pAction("audio")}
-            disabled={isStartingCall}
-            style={({ pressed }) => [styles.callButton, pressed && styles.pressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Gọi thoại"
-          >
-            <MaterialIcons name="phone" size={20} color="#2563EB" />
-          </Pressable> : null}
-          {!isGroup ? <Pressable
-            onPress={() => void beginP2pAction("video")}
-            disabled={isStartingCall}
-            style={({ pressed }) => [styles.callButton, pressed && styles.pressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Gọi video"
-          >
-            <MaterialIcons name="videocam" size={21} color="#2563EB" />
-          </Pressable> : null}
-          {!isGroup ? <Pressable
-            onPress={() => void beginP2pAction("screen")}
-            disabled={isStartingCall}
-            style={({ pressed }) => [styles.callButton, (pressed || isStartingCall) && styles.pressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Chia sẻ màn hình P2P với người liên hệ"
-          >
-            {isStartingCall ? <ActivityIndicator color="#2563EB" size="small" /> : <MaterialIcons name="screen-share" size={20} color="#2563EB" />}
-          </Pressable> : null}
           <Pressable
             onPress={openConversationMenu}
             style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
@@ -868,7 +735,7 @@ export default function ChatScreen() {
         <FlatList
           ref={listRef}
           data={timeline}
-          keyExtractor={(item) => `${item.entryType}-${item.id}`}
+          keyExtractor={(item) => `message-${item.id}`}
           style={styles.list}
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
@@ -876,7 +743,6 @@ export default function ChatScreen() {
             listRef.current?.scrollToEnd({ animated: false })
           }
           renderItem={({ item }) => {
-            if (item.entryType === "call") return <CallHistoryItem call={item} />;
             const mine = item.senderId === user.id;
             const groupedReactions = item.reactions.reduce<
               Record<string, { count: number; mine: boolean }>
@@ -966,11 +832,11 @@ export default function ChatScreen() {
                         {item.contentType === "screen_share_invite" ? (
                           <View style={[styles.screenShareInvite, mine && styles.mineScreenShareInvite]}>
                             <View style={[styles.screenShareInviteIcon, mine && styles.mineScreenShareInviteIcon]}>
-                              <MaterialIcons name="screen-share" size={22} color={mine ? "#DBEAFE" : "#1D4ED8"} />
+                              <MaterialIcons name="info-outline" size={22} color={mine ? "#DBEAFE" : "#1D4ED8"} />
                             </View>
                             <View style={styles.screenShareInviteContent}>
-                              <Text style={[styles.screenShareInviteTitle, mine && styles.mineScreenShareInviteTitle]}>Chia sẻ màn hình trước đây</Text>
-                              <Text style={[styles.screenShareInviteDetail, mine && styles.mineScreenShareInviteDetail]}>Phiên chia sẻ cũ không còn mở được. Hãy dùng nút Chia sẻ màn hình riêng trong cuộc trò chuyện 1:1 để bắt đầu phiên P2P mới.</Text>
+                              <Text style={[styles.screenShareInviteTitle, mine && styles.mineScreenShareInviteTitle]}>Thông báo hệ thống cũ</Text>
+                              <Text style={[styles.screenShareInviteDetail, mine && styles.mineScreenShareInviteDetail]}>Mục này không còn được hỗ trợ trong phiên bản hiện tại.</Text>
                             </View>
                           </View>
                         ) : null}

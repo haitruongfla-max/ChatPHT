@@ -10,22 +10,10 @@ type BackgroundUpdatedEvent = {
   updatedAt: string;
 };
 
-type P2pSignalAvailableEvent = {
-  recipientId: number;
-  callId: string;
-  signalId: number | null;
-  type: "offer" | "answer" | "ice" | "screen-start" | "screen-stop";
-  createdAt: string;
-};
-
 let realtimeServer: Server | null = null;
 
 function conversationRoom(conversationId: number) {
   return `conversation:${conversationId}`;
-}
-
-function userRoom(userId: number) {
-  return `user:${userId}`;
 }
 
 async function authenticateSocket(socket: Socket) {
@@ -52,7 +40,6 @@ export function registerRealtime(server: HttpServer) {
       .catch(() => next(new Error("Phiên đăng nhập không hợp lệ.")));
   });
   realtimeServer.on("connection", (socket) => {
-    socket.join(userRoom(Number(socket.data.userId)));
     socket.on("join_conversation", (payload: { conversationId?: unknown }, acknowledge?: (result: { ok: boolean }) => void) => {
       const conversationId = typeof payload?.conversationId === "number" ? payload.conversationId : Number.NaN;
       if (!Number.isInteger(conversationId) || conversationId <= 0) {
@@ -76,14 +63,4 @@ export function registerRealtime(server: HttpServer) {
 
 export function emitConversationBackgroundUpdated(event: BackgroundUpdatedEvent) {
   realtimeServer?.to(conversationRoom(event.conversationId)).emit("background_updated", event);
-}
-
-/**
- * Only wakes the authenticated recipient to drain its protected MySQL queue.
- * SDP, ICE candidates and relay configuration remain exclusively inside the
- * existing protected tRPC mutation/query path.
- */
-export function emitP2pSignalAvailable(event: P2pSignalAvailableEvent) {
-  const { recipientId, ...safeEvent } = event;
-  realtimeServer?.to(userRoom(recipientId)).emit("p2p_signal_available", safeEvent);
 }
