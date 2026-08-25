@@ -9,7 +9,8 @@ import { RTCView, type MediaStream } from "react-native-webrtc";
 import { activeCall } from "@/lib/active-call";
 import { getCallConnectionStatus, getP2pNetworkQuality, type P2pNetworkQuality } from "@/lib/call-connection-status";
 import { createCallTonePlayer, stopAllCallAlerts, stopCallTone } from "@/lib/call-sounds";
-import { P2pCall, type P2pConnectionState, type P2pNetworkStats, type P2pSignal, type P2pSignalProgress } from "@/lib/p2p-call";
+import { P2pCall, type P2pBootstrapPhase, type P2pConnectionState, type P2pNetworkStats, type P2pSignal, type P2pSignalProgress } from "@/lib/p2p-call";
+import { resolveP2pIceServers } from "@/lib/p2p-ice-bootstrap";
 import { callKindForP2pMode, toP2pCallMode, type P2pCallMode } from "@/lib/p2p-call-mode";
 import { trpc } from "@/lib/trpc";
 
@@ -28,6 +29,13 @@ function signalDiagnosticStatus(diagnostics: P2pSignalDiagnostics) {
   if (diagnostics.offerReceived > 0) return "Đã nhận yêu cầu kết nối P2P…";
   if (diagnostics.offerSent > 0) return "Đã gửi yêu cầu kết nối P2P…";
   return "Đang khởi tạo kết nối P2P…";
+}
+
+function bootstrapPhaseLabel(phase: P2pBootstrapPhase | null) {
+  if (phase === "media-ready") return "Đã sẵn sàng micro/camera. Đang tạo kênh P2P…";
+  if (phase === "peer-ready") return "Đang tạo yêu cầu kết nối P2P…";
+  if (phase === "offer-created") return "Đang gửi yêu cầu kết nối P2P…";
+  return null;
 }
 
 function callDuration(seconds: number) {
@@ -78,6 +86,8 @@ export default function CallScreen() {
   const [seconds, setSeconds] = useState(resumed?.seconds ?? 0);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [iceBootstrapNotice, setIceBootstrapNotice] = useState<string | null>(null);
+  const [bootstrapPhase, setBootstrapPhase] = useState<P2pBootstrapPhase | null>(null);
   const [p2pState, setP2pState] = useState<P2pConnectionState>("idle");
   const [signalDiagnostics, setSignalDiagnostics] = useState<P2pSignalDiagnostics>(EMPTY_SIGNAL_DIAGNOSTICS);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
@@ -229,12 +239,21 @@ export default function CallScreen() {
   async function startP2p(isAnswer: boolean) {
     setP2pState("connecting");
     setSignalDiagnostics(EMPTY_SIGNAL_DIAGNOSTICS);
-    const result = iceConfig.data ?? (await iceConfig.refetch()).data;
+    setBootstrapPhase(null);
+    const iceBootstrap = await resolveP2pIceServers(
+      iceConfig.data?.iceServers,
+      async () => (await iceConfig.refetch()).data,
+    );
+    setIceBootstrapNotice(
+      iceBootstrap.source === "fallback"
+        ? "Đang thử kết nối trực tiếp khi máy chủ hỗ trợ phản hồi chậm…"
+        : null,
+    );
     await p2p.start({
       isCaller: !isAnswer,
       kind,
       mode,
-      iceServers: result?.iceServers,
+      iceServers: iceBootstrap.iceServers,
       onSignal: async (signal: P2pSignal) => {
         try {
           await sendSignal.mutateAsync({ callId, ...signal });
@@ -250,6 +269,7 @@ export default function CallScreen() {
         const phase = type === "offer" ? "khởi tạo" : type === "answer" ? "phản hồi" : "mạng";
         setConnectionError(`Không gửi được tín hiệu ${phase} P2P. Hãy kiểm tra mạng rồi gọi lại.`);
       },
+      onBootstrapPhase: setBootstrapPhase,
       onState: (state) => {
         setP2pState(state);
         setConnected(state === "connected");
@@ -331,7 +351,7 @@ export default function CallScreen() {
   async function toggleVideoQuality() { const next = videoQuality === "hd" ? "sd" : "hd"; try { await p2p.setVideoQuality(next); setVideoQuality(next); activeCall.update(callId, { videoQuality: next }); } catch { Alert.alert("Chưa thể đổi chất lượng", "Vui lòng thử lại."); } }
 
   const connectionStatus = getCallConnectionStatus({ kind: mode, direction, detailsLoading: details.isLoading, isConnecting, connected, isAnswered, error: connectionError, networkState: p2pState });
-  const subtitle = connected && isAnswered ? callDuration(seconds) : isAnswered && !connectionError ? signalDiagnosticStatus(signalDiagnostics) : connectionStatus.title;
+  const subtitle = connected && isAnswered ? callDuration(seconds) : isAnswered && !connectionError ? iceBootstrapNotice ?? bootstrapPhaseLabel(bootstrapPhase) ?? signalDiagnosticStatus(signalDiagnostics) : connectionStatus.title;
   if (details.isLoading && !connected) return <SafeAreaView style={styles.safe}><StatusBar barStyle="dark-content" /><View style={styles.center}><ActivityIndicator color="#2563EB" /><Text style={styles.statusText}>Đang chuẩn bị P2P…</Text></View></SafeAreaView>;
   if (isGroup) return <SafeAreaView style={styles.safe}><View style={styles.center}><MaterialIcons name="groups" size={42} color="#64748B" /><Text style={styles.groupTitle}>Gọi nhóm đã được dừng</Text><Text style={styles.groupBody}>ChatPHT hiện chỉ dùng gọi và chia sẻ màn hình P2P cho một người với một người.</Text><Pressable style={styles.primaryButton} onPress={() => router.back()}><Text style={styles.primaryButtonText}>Quay lại</Text></Pressable></View></SafeAreaView>;
   if (modeConflict) return <SafeAreaView style={styles.safe}><View style={styles.center}><MaterialIcons name="call-end" size={42} color="#C53030" /><Text style={styles.groupTitle}>Đã chặn mở sai chế độ</Text><Text style={styles.groupBody}>Yêu cầu cuộc gọi không khớp với phiên đã lưu. ChatPHT không mở media để tránh thoại hoặc video bị chuyển thành chia sẻ màn hình.</Text><Pressable style={styles.primaryButton} onPress={() => void finish("ended")}><Text style={styles.primaryButtonText}>Đóng phiên</Text></Pressable></View></SafeAreaView>;

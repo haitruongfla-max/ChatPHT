@@ -34,7 +34,8 @@ export class P2pScreenCall {
     this.stream = new MediaStream();
     this.displayStream?.getTracks().forEach((track) => this.stream?.addTrack(track));
     this.microphoneStream.getTracks().forEach((track) => this.stream?.addTrack(track));
-    await setAndroidCallSpeakerRoute(true);
+    // Không để thao tác route loa trì hoãn signaling sau khi người dùng đã cấp MediaProjection.
+    void setAndroidCallSpeakerRoute(true).catch(() => undefined);
     return this.stream;
   }
 

@@ -287,6 +287,25 @@ describe("native P2P renegotiation", () => {
     expect(recipientProgress).toHaveBeenCalledWith({ direction: "received", type: "ice" });
   });
 
+  it("reports safe bootstrap milestones before it writes the first offer", async () => {
+    const phases = vi.fn();
+    const call = new P2pCall();
+
+    await call.start({
+      isCaller: true,
+      kind: "audio",
+      mode: "audio",
+      onSignal: () => undefined,
+      onBootstrapPhase: phases,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    });
+
+    expect(phases).toHaveBeenNthCalledWith(1, "media-ready");
+    expect(phases).toHaveBeenNthCalledWith(2, "peer-ready");
+    expect(phases).toHaveBeenNthCalledWith(3, "offer-created");
+  });
+
   it("surfaces a signal send failure without exposing signaling payload or credentials", async () => {
     const onSignalError = vi.fn();
     const call = new P2pCall();

@@ -343,3 +343,10 @@
 - [x] Truy vết phiên gọi khoảng 12:50: người nhận đã answer nhưng phía gọi vẫn hiển thị yêu cầu đang gửi, chưa nhận `active`.
 - [x] Sửa đồng bộ answer → `calls.get(active)` và thêm hồi quy chặn UI caller kẹt trạng thái ringing sau answer.
 - [x] Đồng bộ checkpoint sửa answer-to-signaling P2P lên GitHub và build APK Android ký số để kiểm thử hai thiết bị.
+- [ ] Xác lập nghiệm thu P2P: phiên accepted phải ghi offer, answer và ICE; audio hai chiều/video hai chiều được kiểm tra trên Wi-Fi và 4G trước khi công bố ổn định.
+- [ ] Cập nhật màn gọi thoại theo bố cục tối giản: nhận diện liên hệ/trạng thái trung tâm, nút loa, kết thúc và micro dễ thao tác một tay.
+- [ ] Cập nhật màn gọi video: remote video toàn màn hình sau kết nối, preview local thu nhỏ, nút camera/micro/kết thúc/đổi camera theo trạng thái thật.
+- [x] Đối chiếu các phiên lỗi lúc 13:48–13:50 ngày 25-08-2026 với `call_sessions` và số lượng `p2p_signals` theo offer/answer/ICE, không đọc nội dung SDP/ICE/TURN.
+- [x] Khắc phục tại mã nguồn điểm dừng chung trước offer: bootstrap ICE có timeout/STUN dự phòng, route loa không chặn peer và có mốc media/peer/offer an toàn.
+- [x] Báo cáo rõ số signal thực tế và nguyên nhân gốc của bản 1.0.25 thất bại trước khi đề xuất APK tiếp theo.
+- [ ] Tạo APK kiểm thử versionCode 30 chỉ sau khi qua toàn bộ kiểm tra nguồn, để xác minh signal thật trên hai Android; chưa tuyên bố media hoạt động.

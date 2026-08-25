@@ -19,7 +19,8 @@ export class P2pAudioCall {
       } as unknown as boolean,
       video: false,
     });
-    await setAndroidCallSpeakerRoute(false);
+    // Điều hướng loa là tiện ích hậu khởi tạo; không cho bridge Android chặn offer P2P.
+    void setAndroidCallSpeakerRoute(false).catch(() => undefined);
     return this.stream;
   }
 

@@ -19,7 +19,8 @@ export class P2pVideoCall {
       } as unknown as boolean,
       video: { facingMode: "user", frameRate: 30, width: 1280, height: 720 },
     });
-    await setAndroidCallSpeakerRoute(true);
+    // Video/micro phải có thể tạo peer ngay cả khi một ROM không phản hồi bridge đổi loa.
+    void setAndroidCallSpeakerRoute(true).catch(() => undefined);
     return this.stream;
   }
 

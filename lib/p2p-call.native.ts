@@ -11,6 +11,7 @@ export type P2pSignal = { type: P2pSignalType; payload: string };
 export type P2pSignalProgress = { direction: "sent" | "received"; type: P2pSignalType };
 export type P2pSignalError = { type: P2pSignalType };
 export type P2pConnectionState = "idle" | "connecting" | "recovering" | "connected" | "failed" | "closed";
+export type P2pBootstrapPhase = "media-ready" | "peer-ready" | "offer-created";
 export type P2pIceServer = { urls: string[]; username?: string; credential?: string };
 export type P2pNetworkStats = { latencyMs: number | null };
 
@@ -22,6 +23,7 @@ type StartOptions = {
   onSignal: (signal: P2pSignal) => Promise<void> | void;
   onSignalProgress?: (progress: P2pSignalProgress) => void;
   onSignalError?: (error: P2pSignalError) => void;
+  onBootstrapPhase?: (phase: P2pBootstrapPhase) => void;
   onState: (state: P2pConnectionState) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
   onRemoteCameraStream?: (stream: MediaStream | null) => void;
@@ -81,6 +83,7 @@ export class P2pCall {
 
     const stream = await this.startImmutableMediaSession(options.mode, options.isCaller);
     this.localStream = stream;
+    options.onBootstrapPhase?.("media-ready");
 
     const peer = new RTCPeerConnection({
       iceServers: options.iceServers?.length
@@ -89,6 +92,7 @@ export class P2pCall {
       iceCandidatePoolSize: 8,
     });
     this.peer = peer;
+    options.onBootstrapPhase?.("peer-ready");
     this.getPublishStreams(stream).forEach((source) => source.getTracks().forEach((track) => peer.addTrack(track, source)));
 
     peer.onicecandidate = (event: { candidate?: unknown }) => {
@@ -376,6 +380,7 @@ export class P2pCall {
     try {
       const offer = await peer.createOffer(iceRestart ? { iceRestart: true } : {});
       await peer.setLocalDescription(offer);
+      this.options?.onBootstrapPhase?.("offer-created");
       const offerId = ++this.nextOfferId;
       this.awaitingAnswerForOfferId = offerId;
       await this.sendSignal({ type: "offer", payload: JSON.stringify({ description: peer.localDescription ?? offer, offerId }) });
