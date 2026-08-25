@@ -7,7 +7,7 @@ describe("P2P ICE bootstrap", () => {
     const cached = [{ urls: ["turns:relay.example:443"], username: "temporary", credential: "protected" }];
     const result = await resolveP2pIceServers(cached, async () => undefined);
 
-    expect(result).toEqual({ iceServers: cached, source: "server" });
+    expect(result).toEqual({ iceServers: cached, source: "server", hasTurn: true });
   });
 
   it("falls back to direct STUN when an ICE configuration request is slow", async () => {
@@ -17,7 +17,7 @@ describe("P2P ICE bootstrap", () => {
       1,
     );
 
-    expect(result).toEqual({ iceServers: DIRECT_STUN_FALLBACK, source: "fallback" });
+    expect(result).toEqual({ iceServers: DIRECT_STUN_FALLBACK, source: "fallback", hasTurn: false });
   });
 
   it("falls back to direct STUN when an ICE configuration request rejects", async () => {
@@ -26,6 +26,6 @@ describe("P2P ICE bootstrap", () => {
       async () => { throw new Error("network unavailable"); },
     );
 
-    expect(result).toEqual({ iceServers: DIRECT_STUN_FALLBACK, source: "fallback" });
+    expect(result).toEqual({ iceServers: DIRECT_STUN_FALLBACK, source: "fallback", hasTurn: false });
   });
 });

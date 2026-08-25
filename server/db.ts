@@ -52,6 +52,9 @@ export const P2P_TELEMETRY_EVENTS = [
   "state-connected",
   "state-recovering",
   "state-failed",
+  "bootstrap-failed",
+  "relay-turn-configured",
+  "relay-stun-only",
 ] as const;
 export type P2pTelemetryEvent = (typeof P2P_TELEMETRY_EVENTS)[number];
 // Android may need time to surface a full-screen incoming call and request media permissions.

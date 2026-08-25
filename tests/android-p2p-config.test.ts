@@ -30,11 +30,11 @@ describe("Android P2P call configuration", () => {
     expect(audioCall).toContain("setAndroidCallSpeakerRoute");
   });
 
-  it("keeps the P2P telemetry release upgradeable from versionCode 30 and the signed asset name stable", () => {
+  it("keeps the P2P route and TURN release upgradeable from versionCode 31 and the signed asset name stable", () => {
     const appConfig = source("app.config.ts");
     const workflow = source(".github/workflows/build-ota-base-apk.yml");
-    expect(appConfig).toContain("versionCode: 31");
-    expect(workflow).toContain('default: "v1.0.27-p2p-telemetry-audio-route-vc31"');
+    expect(appConfig).toContain("versionCode: 32");
+    expect(workflow).toContain('default: "v1.0.28-p2p-route-turn-vc32"');
     expect(workflow).toContain("APK_OUTPUT: ./app-release.apk");
     expect(workflow).toContain('"$APK_OUTPUT#app-release.apk"');
   });

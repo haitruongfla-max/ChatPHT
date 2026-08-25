@@ -354,6 +354,12 @@
 - [x] Khắc phục điểm chặn chung còn lại tại mã nguồn: giới hạn thời gian bridge reset/chuyển loa Android để không thể treo trước media, peer và offer; không thay đổi tính năng ngoài gọi.
 - [ ] Không điều chỉnh giao diện theo mẫu mới hoặc phát hành tiếp trước khi kết quả truy vết 14:46–14:48 có bằng chứng rõ ràng.
 - [x] Lưu telemetry chỉ gồm loại signal, hướng, giai đoạn bootstrap và trạng thái ICE theo callId để drain hàng đợi không xóa mất bằng chứng; không lưu SDP, ứng viên ICE hay thông tin TURN.
-- [ ] Hiển thị trạng thái relay an toàn (có/không có TURN và số endpoint hợp lệ) cho phiên chẩn đoán, không đưa credential ra giao diện hoặc log.
+- [x] Hiển thị trạng thái relay an toàn (có/không có TURN) trong telemetry chẩn đoán, không đưa endpoint, credential hoặc dữ liệu relay nhạy cảm ra giao diện hay log.
 - [x] Loại bỏ việc chờ vô hạn bridge reset tuyến loa Android khỏi đường khởi tạo chung trước media/peer/offer bằng timeout an toàn; vẫn reset tuyến loa khi kết thúc cuộc gọi.
-- [ ] Tăng versionCode, phát hành APK kiểm thử telemetry + audio route timeout và xác minh mốc media/peer/offer/answer/ICE trên hai Android.
+- [x] Tăng versionCode và phát hành APK kiểm thử telemetry + audio route timeout 1.0.27/versionCode 31; workflow ký số đạt, SHA-256 và ZIP asset đã kiểm tra.
+- [ ] Xác minh trên hai Android các mốc media/peer/offer/answer/ICE của APK 1.0.27, trước khi làm giao diện thoại/video mới hoặc kết luận kết nối hoạt động.
+- [x] Đối chiếu telemetry APK 1.0.27 lúc 15:33–15:35: thoại và video đã có offer/answer/ICE hai chiều nhưng phía nhận chuyển recovering/failed; screen caller có media/peer/offer còn receiver chỉ nhận offer/ICE, chưa media-ready hoặc answer.
+- [x] Chặn khởi tạo P2P trùng `callId` giữa nhiều màn/route trên cùng Android để máy nhận không tạo media/answer kép cho một phiên.
+- [x] Bỏ gate quyền micro phụ thuộc Expo Camera cho audio/screen; để WebRTC/MediaProjection là nguồn quyền thực tế và ghi telemetry lỗi bootstrap tối thiểu, không có dữ liệu media hay secret.
+- [x] Bổ sung chỉ báo relay an toàn có TURN/không TURN và mode credential ở backend, không lộ URL, username hoặc credential; dùng để phân biệt lỗi NAT/TURN thật sau signaling.
+- [ ] Sau source gate, phát hành APK versionCode lớn hơn 31 để kiểm thử riêng audio trước, sau đó video và screen theo telemetry.

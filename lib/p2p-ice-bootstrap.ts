@@ -6,6 +6,10 @@ export const DIRECT_STUN_FALLBACK: P2pIceServer[] = [
 
 export type P2pIceBootstrapSource = "server" | "fallback";
 
+function hasTurnServer(iceServers: P2pIceServer[]) {
+  return iceServers.some((server) => server.urls.some((url) => /^turns?:/i.test(url)));
+}
+
 /**
  * TURN is obtained only from the authenticated server endpoint.  A stalled
  * endpoint must not prevent a same-network P2P offer from being created: in
@@ -13,10 +17,10 @@ export type P2pIceBootstrapSource = "server" | "fallback";
  */
 export async function resolveP2pIceServers(
   cached: P2pIceServer[] | undefined,
-  refresh: () => Promise<{ iceServers?: P2pIceServer[] } | undefined>,
+  refresh: () => Promise<{ iceServers?: P2pIceServer[]; hasTurn?: boolean } | undefined>,
   timeoutMs = 3_000,
-): Promise<{ iceServers: P2pIceServer[]; source: P2pIceBootstrapSource }> {
-  if (cached?.length) return { iceServers: cached, source: "server" };
+): Promise<{ iceServers: P2pIceServer[]; source: P2pIceBootstrapSource; hasTurn: boolean }> {
+  if (cached?.length) return { iceServers: cached, source: "server", hasTurn: hasTurnServer(cached) };
 
   let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
@@ -27,11 +31,11 @@ export async function resolveP2pIceServers(
       }),
     ]);
     const iceServers = response?.iceServers;
-    if (iceServers?.length) return { iceServers, source: "server" };
+    if (iceServers?.length) return { iceServers, source: "server", hasTurn: response?.hasTurn === true };
   } catch {
     // Do not expose transport errors or credentials in the call UI.
   } finally {
     if (timeout) clearTimeout(timeout);
   }
-  return { iceServers: DIRECT_STUN_FALLBACK, source: "fallback" };
+  return { iceServers: DIRECT_STUN_FALLBACK, source: "fallback", hasTurn: false };
 }

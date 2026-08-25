@@ -6,7 +6,7 @@ on:
       release_tag:
         description: "GitHub Release tag cho APK nền OTA"
         required: true
-        default: "v1.0.27-p2p-telemetry-audio-route-vc31"
+        default: "v1.0.28-p2p-route-turn-vc32"
 
 # GitHub Release cần quyền ghi nội dung; workflow không sử dụng Expo cloud build.
 permissions:

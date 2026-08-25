@@ -394,6 +394,7 @@ export const appRouter = router({
             "signal-offer-received", "signal-answer-received", "signal-ice-received",
             "signal-offer-failed", "signal-answer-failed", "signal-ice-failed",
             "state-connecting", "state-connected", "state-recovering", "state-failed",
+            "bootstrap-failed", "relay-turn-configured", "relay-stun-only",
           ]),
         }))
         .mutation(async ({ ctx, input }) => {

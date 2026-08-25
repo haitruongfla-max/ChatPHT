@@ -20,6 +20,8 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain("shouldDrainSignals");
     expect(callScreen).toContain("signalDiagnosticStatus(signalDiagnostics)");
     expect(callScreen).toContain("P2P_SIGNAL_SEND_FAILED");
+    expect(callScreen).toContain('recordTelemetry("bootstrap-failed")');
+    expect(callScreen).toContain('mode === "screen" ? "Không thể mở micro hoặc phiên chia sẻ màn hình');
   });
 
   it("does not block the caller offer on a delayed active poll and applies the answer response immediately", () => {
@@ -94,5 +96,7 @@ describe("P2P call screen guards", () => {
     expect(incomingWatcher).toContain("p2pMode: call?.p2pMode");
     expect(pushManager).toContain('payload.p2pMode === "screen"');
     expect(pushManager).toContain("params: { callId, kind, p2pMode, direction: \"incoming\", group }");
+    expect(incomingWatcher).toContain("claimIncomingCallRoute(call.id)");
+    expect(pushManager).toContain("claimIncomingCallRoute(callId)");
   });
 });

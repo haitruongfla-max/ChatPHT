@@ -12,6 +12,7 @@ import { createCallTonePlayer, stopAllCallAlerts, stopCallTone } from "@/lib/cal
 import { P2pCall, type P2pBootstrapPhase, type P2pConnectionState, type P2pNetworkStats, type P2pSignal, type P2pSignalProgress } from "@/lib/p2p-call";
 import { resolveP2pIceServers } from "@/lib/p2p-ice-bootstrap";
 import { callKindForP2pMode, toP2pCallMode, type P2pCallMode } from "@/lib/p2p-call-mode";
+import { releaseIncomingCallRoute } from "@/lib/incoming-call-route-gate";
 import { trpc } from "@/lib/trpc";
 
 type CallKind = "audio" | "video";
@@ -133,7 +134,7 @@ export default function CallScreen() {
   const showChrome = !fullVideo || controlsVisible;
   const networkQuality = getP2pNetworkQuality(p2pState, latencyMs);
 
-  function recordTelemetry(event: "relay-protected" | "relay-fallback" | "media-ready" | "peer-ready" | "offer-created" | "signal-offer-sent" | "signal-answer-sent" | "signal-ice-sent" | "signal-offer-received" | "signal-answer-received" | "signal-ice-received" | "signal-offer-failed" | "signal-answer-failed" | "signal-ice-failed" | "state-connecting" | "state-connected" | "state-recovering" | "state-failed") {
+  function recordTelemetry(event: "relay-protected" | "relay-fallback" | "media-ready" | "peer-ready" | "offer-created" | "signal-offer-sent" | "signal-answer-sent" | "signal-ice-sent" | "signal-offer-received" | "signal-answer-received" | "signal-ice-received" | "signal-offer-failed" | "signal-answer-failed" | "signal-ice-failed" | "state-connecting" | "state-connected" | "state-recovering" | "state-failed" | "bootstrap-failed" | "relay-turn-configured" | "relay-stun-only") {
     if (!callId || finalized.current || telemetryEvents.current.has(event)) return;
     telemetryEvents.current.add(event);
     void p2pTelemetry.mutateAsync({ callId, event }).catch(() => undefined);
@@ -166,6 +167,7 @@ export default function CallScreen() {
     const status = details.data?.status;
     if (!status || !["ended", "declined", "missed"].includes(status) || finalized.current) return;
     finalized.current = true;
+    releaseIncomingCallRoute(callId);
     activeCall.clear(callId);
     void p2p.disconnect();
     if (router.canGoBack()) router.back();
@@ -218,8 +220,6 @@ export default function CallScreen() {
   }, [direction, isAnswered, isGroup, modeConflict]);
 
   async function requestPermissions() {
-    const microphone = await Camera.requestMicrophonePermissionsAsync();
-    if (!microphone.granted) { Alert.alert("Cần quyền micro", "Hãy cấp quyền micro để gọi."); return false; }
     if (mode === "video") {
       const camera = await Camera.requestCameraPermissionsAsync();
       if (!camera.granted) { Alert.alert("Cần quyền camera", "Hãy cấp quyền camera để gọi video."); return false; }
@@ -238,8 +238,9 @@ export default function CallScreen() {
     try {
       await startP2p(isAnswer);
     } catch {
+      recordTelemetry("bootstrap-failed");
       setP2pState("failed");
-      setConnectionError("Không thể khởi tạo kết nối P2P. Hãy kiểm tra mạng, sau đó kết thúc cuộc gọi và gọi lại.");
+      setConnectionError(mode === "screen" ? "Không thể mở micro hoặc phiên chia sẻ màn hình. Hãy cấp quyền rồi gọi lại." : "Không thể mở micro/camera cho P2P. Hãy cấp quyền rồi gọi lại.");
     } finally {
       p2pStartInFlight.current = false;
     }
@@ -254,6 +255,7 @@ export default function CallScreen() {
       iceConfig.data?.iceServers,
       async () => (await iceConfig.refetch()).data,
     );
+    recordTelemetry(iceBootstrap.hasTurn ? "relay-turn-configured" : "relay-stun-only");
     setIceBootstrapNotice(
       iceBootstrap.source === "fallback"
         ? "Đang thử kết nối trực tiếp khi máy chủ hỗ trợ phản hồi chậm…"
@@ -336,6 +338,7 @@ export default function CallScreen() {
 
   async function finish(status: "ended" | "declined") {
     finalized.current = true;
+    releaseIncomingCallRoute(callId);
     stopAllCallAlerts();
     stopCallTone(ringbackTone.current);
     try {
