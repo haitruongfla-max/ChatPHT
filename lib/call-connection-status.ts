@@ -1,4 +1,5 @@
 import type { P2pConnectionState } from "@/lib/p2p-call";
+import type { P2pCallMode } from "@/lib/p2p-call-mode";
 
 export type CallConnectionKind = "audio" | "video" | "screen";
 export type CallConnectionDirection = "incoming" | "outgoing";
@@ -43,6 +44,7 @@ export function getP2pNetworkQuality(state: P2pConnectionState, latencyMs: numbe
 
 export function getCallConnectionStatus({
   kind,
+  p2pMode,
   direction,
   detailsLoading,
   isConnecting,
@@ -52,6 +54,7 @@ export function getCallConnectionStatus({
   networkState,
 }: {
   kind: CallConnectionKind;
+  p2pMode?: P2pCallMode;
   direction: CallConnectionDirection;
   detailsLoading: boolean;
   isConnecting: boolean;
@@ -60,7 +63,8 @@ export function getCallConnectionStatus({
   error: string | null;
   networkState?: P2pConnectionState;
 }): CallConnectionStatus {
-  const callType = kind === "screen" ? "phiên chia sẻ màn hình" : kind === "video" ? "cuộc gọi video" : "cuộc gọi thoại";
+  const effectiveMode = p2pMode ?? kind;
+  const callType = effectiveMode === "screen" ? "phiên chia sẻ màn hình" : effectiveMode === "video" ? "cuộc gọi video" : "cuộc gọi thoại";
 
   if (networkState === "recovering") {
     return {
@@ -82,9 +86,9 @@ export function getCallConnectionStatus({
     return {
       phase: "connecting",
       title: `Đang thiết lập ${callType}`,
-      description: kind === "screen"
+      description: effectiveMode === "screen"
         ? "Đang chờ quyền chia sẻ màn hình và thiết lập đường truyền bảo mật…"
-        : kind === "video"
+        : effectiveMode === "video"
         ? "Đang mở camera, micro và đường truyền bảo mật…"
         : "Đang mở micro và đường truyền bảo mật…",
     };
@@ -99,12 +103,13 @@ export function getCallConnectionStatus({
   }
 
   if (connected || direction === "outgoing") {
+    const request = effectiveMode === "screen" ? "yêu cầu chia sẻ màn hình" : effectiveMode === "video" ? "yêu cầu cuộc gọi video" : "yêu cầu cuộc gọi thoại";
     return {
       phase: "ringing",
-      title: connected ? "Đang đổ chuông…" : "Đang gọi…",
+      title: connected ? `Đang đổ chuông ${callType}…` : `Đang gọi ${callType}…`,
       description: connected
         ? "Đang chờ người nhận tham gia."
-        : "Đang gửi yêu cầu cuộc gọi đến người nhận.",
+        : `Đang gửi ${request} đến người nhận.`,
     };
   }
 
@@ -118,7 +123,7 @@ export function getCallConnectionStatus({
 
   return {
     phase: "preparing",
-    title: kind === "screen" ? "Yêu cầu chia sẻ màn hình đến" : kind === "video" ? "Cuộc gọi video đến" : "Cuộc gọi thoại đến",
+    title: effectiveMode === "screen" ? "Yêu cầu chia sẻ màn hình đến" : effectiveMode === "video" ? "Cuộc gọi video đến" : "Cuộc gọi thoại đến",
     description: "Chọn Nhận để bắt đầu kết nối.",
   };
 }

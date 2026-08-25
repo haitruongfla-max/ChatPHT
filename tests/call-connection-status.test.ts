@@ -19,11 +19,28 @@ describe("call connection status", () => {
     });
   });
 
+  it("ưu tiên p2pMode tường minh thay vì suy luận screen từ kind audio tương thích", () => {
+    expect(getCallConnectionStatus({
+      kind: "audio",
+      p2pMode: "screen",
+      direction: "outgoing",
+      detailsLoading: false,
+      isConnecting: false,
+      connected: false,
+      isAnswered: false,
+      error: null,
+    })).toMatchObject({
+      phase: "ringing",
+      title: "Đang gọi phiên chia sẻ màn hình…",
+      description: "Đang gửi yêu cầu chia sẻ màn hình đến người nhận.",
+    });
+  });
+
   it("phân biệt đang gọi, đổ chuông và đã kết nối", () => {
     const base = { kind: "audio" as const, direction: "outgoing" as const, detailsLoading: false, isConnecting: false, error: null };
 
-    expect(getCallConnectionStatus({ ...base, connected: false, isAnswered: false })).toMatchObject({ phase: "ringing", title: "Đang gọi…" });
-    expect(getCallConnectionStatus({ ...base, connected: true, isAnswered: false })).toMatchObject({ phase: "ringing", title: "Đang đổ chuông…" });
+    expect(getCallConnectionStatus({ ...base, connected: false, isAnswered: false })).toMatchObject({ phase: "ringing", title: "Đang gọi cuộc gọi thoại…" });
+    expect(getCallConnectionStatus({ ...base, connected: true, isAnswered: false })).toMatchObject({ phase: "ringing", title: "Đang đổ chuông cuộc gọi thoại…" });
     expect(getCallConnectionStatus({ ...base, connected: true, isAnswered: true })).toMatchObject({ phase: "connected", title: "Đã kết nối" });
   });
 

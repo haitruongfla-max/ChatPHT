@@ -317,8 +317,13 @@
 - [x] Bổ sung nút bật/tắt micro cho gọi video và chia sẻ màn hình; yêu cầu cũ cấm camera screen đã được thay bằng camera phụ riêng, chỉ của người chia sẻ, theo xác nhận sau đó.
 - [x] Bổ sung hồi quy điều khiển media và chạy toàn bộ quality gate không dùng watcher.
 - [x] Tăng version/versionCode lên 1.0.22/versionCode 26, cập nhật metadata workflow phát hành rồi tạo checkpoint trước khi đồng bộ GitHub.
-- [ ] Chạy GitHub Actions tạo APK Android signed, xác minh release, checksum, package `com.app.swiftchat` và link tải trực tiếp.
+- [x] Chạy GitHub Actions tạo APK Android signed, xác minh release, checksum, package `com.app.swiftchat` và link tải trực tiếp.
 - [x] Thiết kế phiên `screen` có display track bắt buộc, audio track tùy chọn hai chiều và camera phụ tùy chọn của người chia sẻ, không tái sử dụng phiên `audio` hoặc `video`.
 - [x] Tách quyền/track theo vai trò screen caller và screen receiver; receiver chỉ có micro, không có camera hoặc MediaProjection.
 - [x] Gắn nút micro cho hai bên screen và nút camera phụ chỉ cho screen caller; cập nhật sân khấu hiển thị camera phụ không che màn hình chính.
 - [x] Bổ sung hồi quy xác nhận voice/video không tạo display track, screen receiver không tạo camera/MediaProjection và camera phụ screen không đổi `p2pMode`.
+- [x] Phân tích video người dùng cung cấp theo từng thao tác; video cho thấy luồng video và chưa có bằng chứng MediaProjection thực thi, nhưng giao diện chờ P2P dễ bị nhầm với screen.
+- [x] Đối chiếu release 1.0.22 với mã nguồn/commit và package `com.app.swiftchat`; video không hiện package/version nên vẫn cần người dùng xác nhận bản cài thực tế khi nghiệm thu.
+- [x] Truy vết và sửa ranh giới cuối cùng giữa `calls.start`, persisted `p2pMode`, active-call snapshot và route `/call`: chặn response sai mode trước navigation, dùng mode server trả về và hiển thị nhãn mode bất biến.
+- [x] Bổ sung hồi quy end-to-end tĩnh từ từng nút chat tới mode server và màn gọi, rồi chạy source gate 140/140.
+- [x] Tăng metadata lên 1.0.23/versionCode 27 và hoàn tất source gate; build APK kiểm chứng cùng nghiệm thu hai Android vẫn là bước phát hành kế tiếp.

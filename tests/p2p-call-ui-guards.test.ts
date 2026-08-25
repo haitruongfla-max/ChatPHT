@@ -44,6 +44,9 @@ describe("P2P call screen guards", () => {
     expect(chatScreen).toContain('beginP2pAction("screen")');
     expect(chatScreen).not.toContain('beginCall("video", true)');
     expect(chatScreen).toContain('p2pMode: mode');
+    expect(chatScreen).toContain('if (call.p2pMode !== mode || call.kind !== kind)');
+    expect(chatScreen).toContain('p2pMode: call.p2pMode');
+    expect(chatScreen).toContain('kind: call.kind');
     expect(callScreen).toContain('const activeForCallId = callId ? activeCall.get(callId) : null;');
     expect(callScreen).toContain('activeForCallId?.p2pMode === routeMode');
     expect(callScreen).toContain('const modeConflict = persistedMode !== null && persistedMode !== routeMode;');
@@ -56,6 +59,13 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain('mode === "screen" && isCaller');
     expect(callScreen).toContain('toggleScreenCamera');
     expect(callScreen).not.toContain("startScreenShare");
+  });
+
+  it("shows the immutable mode visibly before connection so video cannot be mistaken for screen sharing", () => {
+    expect(callScreen).toContain('GỌI THOẠI · CHỈ MICRO');
+    expect(callScreen).toContain('GỌI VIDEO · CAMERA + MICRO');
+    expect(callScreen).toContain('CHIA SẺ MÀN HÌNH · MODE RIÊNG');
+    expect(callScreen).toContain('<ModeIdentityBadge mode={mode} inverse={fullVideo} />');
   });
 
   it("preserves the server-selected mode through active and push-driven incoming navigation", () => {

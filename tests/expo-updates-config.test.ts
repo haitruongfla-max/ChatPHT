@@ -14,9 +14,9 @@ describe("Cấu hình APK nền OTA", () => {
     expect(configSource).toContain("fallbackToCacheTimeout: 30_000");
   });
 
-  it("tăng versionCode cho APK P2P có điều khiển screen độc lập 1.0.22 và khai báo MediaProjection Android", () => {
-    expect(configSource).toContain('version: "1.0.22"');
-    expect(configSource).toContain("versionCode: 26");
+  it("tăng versionCode cho APK P2P có chốt mode tường minh 1.0.23 và khai báo MediaProjection Android", () => {
+    expect(configSource).toContain('version: "1.0.23"');
+    expect(configSource).toContain("versionCode: 27");
     expect(configSource).toContain('"FOREGROUND_SERVICE_MEDIA_PROJECTION"');
   });
 });

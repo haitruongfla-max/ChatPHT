@@ -370,12 +370,15 @@ export default function ChatScreen() {
     const kind = callKindForP2pMode(mode);
     try {
       const call = await startCall.mutateAsync({ conversationId, kind, p2pMode: mode });
+      if (call.p2pMode !== mode || call.kind !== kind) {
+        throw new Error("Phiên gọi trả về không khớp với nút đã bấm. ChatPHT đã chặn điều hướng để không mở nhầm chế độ.");
+      }
       router.push({
         pathname: "/call",
         params: {
           callId: call.id,
-          kind,
-          p2pMode: mode,
+          kind: call.kind,
+          p2pMode: call.p2pMode,
           direction: "outgoing",
           name: header.title,
         },
