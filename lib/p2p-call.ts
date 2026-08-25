@@ -15,6 +15,7 @@ export type P2pStartOptions = {
   onSignal: (signal: P2pSignal) => Promise<void> | void;
   onState: (state: P2pConnectionState) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
+  onRemoteCameraStream?: (stream: MediaStream | null) => void;
   onStats?: (stats: P2pNetworkStats) => void;
 };
 
@@ -27,9 +28,11 @@ export class P2pCall {
   isConnected() { return false; }
   getLocalStream(): MediaStream | null { return null; }
   getRemoteStream(): MediaStream | null { return null; }
+  getScreenCameraStream(): MediaStream | null { return null; }
   async setMicrophoneEnabled(_enabled: boolean) { return unavailable(); }
   async setSpeakerEnabled(_enabled: boolean) { return unavailable(); }
   async setCameraEnabled(_enabled: boolean) { return unavailable(); }
+  async setScreenCameraEnabled(_enabled: boolean) { return unavailable(); }
   async switchCamera() { return unavailable(); }
   async setVideoQuality(_quality: "sd" | "hd") { return unavailable(); }
   async disconnect(_options: { preserveAudioSession?: boolean } = {}) { return undefined; }

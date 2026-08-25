@@ -313,3 +313,12 @@
 - [x] Hoàn thiện loading, trạng thái kết nối P2P và chỉ báo độ trễ dựa trên thống kê WebRTC thực, không hiển thị số liệu giả.
 - [x] Viết hồi quy mô phỏng từng nút thoại/video/chia sẻ và phát hiện chuyển mode sai; chạy toàn bộ quality gate.
 - [ ] Chỉ build APK mới sau khi source gate đạt và nghiệm thu riêng ba chế độ trên hai Android qua Wi-Fi/4G.
+- [x] Rà soát quyền và track có thật trong phiên video/screen để đặt điều khiển micro/camera đúng mode.
+- [x] Bổ sung nút bật/tắt micro cho gọi video và chia sẻ màn hình; yêu cầu cũ cấm camera screen đã được thay bằng camera phụ riêng, chỉ của người chia sẻ, theo xác nhận sau đó.
+- [x] Bổ sung hồi quy điều khiển media và chạy toàn bộ quality gate không dùng watcher.
+- [x] Tăng version/versionCode lên 1.0.22/versionCode 26, cập nhật metadata workflow phát hành rồi tạo checkpoint trước khi đồng bộ GitHub.
+- [ ] Chạy GitHub Actions tạo APK Android signed, xác minh release, checksum, package `com.app.swiftchat` và link tải trực tiếp.
+- [x] Thiết kế phiên `screen` có display track bắt buộc, audio track tùy chọn hai chiều và camera phụ tùy chọn của người chia sẻ, không tái sử dụng phiên `audio` hoặc `video`.
+- [x] Tách quyền/track theo vai trò screen caller và screen receiver; receiver chỉ có micro, không có camera hoặc MediaProjection.
+- [x] Gắn nút micro cho hai bên screen và nút camera phụ chỉ cho screen caller; cập nhật sân khấu hiển thị camera phụ không che màn hình chính.
+- [x] Bổ sung hồi quy xác nhận voice/video không tạo display track, screen receiver không tạo camera/MediaProjection và camera phụ screen không đổi `p2pMode`.

@@ -45,7 +45,7 @@ const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
   owner: "truongbbbs-team",
-  version: "1.0.20",
+  version: "1.0.22",
   runtimeVersion: {
     // Bất kỳ thay đổi native nào sẽ có runtime mới, chặn OTA không tương thích.
     policy: "fingerprint",
@@ -82,8 +82,8 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
     googleServicesFile: "./google-services.json",
-    // Bản sửa mode/SDP P2P cần cao hơn versionCode 23 để Android cho phép cập nhật đè.
-    versionCode: 24,
+    // Không tái sử dụng versionCode 25 của bản thử nghiệm treo; bản này cài đè an toàn lên 1.0.20/vc24.
+    versionCode: 26,
     permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE", "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PROJECTION", "FOREGROUND_SERVICE_MICROPHONE", "FOREGROUND_SERVICE_CAMERA"],
     intentFilters: [
       {

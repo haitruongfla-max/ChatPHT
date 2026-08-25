@@ -20,6 +20,7 @@ type StartOptions = {
   onSignal: (signal: P2pSignal) => Promise<void> | void;
   onState: (state: P2pConnectionState) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
+  onRemoteCameraStream?: (stream: MediaStream | null) => void;
   onStats?: (stats: P2pNetworkStats) => void;
 };
 
@@ -31,6 +32,8 @@ export class P2pCall {
   private peer: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
+  private remoteCameraStream: MediaStream | null = null;
+  private pendingScreenAudioTracks: MediaStreamTrack[] = [];
   private sessionMode: P2pCallMode | null = null;
   private audioCall: P2pAudioCall | null = null;
   private videoCall: P2pVideoCall | null = null;
@@ -80,14 +83,19 @@ export class P2pCall {
       iceCandidatePoolSize: 8,
     });
     this.peer = peer;
-    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+    this.getPublishStreams(stream).forEach((source) => source.getTracks().forEach((track) => peer.addTrack(track, source)));
 
     peer.onicecandidate = (event: { candidate?: unknown }) => {
       const candidate = (event as unknown as { candidate?: unknown }).candidate;
       if (candidate) void options.onSignal({ type: "ice", payload: JSON.stringify(candidate) });
     };
-    peer.ontrack = (event: { track?: MediaStreamTrack }) => {
-      if (event.track) this.publishRemoteTrack(event.track);
+    peer.ontrack = (event: { track?: MediaStreamTrack; streams?: MediaStream[] }) => {
+      if (!event.track) return;
+      if (options.mode === "screen") {
+        this.publishScreenRemoteTrack(event.track, event.streams?.[0] ?? null);
+        return;
+      }
+      this.publishRemoteTrack(event.track);
     };
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState;
@@ -175,21 +183,35 @@ export class P2pCall {
     return this.localStream;
   }
 
+  getScreenCameraStream() {
+    return this.screenCall?.getCameraStream() ?? null;
+  }
+
   async setMicrophoneEnabled(enabled: boolean) {
     if (this.audioCall) return this.audioCall.setMicrophoneEnabled(enabled);
     if (this.videoCall) return this.videoCall.setMicrophoneEnabled(enabled);
-    throw new Error("Phiên chia sẻ màn hình không sử dụng microphone.");
+    if (this.screenCall) return this.screenCall.setMicrophoneEnabled(enabled);
+    throw new Error("Chưa có phiên P2P để đổi microphone.");
   }
 
   async setSpeakerEnabled(enabled: boolean) {
     if (this.audioCall) return this.audioCall.setSpeakerEnabled(enabled);
     if (this.videoCall) return this.videoCall.setSpeakerEnabled(enabled);
-    throw new Error("Phiên chia sẻ màn hình không phát âm thanh.");
+    if (this.screenCall) return this.screenCall.setSpeakerEnabled(enabled);
+    throw new Error("Chưa có phiên P2P để đổi loa.");
   }
 
   async setCameraEnabled(enabled: boolean) {
     if (!this.videoCall) throw new Error("Camera chỉ khả dụng trong cuộc gọi video.");
     await this.videoCall.setCameraEnabled(enabled);
+  }
+
+  async setScreenCameraEnabled(enabled: boolean) {
+    if (!this.screenCall || this.sessionMode !== "screen") throw new Error("Camera phụ chỉ khả dụng khi đang chia sẻ màn hình.");
+    const result = await this.screenCall.setCameraEnabled(enabled);
+    if (!result.added || !result.stream || !this.peer) return;
+    result.stream.getVideoTracks().forEach((track) => this.peer?.addTrack(track, result.stream!));
+    await this.queueOffer();
   }
 
   async switchCamera() {
@@ -219,6 +241,8 @@ export class P2pCall {
     this.nextOfferId = 0;
     this.awaitingAnswerForOfferId = null;
     this.remoteStream = null;
+    this.remoteCameraStream = null;
+    this.pendingScreenAudioTracks = [];
     this.sessionMode = null;
     this.options?.onStats?.({ latencyMs: null });
     await this.audioCall?.stop({ preserveAudioRoute: true });
@@ -229,6 +253,7 @@ export class P2pCall {
     this.screenCall = null;
     this.localStream = null;
     this.options?.onRemoteStream(null);
+    this.options?.onRemoteCameraStream?.(null);
     this.options?.onState("closed");
     this.options = null;
     if (!options.preserveAudioSession) await resetAndroidCallSpeakerRoute();
@@ -245,6 +270,11 @@ export class P2pCall {
     }
     this.screenCall = new P2pScreenCall();
     return this.screenCall.start({ isCaller });
+  }
+
+  private getPublishStreams(fallback: MediaStream) {
+    if (this.screenCall) return this.screenCall.getPublishStreams();
+    return [fallback];
   }
 
   private startStatsPolling() {
@@ -362,5 +392,39 @@ export class P2pCall {
       }
     };
     this.options?.onRemoteStream(this.remoteStream);
+  }
+
+  private publishScreenRemoteTrack(track: MediaStreamTrack, stream: MediaStream | null) {
+    if (track.kind === "audio") {
+      if (!this.remoteStream) {
+        this.pendingScreenAudioTracks.push(track);
+        return;
+      }
+      if (!this.remoteStream.getTracks().some((item) => item.id === track.id)) this.remoteStream.addTrack(track);
+      this.options?.onRemoteStream(this.remoteStream);
+      return;
+    }
+    const incoming = stream ?? new MediaStream();
+    if (!stream) incoming.addTrack(track);
+    if (!this.remoteStream) {
+      this.remoteStream = incoming;
+      this.pendingScreenAudioTracks.forEach((audioTrack) => {
+        if (!incoming.getTracks().some((item) => item.id === audioTrack.id)) incoming.addTrack(audioTrack);
+      });
+      this.pendingScreenAudioTracks = [];
+      track.onended = () => {
+        this.remoteStream = null;
+        this.options?.onRemoteStream(null);
+      };
+      this.options?.onRemoteStream(incoming);
+      return;
+    }
+    if (incoming.id === this.remoteStream.id) return;
+    this.remoteCameraStream = incoming;
+    track.onended = () => {
+      this.remoteCameraStream = null;
+      this.options?.onRemoteCameraStream?.(null);
+    };
+    this.options?.onRemoteCameraStream?.(incoming);
   }
 }

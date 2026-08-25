@@ -9,8 +9,8 @@ const mocks = vi.hoisted(() => {
     addTrack(track: any) { this.tracks.push(track); }
     removeTrack(track: any) { this.tracks = this.tracks.filter((item) => item.id !== track.id); }
     getTracks() { return this.tracks; }
-    getVideoTracks() { return this.tracks; }
-    getAudioTracks() { return []; }
+    getVideoTracks() { return this.tracks.filter((track) => track.kind === "video"); }
+    getAudioTracks() { return this.tracks.filter((track) => track.kind === "audio"); }
   }
 
   class FakePeer {
@@ -44,9 +44,10 @@ const mocks = vi.hoisted(() => {
     }
   }
 
-  function createTrack(id: string) {
+  function createTrack(id: string, kind: "audio" | "video" = "video") {
     const track: any = {
       id,
+      kind,
       readyState: "live",
       enabled: true,
       applyConstraints: vi.fn(),
@@ -58,7 +59,12 @@ const mocks = vi.hoisted(() => {
     return track;
   }
 
-  const getUserMedia = vi.fn(async () => new FakeMediaStream());
+  const getUserMedia = vi.fn(async (constraints: { audio?: boolean; video?: boolean }) => {
+    const stream = new FakeMediaStream();
+    if (constraints.audio) stream.addTrack(createTrack(`audio-${getUserMedia.mock.calls.length}`, "audio"));
+    if (constraints.video) stream.addTrack(createTrack(`camera-${getUserMedia.mock.calls.length}`, "video"));
+    return stream;
+  });
   const getDisplayMedia = vi.fn(async () => {
     const stream = new FakeMediaStream();
     stream.addTrack(createTrack("screen-track-1"));
@@ -91,7 +97,7 @@ describe("native P2P renegotiation", () => {
     mocks.getDisplayMedia.mockClear();
   });
 
-  it("starts a standalone screen session with MediaProjection as its only local source", async () => {
+  it("starts a standalone screen session with display plus microphone tracks, without changing call mode", async () => {
     const signals: Array<{ type: string; payload: string }> = [];
     const call = new P2pCall();
     await call.start({
@@ -104,13 +110,48 @@ describe("native P2P renegotiation", () => {
     });
     const peer = mocks.peerInstances[0]!;
     expect(mocks.getDisplayMedia).toHaveBeenCalledWith({ video: true, audio: false });
-    expect(mocks.getUserMedia).not.toHaveBeenCalled();
+    expect(mocks.getUserMedia).toHaveBeenCalledWith(expect.objectContaining({ video: false }));
     expect(signals.map((signal) => signal.type)).toEqual(["offer"]);
     expect(peer.offerCalls).toHaveLength(1);
 
     await call.handleSignal({ type: "answer", payload: JSON.stringify({ description: { type: "answer", sdp: "initial-answer" }, offerId: 1 }) });
     expect(peer.signalingState).toBe("stable");
     expect(peer.offerCalls).toHaveLength(1);
+  });
+
+  it("allows only the screen caller to add an optional camera track and renegotiates after the initial answer", async () => {
+    const signals: Array<{ type: string; payload: string }> = [];
+    const call = new P2pCall();
+    await call.start({
+      isCaller: true,
+      kind: "audio",
+      mode: "screen",
+      onSignal: async (signal) => { signals.push(signal); },
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    });
+    await call.handleSignal({ type: "answer", payload: JSON.stringify({ description: { type: "answer", sdp: "initial-answer" }, offerId: 1 }) });
+    await call.setScreenCameraEnabled(true);
+
+    expect(mocks.getUserMedia).toHaveBeenLastCalledWith(expect.objectContaining({ audio: false, video: expect.any(Object) }));
+    expect(signals.map((signal) => signal.type)).toEqual(["offer", "offer"]);
+    expect((call as any).sessionMode).toBe("screen");
+  });
+
+  it("does not capture display or camera when the screen recipient joins", async () => {
+    const call = new P2pCall();
+    await call.start({
+      isCaller: false,
+      kind: "audio",
+      mode: "screen",
+      onSignal: () => undefined,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    });
+
+    await expect(call.setScreenCameraEnabled(true)).rejects.toThrow("Chỉ người đang chia sẻ");
+    expect(mocks.getDisplayMedia).not.toHaveBeenCalled();
+    expect(mocks.getUserMedia).toHaveBeenCalledTimes(1);
   });
 
   it("refuses to change an active audio session into screen sharing", async () => {

@@ -33,11 +33,13 @@ describe("P2P media module isolation", () => {
     expect(screenModule).not.toContain("onSignal");
   });
 
-  it("creates a standalone screen session that cannot import microphone or camera modules", () => {
+  it("keeps the standalone screen session isolated from call-mode classes while owning its optional screen tracks", () => {
     expect(screenCallModule).toContain("new P2pScreenShare()");
     expect(screenCallModule).not.toContain("P2pAudioCall");
     expect(screenCallModule).not.toContain("P2pVideoCall");
-    expect(screenCallModule).not.toContain("getUserMedia");
+    expect(screenCallModule).toContain("mediaDevices.getUserMedia");
+    expect(screenCallModule).toContain("private isCaller");
+    expect(screenCallModule).toContain("Chỉ người đang chia sẻ màn hình mới có thể bật camera phụ");
   });
 
   it("uses explicit immutable mode selection and exposes no dynamic screen-share upgrade API", () => {
@@ -46,6 +48,8 @@ describe("P2P media module isolation", () => {
     expect(coordinator).toContain("this.videoCall.start()");
     expect(coordinator).toContain("this.audioCall.start()");
     expect(coordinator).toContain("this.screenCall.start({ isCaller })");
+    expect(coordinator).toContain("setScreenCameraEnabled");
+    expect(coordinator).toContain('this.sessionMode !== "screen"');
     expect(coordinator).not.toContain("startScreenShare");
     expect(coordinator).not.toContain("stopScreenShare");
     expect(coordinator).not.toContain("remoteScreenStream");
