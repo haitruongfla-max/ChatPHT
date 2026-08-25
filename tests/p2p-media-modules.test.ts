@@ -10,6 +10,7 @@ const videoModule = source("p2p-video-call.ts");
 const screenModule = source("p2p-screen-share.ts");
 const screenCallModule = source("p2p-screen-call.ts");
 const coordinator = source("p2p-call.native.ts");
+const androidAudioRoute = source("android-audio-route.native.ts");
 
 describe("P2P media module isolation", () => {
   it("keeps microphone-only calling separate from camera and MediaProjection", () => {
@@ -53,5 +54,12 @@ describe("P2P media module isolation", () => {
     expect(coordinator).not.toContain("startScreenShare");
     expect(coordinator).not.toContain("stopScreenShare");
     expect(coordinator).not.toContain("remoteScreenStream");
+  });
+
+  it("bounds optional Android audio-route bridge calls so they cannot stall the shared P2P bootstrap", () => {
+    expect(androidAudioRoute).toContain("AUDIO_ROUTE_TIMEOUT_MS");
+    expect(androidAudioRoute).toContain("Promise.race");
+    expect(androidAudioRoute).toContain("operation().catch(() => undefined)");
+    expect(androidAudioRoute).toContain("settleAudioRoute(() => audioRoute.reset())");
   });
 });

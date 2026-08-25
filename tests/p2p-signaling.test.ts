@@ -5,6 +5,7 @@ vi.mock("../server/db", () => ({
   createCallSession: vi.fn(),
   createP2pSignal: vi.fn(),
   drainP2pSignals: vi.fn(),
+  recordP2pTelemetry: vi.fn(),
   authorizeP2pIceConfig: vi.fn(),
   listConversationRecipientDevices: vi.fn(async () => []),
 }));
@@ -67,6 +68,15 @@ describe("P2P signaling router", () => {
 
     await expect(callerFor(9).calls.p2pSignal.drain({ callId })).resolves.toEqual(queue);
     expect(db.drainP2pSignals).toHaveBeenCalledWith(callId, 9);
+  });
+
+  it("records only an authenticated, allow-listed P2P diagnostic marker without any SDP, ICE or relay payload", async () => {
+    vi.mocked(db.recordP2pTelemetry).mockResolvedValue({ accepted: true } as any);
+
+    await expect(callerFor(9).calls.p2pTelemetry.record({ callId, event: "offer-created" })).resolves.toEqual({ accepted: true });
+    expect(db.recordP2pTelemetry).toHaveBeenCalledWith({ callId, reporterId: 9, event: "offer-created" });
+
+    await expect(callerFor(9).calls.p2pTelemetry.record({ callId, event: "sdp-offer" as never })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
   it("returns ICE configuration only after the data layer authorizes the direct-call member", async () => {

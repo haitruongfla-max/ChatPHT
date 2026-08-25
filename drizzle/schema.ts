@@ -239,6 +239,26 @@ export const p2pSignals = mysqlTable(
   ],
 );
 
+/**
+ * Short-lived diagnostic markers for a direct P2P call. This table deliberately
+ * never stores SDP, ICE candidate strings, relay URLs, usernames, or credentials.
+ * It exists because p2p_signals are correctly removed once delivered.
+ */
+export const p2pCallTelemetry = mysqlTable(
+  "p2p_call_telemetry",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    callId: varchar("callId", { length: 40 }).notNull(),
+    reporterId: int("reporterId").notNull(),
+    event: varchar("event", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [
+    index("p2p_telemetry_call_created_idx").on(table.callId, table.createdAt),
+    index("p2p_telemetry_reporter_created_idx").on(table.reporterId, table.createdAt),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type FriendRequest = typeof friendRequests.$inferSelect;
@@ -248,6 +268,7 @@ export type CallSession = typeof callSessions.$inferSelect;
 export type CallParticipant = typeof callParticipants.$inferSelect;
 export type ScreenShareSession = typeof screenShareSessions.$inferSelect;
 export type P2pSignal = typeof p2pSignals.$inferSelect;
+export type P2pCallTelemetry = typeof p2pCallTelemetry.$inferSelect;
 export type MessageReaction = typeof messageReactions.$inferSelect;
 export type PushDevice = typeof pushDevices.$inferSelect;
 export type StorageSettings = typeof storageSettings.$inferSelect;

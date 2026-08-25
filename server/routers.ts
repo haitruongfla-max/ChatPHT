@@ -384,6 +384,26 @@ export const appRouter = router({
           }
         }),
     }),
+    p2pTelemetry: router({
+      record: protectedProcedure
+        .input(z.object({
+          callId: z.string().uuid(),
+          event: z.enum([
+            "relay-protected", "relay-fallback", "media-ready", "peer-ready", "offer-created",
+            "signal-offer-sent", "signal-answer-sent", "signal-ice-sent",
+            "signal-offer-received", "signal-answer-received", "signal-ice-received",
+            "signal-offer-failed", "signal-answer-failed", "signal-ice-failed",
+            "state-connecting", "state-connected", "state-recovering", "state-failed",
+          ]),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await db.recordP2pTelemetry({ ...input, reporterId: ctx.user.id });
+          } catch (error) {
+            return appError(error, "Không thể ghi trạng thái chẩn đoán P2P.");
+          }
+        }),
+    }),
     decline: protectedProcedure
       .input(z.object({ callId: z.string().uuid() }))
       .mutation(async ({ ctx, input }) => {

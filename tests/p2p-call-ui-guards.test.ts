@@ -30,7 +30,8 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain('await ensureP2pStarted(true);');
     expect(callScreen).toContain("resolveP2pIceServers(");
     expect(callScreen).toContain("iceBootstrap.iceServers");
-    expect(callScreen).toContain("onBootstrapPhase: setBootstrapPhase");
+    expect(callScreen).toContain("onBootstrapPhase: (phase) => {");
+    expect(callScreen).toContain("recordTelemetry(phase)");
     expect(callScreen).toContain("bootstrapPhaseLabel(bootstrapPhase)");
     expect(callScreen).not.toContain('const shouldStart = !isGroup && !modeConflict && isAnswered');
   });

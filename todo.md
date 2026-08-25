@@ -349,4 +349,11 @@
 - [x] Đối chiếu các phiên lỗi lúc 13:48–13:50 ngày 25-08-2026 với `call_sessions` và số lượng `p2p_signals` theo offer/answer/ICE, không đọc nội dung SDP/ICE/TURN.
 - [x] Khắc phục tại mã nguồn điểm dừng chung trước offer: bootstrap ICE có timeout/STUN dự phòng, route loa không chặn peer và có mốc media/peer/offer an toàn.
 - [x] Báo cáo rõ số signal thực tế và nguyên nhân gốc của bản 1.0.25 thất bại trước khi đề xuất APK tiếp theo.
-- [ ] Tạo APK kiểm thử versionCode 30 chỉ sau khi qua toàn bộ kiểm tra nguồn, để xác minh signal thật trên hai Android; chưa tuyên bố media hoạt động.
+- [x] Tạo APK kiểm thử 1.0.26/versionCode 30 sau source gate; GitHub Actions thành công, asset đã kiểm tra SHA-256, ZIP và package `com.app.swiftchat`; chưa tuyên bố media hoạt động.
+- [x] Đối chiếu các cuộc gọi APK 1.0.26 thất bại lúc 14:46–14:48: `p2p_signals` chỉ là hàng đợi bị drain nên không thể dùng số còn lại làm kết luận; cần telemetry riêng tư ở bản kế tiếp.
+- [x] Khắc phục điểm chặn chung còn lại tại mã nguồn: giới hạn thời gian bridge reset/chuyển loa Android để không thể treo trước media, peer và offer; không thay đổi tính năng ngoài gọi.
+- [ ] Không điều chỉnh giao diện theo mẫu mới hoặc phát hành tiếp trước khi kết quả truy vết 14:46–14:48 có bằng chứng rõ ràng.
+- [x] Lưu telemetry chỉ gồm loại signal, hướng, giai đoạn bootstrap và trạng thái ICE theo callId để drain hàng đợi không xóa mất bằng chứng; không lưu SDP, ứng viên ICE hay thông tin TURN.
+- [ ] Hiển thị trạng thái relay an toàn (có/không có TURN và số endpoint hợp lệ) cho phiên chẩn đoán, không đưa credential ra giao diện hoặc log.
+- [x] Loại bỏ việc chờ vô hạn bridge reset tuyến loa Android khỏi đường khởi tạo chung trước media/peer/offer bằng timeout an toàn; vẫn reset tuyến loa khi kết thúc cuộc gọi.
+- [ ] Tăng versionCode, phát hành APK kiểm thử telemetry + audio route timeout và xác minh mốc media/peer/offer/answer/ICE trên hai Android.

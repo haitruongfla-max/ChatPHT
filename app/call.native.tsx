@@ -102,10 +102,12 @@ export default function CallScreen() {
   const finalized = useRef(false);
   const answerInFlight = useRef(false);
   const handledSignals = useRef(new Set<number>());
+  const telemetryEvents = useRef(new Set<string>());
   const answer = trpc.calls.answer.useMutation();
   const end = trpc.calls.end.useMutation();
   const decline = trpc.calls.decline.useMutation();
   const sendSignal = trpc.calls.p2pSignal.send.useMutation();
+  const p2pTelemetry = trpc.calls.p2pTelemetry.record.useMutation();
   const isGroup = details.data?.isGroup === true;
   const isCaller = details.data?.isCaller === true || direction === "outgoing";
   const isAnswered = details.data?.status === "active";
@@ -131,6 +133,12 @@ export default function CallScreen() {
   const showChrome = !fullVideo || controlsVisible;
   const networkQuality = getP2pNetworkQuality(p2pState, latencyMs);
 
+  function recordTelemetry(event: "relay-protected" | "relay-fallback" | "media-ready" | "peer-ready" | "offer-created" | "signal-offer-sent" | "signal-answer-sent" | "signal-ice-sent" | "signal-offer-received" | "signal-answer-received" | "signal-ice-received" | "signal-offer-failed" | "signal-answer-failed" | "signal-ice-failed" | "state-connecting" | "state-connected" | "state-recovering" | "state-failed") {
+    if (!callId || finalized.current || telemetryEvents.current.has(event)) return;
+    telemetryEvents.current.add(event);
+    void p2pTelemetry.mutateAsync({ callId, event }).catch(() => undefined);
+  }
+
   useEffect(() => {
     if (!modeConflict) return;
     setConnectionError("Phiên gọi không khớp với yêu cầu ban đầu. ChatPHT đã dừng để không mở nhầm chia sẻ màn hình.");
@@ -147,6 +155,7 @@ export default function CallScreen() {
       if (handledSignals.current.has(signal.id)) continue;
       handledSignals.current.add(signal.id);
       if (signal.type !== "offer" && signal.type !== "answer" && signal.type !== "ice") continue;
+      recordTelemetry(`signal-${signal.type}-received`);
       void p2p.handleSignal({ type: signal.type, payload: signal.payload }).catch(() => {
         setConnectionError("Không xử lý được tín hiệu P2P. Hãy kết thúc cuộc gọi và gọi lại.");
       });
@@ -238,6 +247,7 @@ export default function CallScreen() {
 
   async function startP2p(isAnswer: boolean) {
     setP2pState("connecting");
+    recordTelemetry("state-connecting");
     setSignalDiagnostics(EMPTY_SIGNAL_DIAGNOSTICS);
     setBootstrapPhase(null);
     const iceBootstrap = await resolveP2pIceServers(
@@ -249,6 +259,7 @@ export default function CallScreen() {
         ? "Đang thử kết nối trực tiếp khi máy chủ hỗ trợ phản hồi chậm…"
         : null,
     );
+    recordTelemetry(iceBootstrap.source === "fallback" ? "relay-fallback" : "relay-protected");
     await p2p.start({
       isCaller: !isAnswer,
       kind,
@@ -264,12 +275,17 @@ export default function CallScreen() {
       onSignalProgress: (progress) => {
         const key = signalDiagnosticKey(progress);
         setSignalDiagnostics((current) => ({ ...current, [key]: current[key] + 1 }));
+        if (progress.direction === "sent") recordTelemetry(`signal-${progress.type}-sent`);
       },
       onSignalError: ({ type }) => {
         const phase = type === "offer" ? "khởi tạo" : type === "answer" ? "phản hồi" : "mạng";
         setConnectionError(`Không gửi được tín hiệu ${phase} P2P. Hãy kiểm tra mạng rồi gọi lại.`);
+        recordTelemetry(`signal-${type}-failed`);
       },
-      onBootstrapPhase: setBootstrapPhase,
+      onBootstrapPhase: (phase) => {
+        setBootstrapPhase(phase);
+        if (phase === "media-ready" || phase === "peer-ready" || phase === "offer-created") recordTelemetry(phase);
+      },
       onState: (state) => {
         setP2pState(state);
         setConnected(state === "connected");
@@ -277,6 +293,7 @@ export default function CallScreen() {
         if (state === "connected") { setConnectionError(null); publishActiveState({ seconds: 0 }); }
         if (state === "recovering") setConnectionError(null);
         if (state === "failed") setConnectionError("Không thiết lập được P2P trực tiếp. Hãy kiểm tra mạng rồi thử lại.");
+        if (state === "connecting" || state === "connected" || state === "recovering" || state === "failed") recordTelemetry(`state-${state}`);
       },
       onRemoteStream: setRemoteStream,
       onRemoteCameraStream: setRemoteScreenCameraStream,

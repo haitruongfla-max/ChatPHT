@@ -8,6 +8,7 @@ import {
   friendRequests,
   messageReactions,
   messages,
+  p2pCallTelemetry,
   p2pSignals,
   pushDevices,
   storageSettings,
@@ -32,6 +33,27 @@ export type CallKind = "audio" | "video";
 export type P2pCallMode = "audio" | "video" | "screen";
 export type CallStatus = "ringing" | "active" | "declined" | "ended" | "missed";
 export type P2pSignalType = "offer" | "answer" | "ice" | "screen-start" | "screen-stop";
+export const P2P_TELEMETRY_EVENTS = [
+  "relay-protected",
+  "relay-fallback",
+  "media-ready",
+  "peer-ready",
+  "offer-created",
+  "signal-offer-sent",
+  "signal-answer-sent",
+  "signal-ice-sent",
+  "signal-offer-received",
+  "signal-answer-received",
+  "signal-ice-received",
+  "signal-offer-failed",
+  "signal-answer-failed",
+  "signal-ice-failed",
+  "state-connecting",
+  "state-connected",
+  "state-recovering",
+  "state-failed",
+] as const;
+export type P2pTelemetryEvent = (typeof P2P_TELEMETRY_EVENTS)[number];
 // Android may need time to surface a full-screen incoming call and request media permissions.
 export const P2P_RING_TIMEOUT_MS = 180_000;
 
@@ -1061,6 +1083,15 @@ export async function drainP2pSignals(callId: string, userId: number) {
   const pending = await db.select().from(p2pSignals).where(and(eq(p2pSignals.callId, callId), eq(p2pSignals.recipientId, userId))).orderBy(p2pSignals.id).limit(100);
   if (pending.length) await db.delete(p2pSignals).where(inArray(p2pSignals.id, pending.map((signal) => signal.id)));
   return pending.map((signal) => ({ id: signal.id, senderId: signal.senderId, type: signal.type, payload: signal.payload, createdAt: signal.createdAt }));
+}
+
+/** Stores a short-lived diagnostic marker only; payloads and relay details are never persisted here. */
+export async function recordP2pTelemetry({ callId, reporterId, event }: { callId: string; reporterId: number; event: P2pTelemetryEvent }) {
+  const db = requireDb(await getDb());
+  await getAuthorizedP2pCall(callId, reporterId);
+  await db.delete(p2pCallTelemetry).where(lt(p2pCallTelemetry.createdAt, new Date(Date.now() - 48 * 60 * 60_000)));
+  await db.insert(p2pCallTelemetry).values({ callId, reporterId, event });
+  return { accepted: true };
 }
 
 export async function listConversations(userId: number) {

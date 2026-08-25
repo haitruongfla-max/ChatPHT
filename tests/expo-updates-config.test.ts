@@ -14,9 +14,9 @@ describe("Cấu hình APK nền OTA", () => {
     expect(configSource).toContain("fallbackToCacheTimeout: 30_000");
   });
 
-  it("tăng versionCode cho APK thử nghiệm bootstrap P2P 1.0.26 và khai báo MediaProjection Android", () => {
-    expect(configSource).toContain('version: "1.0.26"');
-    expect(configSource).toContain("versionCode: 30");
+  it("tăng versionCode cho APK thử nghiệm telemetry P2P 1.0.27 và khai báo MediaProjection Android", () => {
+    expect(configSource).toContain('version: "1.0.27"');
+    expect(configSource).toContain("versionCode: 31");
     expect(configSource).toContain('"FOREGROUND_SERVICE_MEDIA_PROJECTION"');
   });
 });
