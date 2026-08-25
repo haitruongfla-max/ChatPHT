@@ -8,11 +8,13 @@ import { systemRouter } from "./_core/systemRouter";
 import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
 import { runMediaCleanup } from "./media-cleanup";
-import { dispatchNewMessagePushNotifications } from "./push";
+import { dispatchIncomingCallPushNotification, dispatchNewMessagePushNotifications } from "./push";
 import { createMediaAccessUrl } from "./media-access";
 import { emitConversationBackgroundUpdated } from "./_core/realtime";
 import { createOpaqueStorageKey, storageCreateUploadUrl, storageDelete, storagePut } from "./storage";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { ENV } from "./_core/env";
+import { getP2pIceConfiguration } from "./p2p-turn";
 
 const credentialsSchema = z.object({
   username: z.string().trim().min(3).max(24),
@@ -289,6 +291,139 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         await db.removePushDevice(ctx.user.id, input.token);
         return { success: true } as const;
+      }),
+  }),
+  calls: router({
+    start: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), kind: z.enum(["audio", "video"]), p2pMode: z.enum(["audio", "video", "screen"]) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const call = await db.createCallSession(input.conversationId, ctx.user.id, input.kind, input.p2pMode);
+          void dispatchIncomingCallPushNotification({ conversationId: input.conversationId, senderId: ctx.user.id, callId: call.id, kind: input.kind, p2pMode: input.p2pMode });
+          return call;
+        } catch (error) {
+          return appError(error, "Không thể bắt đầu cuộc gọi.");
+        }
+      }),
+    listByConversation: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), limit: z.number().int().min(1).max(100).default(60) }))
+      .query(async ({ ctx, input }) => {
+        try {
+          return await withSecureAvatarUrls(ctx, await db.listCallSessionsByConversation(input.conversationId, ctx.user.id, input.limit));
+        } catch (error) {
+          return appError(error, "Không thể tải lịch sử cuộc gọi.");
+        }
+      }),
+    incoming: protectedProcedure.query(async ({ ctx }) => withSecureAvatarUrls(ctx, await db.getIncomingCallSession(ctx.user.id))),
+    get: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .query(async ({ ctx, input }) => {
+        const call = await db.getCallSession(input.callId, ctx.user.id);
+        return call?.peer ? withSecureAvatarUrls(ctx, call) : call;
+      }),
+    answer: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const call = await db.answerCallSession(input.callId, ctx.user.id);
+          return { call };
+        } catch (error) {
+          return appError(error, "Không thể nhận cuộc gọi.");
+        }
+      }),
+    p2pIceConfig: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .query(async ({ ctx, input }) => {
+        try {
+          await db.authorizeP2pIceConfig(input.callId, ctx.user.id);
+          return getP2pIceConfiguration({
+            turnUrls: ENV.p2pTurnUrls,
+            turnAuthMode: ENV.p2pTurnAuthMode,
+            turnSharedSecret: ENV.p2pTurnSharedSecret,
+            turnUsername: ENV.p2pTurnUsername,
+            turnCredential: ENV.p2pTurnCredential,
+          }, { userId: ctx.user.id, callId: input.callId });
+        } catch (error) {
+          return appError(error, "Không thể lấy cấu hình kết nối P2P.");
+        }
+      }),
+    getTurnCredentials: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .query(async ({ ctx, input }) => {
+        try {
+          await db.authorizeP2pIceConfig(input.callId, ctx.user.id);
+          const configuration = getP2pIceConfiguration({
+            turnUrls: ENV.p2pTurnUrls,
+            turnAuthMode: ENV.p2pTurnAuthMode,
+            turnSharedSecret: ENV.p2pTurnSharedSecret,
+            turnUsername: ENV.p2pTurnUsername,
+            turnCredential: ENV.p2pTurnCredential,
+          }, { userId: ctx.user.id, callId: input.callId });
+          return { hasTurn: configuration.hasTurn, turn: configuration.turn };
+        } catch (error) {
+          return appError(error, "Không thể lấy thông tin TURN cho cuộc gọi này.");
+        }
+      }),
+    p2pSignal: router({
+      send: protectedProcedure
+        .input(z.object({ callId: z.string().uuid(), type: z.enum(["offer", "answer", "ice", "screen-start", "screen-stop"]), payload: z.string().min(2).max(100_000) }))
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await db.createP2pSignal({ ...input, senderId: ctx.user.id });
+          } catch (error) {
+            return appError(error, "Không thể gửi tín hiệu kết nối riêng tư.");
+          }
+        }),
+      drain: protectedProcedure
+        .input(z.object({ callId: z.string().uuid() }))
+        .query(async ({ ctx, input }) => {
+          try {
+            return await db.drainP2pSignals(input.callId, ctx.user.id);
+          } catch (error) {
+            return appError(error, "Không thể nhận tín hiệu kết nối riêng tư.");
+          }
+        }),
+    }),
+    p2pTelemetry: router({
+      record: protectedProcedure
+        .input(z.object({
+          callId: z.string().uuid(),
+          event: z.enum([
+            "relay-protected", "relay-fallback", "media-ready", "peer-ready", "offer-created",
+            "signal-offer-sent", "signal-answer-sent", "signal-ice-sent",
+            "signal-offer-received", "signal-answer-received", "signal-ice-received",
+            "signal-offer-failed", "signal-answer-failed", "signal-ice-failed",
+            "state-connecting", "state-connected", "state-recovering", "state-failed",
+            "bootstrap-failed", "relay-turn-configured", "relay-stun-only",
+          ]),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await db.recordP2pTelemetry({ ...input, reporterId: ctx.user.id });
+          } catch (error) {
+            return appError(error, "Không thể ghi trạng thái chẩn đoán P2P.");
+          }
+        }),
+    }),
+    decline: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await db.finishCallSession(input.callId, ctx.user.id, "declined");
+          return { success: true };
+        } catch (error) {
+          return appError(error, "Không thể từ chối cuộc gọi.");
+        }
+      }),
+    end: protectedProcedure
+      .input(z.object({ callId: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await db.finishCallSession(input.callId, ctx.user.id, "ended");
+          return { success: true };
+        } catch (error) {
+          return appError(error, "Không thể kết thúc cuộc gọi.");
+        }
       }),
   }),
   friends: router({

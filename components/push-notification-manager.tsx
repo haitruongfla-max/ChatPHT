@@ -5,6 +5,7 @@ import {
   storePushToken,
 } from "@/lib/push-notifications";
 import { trpc } from "@/lib/trpc";
+import { claimIncomingCallRoute } from "@/lib/incoming-call-route-gate";
 import { router, usePathname } from "expo-router";
 import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useRef } from "react";
@@ -22,6 +23,18 @@ if (Platform.OS !== "web") {
 }
 
 function openNotification(data: unknown) {
+  if (data && typeof data === "object") {
+    const payload = data as Record<string, unknown>;
+    const callId = typeof payload.callId === "string" ? payload.callId : null;
+    const kind = payload.kind === "video" ? "video" : "audio";
+    const p2pMode = payload.p2pMode === "screen" ? "screen" : payload.p2pMode === "video" ? "video" : "audio";
+    if (payload.type === "incoming_call" && callId) {
+      if (!claimIncomingCallRoute(callId)) return;
+      const group = payload.group === "1" || payload.group === true ? "1" : "0";
+      router.push({ pathname: "/call", params: { callId, kind, p2pMode, direction: "incoming", group } });
+      return;
+    }
+  }
   const conversationId = conversationIdFromPushData(data);
   if (conversationId) router.push(`/chat/${conversationId}` as never);
 }
@@ -58,10 +71,17 @@ export function PushNotificationManager() {
     if (Platform.OS === "web") return;
     const initial = Notifications.getLastNotificationResponse();
     if (initial?.notification) openNotification(initial.notification.request.content.data);
+    const receivedListener = Notifications.addNotificationReceivedListener((notification) => {
+      const payload = notification.request.content.data;
+      if (payload && typeof payload === "object" && (payload as Record<string, unknown>).type === "incoming_call") {
+        openNotification(payload);
+      }
+    });
     const responseListener = Notifications.addNotificationResponseReceivedListener((response) => {
       openNotification(response.notification.request.content.data);
     });
     return () => {
+      receivedListener.remove();
       responseListener.remove();
     };
   }, []);

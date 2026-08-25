@@ -22,6 +22,14 @@ export async function ensureChatNotificationChannels() {
     vibrationPattern: [0, 180, 100, 180],
     lightColor: "#2563EB",
   });
+  await Notifications.setNotificationChannelAsync("calls", {
+    name: "Cuộc gọi đến",
+    description: "Chuông và thông báo khi có cuộc gọi ChatPHT đến.",
+    importance: Notifications.AndroidImportance.MAX,
+    sound: "default",
+    vibrationPattern: [0, 400, 180, 400, 180, 400],
+    lightColor: "#22C55E",
+  });
 }
 
 export async function registerForChatPushNotifications() {

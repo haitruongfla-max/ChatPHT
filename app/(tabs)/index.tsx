@@ -11,7 +11,7 @@ function preview(message: { body: string | null; contentType: "text" | "image" |
   if (!message) return "Bắt đầu một cuộc trò chuyện";
   if (message.contentType === "image") return "Ảnh";
   if (message.contentType === "video") return "Video";
-  if (message.contentType === "screen_share_invite") return "Mục hệ thống cũ";
+  if (message.contentType === "screen_share_invite") return "Đang chia sẻ màn hình";
   return message.body ?? "Tin nhắn mới";
 }
 
