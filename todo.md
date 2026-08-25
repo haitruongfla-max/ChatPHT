@@ -339,4 +339,4 @@
 - [ ] Chỉ phát hành APK sau khi có bằng chứng số lượng signal thật từ hai Android cho một phiên được chấp nhận.
 - [x] Đồng bộ checkpoint sửa bootstrap signaling P2P đã qua source gate lên GitHub `main`, không tạo APK hoặc GitHub Release.
 - [ ] Thu thập một phiên accepted mới trên hai Android có số đếm offer, answer và ICE trước khi tăng versionCode, build APK và tạo GitHub Release.
-- [ ] Tăng versionCode trên 27, build APK signed và tạo GitHub Release thử nghiệm cho bản sửa handshake P2P theo yêu cầu người dùng.
+- [x] Tăng versionCode trên 27, build APK signed và tạo GitHub Release thử nghiệm cho bản sửa handshake P2P theo yêu cầu người dùng.
