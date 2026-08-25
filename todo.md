@@ -342,4 +342,4 @@
 - [x] Tăng versionCode trên 27, build APK signed và tạo GitHub Release thử nghiệm cho bản sửa handshake P2P theo yêu cầu người dùng.
 - [x] Truy vết phiên gọi khoảng 12:50: người nhận đã answer nhưng phía gọi vẫn hiển thị yêu cầu đang gửi, chưa nhận `active`.
 - [x] Sửa đồng bộ answer → `calls.get(active)` và thêm hồi quy chặn UI caller kẹt trạng thái ringing sau answer.
-- [ ] Đồng bộ checkpoint sửa answer-to-signaling P2P lên GitHub và build APK Android ký số để kiểm thử hai thiết bị.
+- [x] Đồng bộ checkpoint sửa answer-to-signaling P2P lên GitHub và build APK Android ký số để kiểm thử hai thiết bị.
