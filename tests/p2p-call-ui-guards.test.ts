@@ -22,6 +22,15 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain("P2P_SIGNAL_SEND_FAILED");
   });
 
+  it("does not block the caller offer on a delayed active poll and applies the answer response immediately", () => {
+    expect(callScreen).toContain('const canBootstrapBeforeActive = direction === "outgoing";');
+    expect(callScreen).toContain('(isAnswered || canBootstrapBeforeActive)');
+    expect(callScreen).toContain('await ensureP2pStarted(false);');
+    expect(callScreen).toContain('utils.calls.get.setData({ callId }, accepted.call);');
+    expect(callScreen).toContain('await ensureP2pStarted(true);');
+    expect(callScreen).not.toContain('const shouldStart = !isGroup && !modeConflict && isAnswered');
+  });
+
   it("shows a WebRTC-derived latency badge and never returns an answered recipient to the incoming screen", () => {
     expect(callScreen).toContain("getP2pNetworkQuality(p2pState, latencyMs)");
     expect(callScreen).toContain("onStats: (stats: P2pNetworkStats) => setLatencyMs(stats.latencyMs)");

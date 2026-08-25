@@ -340,3 +340,5 @@
 - [x] Đồng bộ checkpoint sửa bootstrap signaling P2P đã qua source gate lên GitHub `main`, không tạo APK hoặc GitHub Release.
 - [ ] Thu thập một phiên accepted mới trên hai Android có số đếm offer, answer và ICE trước khi tăng versionCode, build APK và tạo GitHub Release.
 - [x] Tăng versionCode trên 27, build APK signed và tạo GitHub Release thử nghiệm cho bản sửa handshake P2P theo yêu cầu người dùng.
+- [x] Truy vết phiên gọi khoảng 12:50: người nhận đã answer nhưng phía gọi vẫn hiển thị yêu cầu đang gửi, chưa nhận `active`.
+- [x] Sửa đồng bộ answer → `calls.get(active)` và thêm hồi quy chặn UI caller kẹt trạng thái ringing sau answer.

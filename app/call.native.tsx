@@ -56,7 +56,15 @@ export default function CallScreen() {
   const activeForCallId = callId ? activeCall.get(callId) : null;
   const resumed = activeForCallId?.p2pMode === routeMode ? activeForCallId : null;
   const p2p = useRef(resumed?.call ?? new P2pCall()).current;
-  const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: 800 });
+  const utils = trpc.useUtils();
+  const details = trpc.calls.get.useQuery({ callId }, {
+    enabled: Boolean(callId),
+    refetchInterval: 800,
+    refetchIntervalInBackground: true,
+    refetchOnReconnect: true,
+    staleTime: 0,
+    networkMode: "always",
+  });
   const persistedMode = details.data?.p2pMode ? toP2pCallMode(details.data.p2pMode) : null;
   const modeConflict = persistedMode !== null && persistedMode !== routeMode;
   const mode = routeMode;
@@ -91,9 +99,20 @@ export default function CallScreen() {
   const isGroup = details.data?.isGroup === true;
   const isCaller = details.data?.isCaller === true || direction === "outgoing";
   const isAnswered = details.data?.status === "active";
-  const shouldDrainSignals = Boolean(callId) && isAnswered && !isGroup && !modeConflict && !finalized.current;
-  const incomingSignals = trpc.calls.p2pSignal.drain.useQuery({ callId }, { enabled: shouldDrainSignals, refetchInterval: shouldDrainSignals ? 300 : false });
-  const iceConfig = trpc.calls.p2pIceConfig.useQuery({ callId }, { enabled: Boolean(callId) && isAnswered });
+  // Caller có quyền signaling khi ringing. Không khóa offer vào polling `active`,
+  // vì response active có thể đến trễ trên Android sau khi người nhận bấm nghe.
+  const canBootstrapBeforeActive = direction === "outgoing";
+  const shouldDrainSignals = Boolean(callId) && (isAnswered || canBootstrapBeforeActive) && !isGroup && !modeConflict && !finalized.current;
+  const incomingSignals = trpc.calls.p2pSignal.drain.useQuery({ callId }, {
+    enabled: shouldDrainSignals,
+    refetchInterval: shouldDrainSignals ? 300 : false,
+    refetchIntervalInBackground: true,
+    networkMode: "always",
+  });
+  const iceConfig = trpc.calls.p2pIceConfig.useQuery(
+    { callId },
+    { enabled: Boolean(callId) && (isAnswered || canBootstrapBeforeActive), staleTime: 0, networkMode: "always" },
+  );
   const name = details.data?.peer?.displayName || params.name?.trim() || "Người dùng ChatPHT";
   const avatarUrl = details.data?.peer?.avatarUrl ?? (params.avatar?.trim() || null);
   const answeredAt = details.data?.answeredAt ? new Date(details.data.answeredAt).getTime() : null;
@@ -172,18 +191,12 @@ export default function CallScreen() {
   }, [callId, direction]);
 
   useEffect(() => {
-    const shouldStart = !isGroup && !modeConflict && isAnswered && !finalized.current;
-    if (!shouldStart || p2pStarted.current || p2pStartInFlight.current) return;
-    p2pStarted.current = true;
-    p2pStartInFlight.current = true;
-    void startP2p(!isCaller).catch(() => {
-      setP2pState("failed");
-      setConnectionError("Không thể khởi tạo kết nối P2P. Hãy kiểm tra mạng, sau đó kết thúc cuộc gọi và gọi lại.");
-    }).finally(() => {
-      p2pStartInFlight.current = false;
-    });
+    // Caller phát offer khi ringing; callee chỉ khởi tạo sau answer thành công.
+    const shouldStart = direction === "incoming" && !isGroup && !modeConflict && isAnswered && !finalized.current;
+    if (!shouldStart) return;
+    void ensureP2pStarted(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnswered, isCaller, isGroup, modeConflict]);
+  }, [direction, isAnswered, isGroup, modeConflict]);
 
   async function requestPermissions() {
     const microphone = await Camera.requestMicrophonePermissionsAsync();
@@ -197,6 +210,20 @@ export default function CallScreen() {
 
   function publishActiveState(next: Partial<{ muted: boolean; speaker: boolean; cameraOn: boolean; isFrontCamera: boolean; videoQuality: "sd" | "hd"; seconds: number }> = {}) {
     activeCall.activate({ callId, kind, p2pMode: mode, direction, name, call: p2p, connected: true, muted: next.muted ?? muted, speaker: next.speaker ?? speaker, cameraOn: next.cameraOn ?? cameraOn, isFrontCamera: next.isFrontCamera ?? isFrontCamera, videoQuality: next.videoQuality ?? videoQuality, seconds: next.seconds ?? seconds, isGroup: false, provider: "p2p" });
+  }
+
+  async function ensureP2pStarted(isAnswer: boolean) {
+    if (p2pStarted.current || p2pStartInFlight.current || finalized.current) return;
+    p2pStarted.current = true;
+    p2pStartInFlight.current = true;
+    try {
+      await startP2p(isAnswer);
+    } catch {
+      setP2pState("failed");
+      setConnectionError("Không thể khởi tạo kết nối P2P. Hãy kiểm tra mạng, sau đó kết thúc cuộc gọi và gọi lại.");
+    } finally {
+      p2pStartInFlight.current = false;
+    }
   }
 
   async function startP2p(isAnswer: boolean) {
@@ -251,7 +278,15 @@ export default function CallScreen() {
     if (isAnswer) answerInFlight.current = true;
     setIsConnecting(true);
     try {
-      if (isAnswer) await answer.mutateAsync({ callId });
+      if (isAnswer) {
+        const accepted = await answer.mutateAsync({ callId });
+        // Dùng response active ngay, không đợi polling 800ms hoặc response cũ.
+        utils.calls.get.setData({ callId }, accepted.call);
+        await ensureP2pStarted(true);
+      } else {
+        // Caller được phép gửi offer trong ringing; recipient drain offer sau khi bấm nghe.
+        await ensureP2pStarted(false);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Hãy thử lại khi mạng ổn định hơn.";
       setConnectionError(message);

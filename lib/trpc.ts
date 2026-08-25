@@ -27,7 +27,13 @@ export function createTRPCClient() {
         transformer: superjson,
         async headers() {
           const token = await Auth.getSessionToken();
-          return token ? { Authorization: `Bearer ${token}` } : {};
+          // Trạng thái call và hàng signaling là dữ liệu tức thời; không cho proxy/thiết bị
+          // tái sử dụng response `ringing` sau khi phía còn lại đã answer.
+          return {
+            "Cache-Control": "no-store, no-cache, max-age=0",
+            Pragma: "no-cache",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          };
         },
         // Custom fetch to include credentials for cookie-based auth
         fetch(url, options) {
