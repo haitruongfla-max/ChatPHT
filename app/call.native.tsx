@@ -9,7 +9,7 @@ import { RTCView, type MediaStream } from "react-native-webrtc";
 import { activeCall } from "@/lib/active-call";
 import { getCallConnectionStatus, getP2pNetworkQuality, type P2pNetworkQuality } from "@/lib/call-connection-status";
 import { createCallTonePlayer, stopAllCallAlerts, stopCallTone } from "@/lib/call-sounds";
-import { P2pCall, type P2pConnectionState, type P2pSignal } from "@/lib/p2p-call";
+import { P2pCall, type P2pConnectionState, type P2pNetworkStats, type P2pSignal } from "@/lib/p2p-call";
 import { callKindForP2pMode, toP2pCallMode, type P2pCallMode } from "@/lib/p2p-call-mode";
 import { trpc } from "@/lib/trpc";
 
@@ -33,10 +33,13 @@ export default function CallScreen() {
   const callId = params.callId ?? "";
   const routeMode = toP2pCallMode(params.p2pMode ?? params.kind);
   const direction = params.direction === "incoming" ? "incoming" : "outgoing";
-  const resumed = activeCall.get(callId);
+  const activeForCallId = callId ? activeCall.get(callId) : null;
+  const resumed = activeForCallId?.p2pMode === routeMode ? activeForCallId : null;
   const p2p = useRef(resumed?.call ?? new P2pCall()).current;
   const details = trpc.calls.get.useQuery({ callId }, { enabled: Boolean(callId), refetchInterval: 800 });
-  const mode = toP2pCallMode(details.data?.p2pMode ?? routeMode);
+  const persistedMode = details.data?.p2pMode ? toP2pCallMode(details.data.p2pMode) : null;
+  const modeConflict = persistedMode !== null && persistedMode !== routeMode;
+  const mode = routeMode;
   const kind = callKindForP2pMode(mode);
   const [connected, setConnected] = useState(Boolean(resumed?.connected));
   const [muted, setMuted] = useState(resumed?.muted ?? false);
@@ -48,6 +51,7 @@ export default function CallScreen() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [p2pState, setP2pState] = useState<P2pConnectionState>("idle");
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -72,7 +76,12 @@ export default function CallScreen() {
   const isVisualMode = mode === "video" || mode === "screen";
   const fullVideo = connected && isVisualMode;
   const showChrome = !fullVideo || controlsVisible;
-  const networkQuality = getP2pNetworkQuality(p2pState);
+  const networkQuality = getP2pNetworkQuality(p2pState, latencyMs);
+
+  useEffect(() => {
+    if (!modeConflict) return;
+    setConnectionError("Phiên gọi không khớp với yêu cầu ban đầu. ChatPHT đã dừng để không mở nhầm chia sẻ màn hình.");
+  }, [modeConflict]);
 
   useEffect(() => () => {
     if (!activeCall.isMinimized(callId)) void p2p.disconnect();
@@ -139,14 +148,14 @@ export default function CallScreen() {
   }, [callId, direction]);
 
   useEffect(() => {
-    const shouldStart = !isGroup && isAnswered && p2pState === "idle" && !isConnecting && !finalized.current;
+    const shouldStart = !isGroup && !modeConflict && isAnswered && p2pState === "idle" && !isConnecting && !finalized.current;
     if (!shouldStart) return;
     void startP2p(!isCaller).catch((error) => {
       setP2pState("failed");
       setConnectionError(error instanceof Error ? error.message : "Không thể khởi tạo P2P.");
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnswered, isCaller, isConnecting, isGroup, p2pState]);
+  }, [isAnswered, isCaller, isConnecting, isGroup, modeConflict, p2pState]);
 
   async function requestPermissions() {
     if (mode === "screen") return true;
@@ -175,17 +184,23 @@ export default function CallScreen() {
       onState: (state) => {
         setP2pState(state);
         setConnected(state === "connected");
+        if (state !== "connected") setLatencyMs(null);
         if (state === "connected") { setConnectionError(null); publishActiveState({ seconds: 0 }); }
         if (state === "recovering") setConnectionError(null);
         if (state === "failed") setConnectionError("Không thiết lập được P2P trực tiếp. Hãy kiểm tra mạng rồi thử lại.");
       },
       onRemoteStream: setRemoteStream,
+      onStats: (stats: P2pNetworkStats) => setLatencyMs(stats.latencyMs),
     });
     setLocalStream(p2p.getLocalStream());
   }
 
   async function enterCall(isAnswer: boolean) {
     if (!callId || isConnecting || (isAnswer && answerInFlight.current)) return;
+    if (modeConflict) {
+      Alert.alert("Đã chặn mở sai chế độ", "Phiên gọi không khớp với nút bạn vừa bấm. Hãy đóng phiên này và bắt đầu lại từ đúng nút thoại, video hoặc chia sẻ màn hình.");
+      return;
+    }
     if (isGroup) { Alert.alert("Đã dừng gọi nhóm", "ChatPHT hiện chỉ hỗ trợ gọi và chia sẻ màn hình P2P 1:1."); return; }
     setConnectionError(null);
     if (!(await requestPermissions())) return;
@@ -236,10 +251,11 @@ export default function CallScreen() {
   async function switchCamera() { try { await p2p.switchCamera(); setIsFrontCamera((current) => !current); activeCall.update(callId, { isFrontCamera: !isFrontCamera }); } catch (error) { Alert.alert("Chưa thể đổi camera", error instanceof Error ? error.message : "Vui lòng thử lại."); } }
   async function toggleVideoQuality() { const next = videoQuality === "hd" ? "sd" : "hd"; try { await p2p.setVideoQuality(next); setVideoQuality(next); activeCall.update(callId, { videoQuality: next }); } catch { Alert.alert("Chưa thể đổi chất lượng", "Vui lòng thử lại."); } }
 
-  const connectionStatus = getCallConnectionStatus({ kind, direction, detailsLoading: details.isLoading, isConnecting, connected, isAnswered, error: connectionError, networkState: p2pState });
+  const connectionStatus = getCallConnectionStatus({ kind: mode, direction, detailsLoading: details.isLoading, isConnecting, connected, isAnswered, error: connectionError, networkState: p2pState });
   const subtitle = connected && isAnswered ? callDuration(seconds) : connectionStatus.title;
   if (details.isLoading && !connected) return <SafeAreaView style={styles.safe}><StatusBar barStyle="dark-content" /><View style={styles.center}><ActivityIndicator color="#2563EB" /><Text style={styles.statusText}>Đang chuẩn bị P2P…</Text></View></SafeAreaView>;
   if (isGroup) return <SafeAreaView style={styles.safe}><View style={styles.center}><MaterialIcons name="groups" size={42} color="#64748B" /><Text style={styles.groupTitle}>Gọi nhóm đã được dừng</Text><Text style={styles.groupBody}>ChatPHT hiện chỉ dùng gọi và chia sẻ màn hình P2P cho một người với một người.</Text><Pressable style={styles.primaryButton} onPress={() => router.back()}><Text style={styles.primaryButtonText}>Quay lại</Text></Pressable></View></SafeAreaView>;
+  if (modeConflict) return <SafeAreaView style={styles.safe}><View style={styles.center}><MaterialIcons name="call-end" size={42} color="#C53030" /><Text style={styles.groupTitle}>Đã chặn mở sai chế độ</Text><Text style={styles.groupBody}>Yêu cầu cuộc gọi không khớp với phiên đã lưu. ChatPHT không mở media để tránh thoại hoặc video bị chuyển thành chia sẻ màn hình.</Text><Pressable style={styles.primaryButton} onPress={() => void finish("ended")}><Text style={styles.primaryButtonText}>Đóng phiên</Text></Pressable></View></SafeAreaView>;
   if (!connected && direction === "incoming" && !isAnswered) return <SafeAreaView style={[styles.safe, styles.incomingSafe]}><StatusBar barStyle="light-content" backgroundColor="#0D2145" /><View style={styles.incoming}><Text style={styles.secureLabel}>P2P · BẢO MẬT</Text><CallerAvatar name={name} avatarUrl={avatarUrl} style={styles.avatar} /><Text style={styles.nameLight}>{name}</Text>{isConnecting || connectionError ? <Text style={styles.incomingError}>{connectionStatus.title}</Text> : <Text style={styles.incomingSub}>{modeLabel(mode)} đến</Text>}<View style={styles.incomingActions}><RoundAction label="Từ chối" icon="call-end" color="#E8505B" onPress={() => void finish("declined")} /><RoundAction label={isConnecting ? "Đang kết nối" : "Nhận"} icon={mode === "video" ? "videocam" : mode === "screen" ? "screen-share" : "phone"} color="#20A86B" disabled={isConnecting} onPress={() => void enterCall(true)} /></View></View></SafeAreaView>;
 
   return <SafeAreaView style={[styles.safe, fullVideo && styles.videoSafe]}><StatusBar barStyle={fullVideo ? "light-content" : "dark-content"} /><View style={[styles.container, fullVideo && styles.videoContainer]}>{fullVideo ? <P2pVisualStage mode={mode} localStream={localStream} remoteStream={remoteStream} /> : null}{fullVideo ? <Pressable style={styles.videoTap} onPress={() => setControlsVisible((value) => !value)} /> : null}{showChrome ? <><View style={[styles.top, fullVideo && styles.videoTop]}><Pressable onPress={minimize} style={styles.dismiss}><MaterialIcons name={connected ? "keyboard-arrow-down" : "close"} size={28} color={fullVideo ? "#FFFFFF" : "#183053"} /></Pressable><View style={[styles.secure, fullVideo && styles.secureDark]}><MaterialIcons name="lock" size={13} color={fullVideo ? "#D8E7FF" : "#2563EB"} /><Text style={[styles.secureText, fullVideo && styles.secureTextDark]}>P2P · bảo mật</Text></View><View style={styles.dismiss} /></View><View style={[styles.identity, fullVideo && styles.videoIdentity]}><CallerAvatar name={name} avatarUrl={avatarUrl} style={[styles.avatar, styles.callAvatar]} /><Text style={[styles.name, fullVideo && styles.nameLight]}>{name}</Text><Text style={[styles.statusText, fullVideo && styles.statusLight]}>{subtitle}</Text>{connected ? <Text style={[styles.p2pLabel, fullVideo && styles.statusLight]}>{mode === "screen" ? "P2P · MediaProjection" : `P2P trực tiếp · ${mode === "video" ? videoQuality.toUpperCase() : "Âm thanh"}`}</Text> : <Text style={styles.errorText}>{connectionStatus.description}</Text>}{(isAnswered || direction === "outgoing") ? <NetworkQualityBadge quality={networkQuality} inverse={fullVideo} /> : null}</View><View style={[styles.controls, fullVideo && styles.videoControls]}>{connected ? <>{mode !== "screen" ? <View style={styles.controlRow}><Control label={muted ? "Bật micro" : "Tắt micro"} icon={muted ? "mic-off" : "mic"} active={muted} inverse={fullVideo} onPress={() => void toggleMicrophone()} /><Control label={speaker ? "Loa ngoài" : "Tai nghe"} icon={speaker ? "volume-up" : "hearing"} active={speaker} inverse={fullVideo} onPress={() => void toggleSpeaker()} />{mode === "video" ? <Control label={cameraOn ? "Tắt camera" : "Bật camera"} icon={cameraOn ? "videocam" : "videocam-off"} active={!cameraOn} inverse={fullVideo} onPress={() => void toggleCamera()} /> : null}</View> : <Text style={[styles.screenOnlyHint, fullVideo && styles.statusLight]}>{isCaller ? "Bạn đang phát màn hình cho người nhận." : "Bạn đang xem màn hình được chia sẻ."}</Text>}{mode === "video" && cameraOn ? <View style={styles.controlRow}><Control label="Đổi camera" icon="flip-camera-android" inverse={fullVideo} onPress={() => void switchCamera()} /><Control label={videoQuality === "hd" ? "HD" : "SD"} icon="high-quality" active={videoQuality === "hd"} inverse={fullVideo} onPress={() => void toggleVideoQuality()} /></View> : null}<RoundAction label="Kết thúc" icon="call-end" color="#E8505B" onPress={() => void finish("ended")} /></> : <View style={styles.pending}><RoundAction label="Hủy cuộc gọi" icon="call-end" color="#E8505B" onPress={() => void finish("ended")} /></View>}</View></> : null}</View></SafeAreaView>;

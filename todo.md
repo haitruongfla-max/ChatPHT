@@ -308,3 +308,8 @@
 - [x] Xác nhận màn gọi, nút chat, incoming, push và mini overlay giữ nguyên `p2pMode` mà không kích hoạt chéo media.
 - [x] Bổ sung hồi quy static/runtime cho cô lập media, nối tín hiệu và answer cũ/trùng; chạy toàn bộ quality gate không dùng watcher.
 - [ ] Chỉ tăng phiên bản, đồng bộ GitHub và build APK signed sau khi source gate đạt; sau đó nghiệm thu bắt buộc trên hai Android qua Wi-Fi/4G với package `com.app.swiftchat`.
+- [x] Tái hiện và truy vết toàn bộ đường đi `p2pMode` từ ba nút chat, callId server, route, push/incoming/overlay tới phiên native để tìm nguyên nhân chồng lấn thực tế.
+- [x] Khóa mode bất biến ở ranh giới phiên P2P và chặn mọi lệch mode/phiên cũ trước khi mở capture hoặc UI.
+- [x] Hoàn thiện loading, trạng thái kết nối P2P và chỉ báo độ trễ dựa trên thống kê WebRTC thực, không hiển thị số liệu giả.
+- [x] Viết hồi quy mô phỏng từng nút thoại/video/chia sẻ và phát hiện chuyển mode sai; chạy toàn bộ quality gate.
+- [ ] Chỉ build APK mới sau khi source gate đạt và nghiệm thu riêng ba chế độ trên hai Android qua Wi-Fi/4G.

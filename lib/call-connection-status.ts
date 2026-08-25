@@ -1,6 +1,6 @@
 import type { P2pConnectionState } from "@/lib/p2p-call";
 
-export type CallConnectionKind = "audio" | "video";
+export type CallConnectionKind = "audio" | "video" | "screen";
 export type CallConnectionDirection = "incoming" | "outgoing";
 export type CallConnectionPhase = "preparing" | "connecting" | "ringing" | "recovering" | "connected" | "error";
 
@@ -10,6 +10,7 @@ export type P2pNetworkQuality = {
   level: P2pNetworkQualityLevel;
   label: string;
   description: string;
+  latencyMs: number | null;
 };
 
 export type CallConnectionStatus = {
@@ -19,22 +20,24 @@ export type CallConnectionStatus = {
 };
 
 /**
- * Maps only verified WebRTC state to user-facing feedback. It deliberately
- * avoids estimating ping or exposing SDP, ICE candidates, TURN URLs or secrets.
+ * Chỉ hiển thị trạng thái và độ trễ đã được WebRTC báo cáo; không suy đoán ping,
+ * cũng không hiển thị SDP, ICE, TURN URLs hoặc thông tin bí mật.
  */
-export function getP2pNetworkQuality(state: P2pConnectionState): P2pNetworkQuality {
+export function getP2pNetworkQuality(state: P2pConnectionState, latencyMs: number | null = null): P2pNetworkQuality {
   switch (state) {
     case "connected":
-      return { level: "good", label: "Kết nối P2P tốt", description: "Kênh thoại/video trực tiếp đang hoạt động." };
+      if (latencyMs !== null && latencyMs > 180) return { level: "weak", label: `Độ trễ ${latencyMs} ms`, description: "Độ trễ được WebRTC đo trực tiếp; mạng có thể chậm.", latencyMs };
+      if (latencyMs !== null) return { level: "good", label: `Độ trễ ${latencyMs} ms`, description: "Độ trễ được WebRTC đo trực tiếp trên kênh P2P.", latencyMs };
+      return { level: "good", label: "Đã kết nối P2P", description: "Kênh P2P đang hoạt động; đang chờ số liệu độ trễ WebRTC.", latencyMs: null };
     case "recovering":
-      return { level: "weak", label: "Mạng đang khôi phục", description: "Đang khôi phục P2P sau khi mạng thay đổi." };
+      return { level: "weak", label: "Mạng đang khôi phục", description: "Đang khôi phục P2P sau khi mạng thay đổi.", latencyMs: null };
     case "failed":
     case "closed":
-      return { level: "offline", label: "Kết nối đã ngắt", description: "Kênh P2P không còn dùng được." };
+      return { level: "offline", label: "Kết nối đã ngắt", description: "Kênh P2P không còn dùng được.", latencyMs: null };
     case "idle":
     case "connecting":
     default:
-      return { level: "connecting", label: "Đang kết nối", description: "Đang thiết lập kênh P2P bảo mật." };
+      return { level: "connecting", label: "Đang kết nối", description: "Đang thiết lập kênh P2P bảo mật.", latencyMs: null };
   }
 }
 
@@ -57,7 +60,7 @@ export function getCallConnectionStatus({
   error: string | null;
   networkState?: P2pConnectionState;
 }): CallConnectionStatus {
-  const callType = kind === "video" ? "cuộc gọi video" : "cuộc gọi thoại";
+  const callType = kind === "screen" ? "phiên chia sẻ màn hình" : kind === "video" ? "cuộc gọi video" : "cuộc gọi thoại";
 
   if (networkState === "recovering") {
     return {
@@ -79,7 +82,9 @@ export function getCallConnectionStatus({
     return {
       phase: "connecting",
       title: `Đang thiết lập ${callType}`,
-      description: kind === "video"
+      description: kind === "screen"
+        ? "Đang chờ quyền chia sẻ màn hình và thiết lập đường truyền bảo mật…"
+        : kind === "video"
         ? "Đang mở camera, micro và đường truyền bảo mật…"
         : "Đang mở micro và đường truyền bảo mật…",
     };
@@ -113,7 +118,7 @@ export function getCallConnectionStatus({
 
   return {
     phase: "preparing",
-    title: kind === "video" ? "Cuộc gọi video đến" : "Cuộc gọi thoại đến",
+    title: kind === "screen" ? "Yêu cầu chia sẻ màn hình đến" : kind === "video" ? "Cuộc gọi video đến" : "Cuộc gọi thoại đến",
     description: "Chọn Nhận để bắt đầu kết nối.",
   };
 }

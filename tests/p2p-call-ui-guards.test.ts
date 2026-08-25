@@ -17,8 +17,9 @@ describe("P2P call screen guards", () => {
     expect(callScreen).toContain('p2pState === "idle"');
   });
 
-  it("shows a local ICE-derived quality badge and never returns an answered recipient to the incoming screen", () => {
-    expect(callScreen).toContain("getP2pNetworkQuality(p2pState)");
+  it("shows a WebRTC-derived latency badge and never returns an answered recipient to the incoming screen", () => {
+    expect(callScreen).toContain("getP2pNetworkQuality(p2pState, latencyMs)");
+    expect(callScreen).toContain("onStats: (stats: P2pNetworkStats) => setLatencyMs(stats.latencyMs)");
     expect(callScreen).toContain("<NetworkQualityBadge quality={networkQuality} inverse={fullVideo} />");
     expect(callScreen).toContain('direction === "incoming" && !isAnswered');
     expect(callScreen).toContain('if (state === "recovering") setConnectionError(null);');
@@ -42,8 +43,12 @@ describe("P2P call screen guards", () => {
     expect(chatScreen).toContain('beginP2pAction("screen")');
     expect(chatScreen).not.toContain('beginCall("video", true)');
     expect(chatScreen).toContain('p2pMode: mode');
-    expect(callScreen).toContain('const mode = toP2pCallMode');
-    expect(callScreen).toContain('details.data?.p2pMode ?? routeMode');
+    expect(callScreen).toContain('const activeForCallId = callId ? activeCall.get(callId) : null;');
+    expect(callScreen).toContain('activeForCallId?.p2pMode === routeMode');
+    expect(callScreen).toContain('const modeConflict = persistedMode !== null && persistedMode !== routeMode;');
+    expect(callScreen).toContain('const mode = routeMode;');
+    expect(callScreen).toContain('if (modeConflict)');
+    expect(callScreen).not.toContain('details.data?.p2pMode ?? routeMode');
     expect(callScreen).not.toContain('p2pScreenShare');
     expect(callScreen).toContain('if (mode === "screen") return true;');
     expect(callScreen).toContain('const kind = callKindForP2pMode(mode)');

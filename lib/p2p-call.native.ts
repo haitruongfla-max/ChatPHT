@@ -10,6 +10,7 @@ export type P2pSignalType = "offer" | "answer" | "ice";
 export type P2pSignal = { type: P2pSignalType; payload: string };
 export type P2pConnectionState = "idle" | "connecting" | "recovering" | "connected" | "failed" | "closed";
 export type P2pIceServer = { urls: string[]; username?: string; credential?: string };
+export type P2pNetworkStats = { latencyMs: number | null };
 
 type StartOptions = {
   isCaller: boolean;
@@ -19,6 +20,7 @@ type StartOptions = {
   onSignal: (signal: P2pSignal) => Promise<void> | void;
   onState: (state: P2pConnectionState) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
+  onStats?: (stats: P2pNetworkStats) => void;
 };
 
 /**
@@ -29,6 +31,7 @@ export class P2pCall {
   private peer: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
+  private sessionMode: P2pCallMode | null = null;
   private audioCall: P2pAudioCall | null = null;
   private videoCall: P2pVideoCall | null = null;
   private screenCall: P2pScreenCall | null = null;
@@ -47,9 +50,14 @@ export class P2pCall {
   private nextOfferId = 0;
   private awaitingAnswerForOfferId: number | null = null;
   private signalQueue: Promise<void> = Promise.resolve();
+  private statsTimer: ReturnType<typeof setInterval> | null = null;
 
   async start(options: StartOptions) {
+    if (this.sessionMode && this.sessionMode !== options.mode) {
+      throw new Error("Phiên P2P đang hoạt động với chế độ khác. Đã chặn để không mở nhầm chia sẻ màn hình.");
+    }
     await this.disconnect({ preservePreStartSignals: true });
+    this.sessionMode = options.mode;
     this.options = options;
     this.remoteDescriptionReady = false;
     this.pendingRemoteCandidates = [];
@@ -89,10 +97,13 @@ export class P2pCall {
         if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
         this.recoveryTimer = null;
         options.onState("connected");
+        this.startStatsPolling();
       } else if (state === "failed" || state === "disconnected") {
         this.connected = false;
+        this.stopStatsPolling();
         void this.recoverIceOrFail();
       } else if (state === "closed") {
+        this.stopStatsPolling();
         options.onState("closed");
       }
     };
@@ -193,6 +204,7 @@ export class P2pCall {
 
   async disconnect(options: { preserveAudioSession?: boolean; preservePreStartSignals?: boolean } = {}) {
     this.connected = false;
+    this.stopStatsPolling();
     this.recoveryInProgress = false;
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
     this.recoveryTimer = null;
@@ -207,6 +219,8 @@ export class P2pCall {
     this.nextOfferId = 0;
     this.awaitingAnswerForOfferId = null;
     this.remoteStream = null;
+    this.sessionMode = null;
+    this.options?.onStats?.({ latencyMs: null });
     await this.audioCall?.stop({ preserveAudioRoute: true });
     await this.videoCall?.stop({ preserveAudioRoute: true });
     await this.screenCall?.stop();
@@ -231,6 +245,43 @@ export class P2pCall {
     }
     this.screenCall = new P2pScreenCall();
     return this.screenCall.start({ isCaller });
+  }
+
+  private startStatsPolling() {
+    this.stopStatsPolling();
+    void this.publishNetworkStats();
+    this.statsTimer = setInterval(() => void this.publishNetworkStats(), 2_000);
+  }
+
+  private stopStatsPolling() {
+    if (this.statsTimer) clearInterval(this.statsTimer);
+    this.statsTimer = null;
+  }
+
+  private async publishNetworkStats() {
+    const peer = this.peer as (RTCPeerConnection & { getStats?: () => Promise<Map<string, unknown> | unknown[]> }) | null;
+    const onStats = this.options?.onStats;
+    if (!peer || !onStats || !peer.getStats) return;
+    try {
+      const rawStats = await peer.getStats();
+      const reports = rawStats instanceof Map ? Array.from(rawStats.values()) : Array.isArray(rawStats) ? rawStats : [];
+      let roundTripTime: number | null = null;
+      for (const report of reports) {
+        const item = report as Record<string, unknown>;
+        const type = item.type;
+        const rtt = item.currentRoundTripTime ?? item.roundTripTime;
+        if (typeof rtt !== "number" || !Number.isFinite(rtt) || rtt < 0) continue;
+        if (type === "candidate-pair" && (item.nominated === true || item.selected === true || item.state === "succeeded")) {
+          roundTripTime = rtt;
+          break;
+        }
+        if (roundTripTime === null && type === "remote-inbound-rtp") roundTripTime = rtt;
+      }
+      onStats({ latencyMs: roundTripTime === null ? null : Math.round(roundTripTime * 1_000) });
+    } catch {
+      // Statistics are best-effort only; an unavailable SDK report must not affect the call.
+      onStats({ latencyMs: null });
+    }
   }
 
   private async recoverIceOrFail() {

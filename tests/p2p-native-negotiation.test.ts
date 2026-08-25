@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
     addIceCandidate = vi.fn();
     removeTrack = vi.fn();
     close = vi.fn();
+    getStats = vi.fn(async () => new Map([["pair", { type: "candidate-pair", nominated: true, state: "succeeded", currentRoundTripTime: 0.042 }]]));
 
     configuration: Record<string, unknown>;
     constructor(configuration: Record<string, unknown> = {}) {
@@ -110,6 +111,52 @@ describe("native P2P renegotiation", () => {
     await call.handleSignal({ type: "answer", payload: JSON.stringify({ description: { type: "answer", sdp: "initial-answer" }, offerId: 1 }) });
     expect(peer.signalingState).toBe("stable");
     expect(peer.offerCalls).toHaveLength(1);
+  });
+
+  it("refuses to change an active audio session into screen sharing", async () => {
+    const call = new P2pCall();
+    await call.start({
+      isCaller: true,
+      kind: "audio",
+      mode: "audio",
+      onSignal: () => undefined,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    });
+
+    await expect(call.start({
+      isCaller: true,
+      kind: "audio",
+      mode: "screen",
+      onSignal: () => undefined,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+    })).rejects.toThrow("chế độ khác");
+
+    expect(mocks.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(mocks.getDisplayMedia).not.toHaveBeenCalled();
+  });
+
+  it("reports latency only from a successful WebRTC candidate pair", async () => {
+    const onStats = vi.fn();
+    const call = new P2pCall();
+    await call.start({
+      isCaller: true,
+      kind: "audio",
+      mode: "audio",
+      onSignal: () => undefined,
+      onState: () => undefined,
+      onRemoteStream: () => undefined,
+      onStats,
+    });
+    const peer = mocks.peerInstances[0]!;
+    peer.connectionState = "connected";
+    peer.onconnectionstatechange?.();
+    await Promise.resolve();
+
+    expect(onStats).toHaveBeenCalledWith({ latencyMs: 42 });
+    await call.disconnect();
+    expect(onStats).toHaveBeenLastCalledWith({ latencyMs: null });
   });
 
   it("drops ICE candidates belonging to a colliding offer that the caller intentionally ignores", async () => {

@@ -46,7 +46,9 @@ describe("call connection status", () => {
   it("ánh xạ chất lượng mạng chỉ từ trạng thái ICE/WebRTC đã xác thực", () => {
     expect(getP2pNetworkQuality("idle")).toMatchObject({ level: "connecting", label: "Đang kết nối" });
     expect(getP2pNetworkQuality("connecting")).toMatchObject({ level: "connecting" });
-    expect(getP2pNetworkQuality("connected")).toMatchObject({ level: "good", label: "Kết nối P2P tốt" });
+    expect(getP2pNetworkQuality("connected")).toMatchObject({ level: "good", label: "Đã kết nối P2P", latencyMs: null });
+    expect(getP2pNetworkQuality("connected", 42)).toMatchObject({ level: "good", label: "Độ trễ 42 ms", latencyMs: 42 });
+    expect(getP2pNetworkQuality("connected", 210)).toMatchObject({ level: "weak", label: "Độ trễ 210 ms", latencyMs: 210 });
     expect(getP2pNetworkQuality("recovering")).toMatchObject({ level: "weak", label: "Mạng đang khôi phục" });
     expect(getP2pNetworkQuality("failed")).toMatchObject({ level: "offline", label: "Kết nối đã ngắt" });
     expect(getP2pNetworkQuality("closed")).toMatchObject({ level: "offline" });
