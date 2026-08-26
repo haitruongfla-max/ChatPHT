@@ -80,11 +80,14 @@ jobs:
           short_sha="${GITHUB_SHA:0:8}"
           release_id="CPHT-${tag#v}-${short_sha}"
           asset_name="ChatPHT-${release_id}.apk"
+          asset_file="./${asset_name}"
           checksum_name="${asset_name}.sha256"
           checksum_file="./${checksum_name}"
-          sha256sum "$APK_OUTPUT" | awk -v asset="$asset_name" '{print $1 "  " asset}' > "$checksum_file"
+          cp "$APK_OUTPUT" "$asset_file"
+          sha256sum "$asset_file" | awk -v asset="$asset_name" '{print $1 "  " asset}' > "$checksum_file"
           echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
           echo "asset_name=$asset_name" >> "$GITHUB_OUTPUT"
+          echo "asset_file=$asset_file" >> "$GITHUB_OUTPUT"
           echo "checksum_name=$checksum_name" >> "$GITHUB_OUTPUT"
           echo "checksum_file=$checksum_file" >> "$GITHUB_OUTPUT"
 
@@ -93,7 +96,7 @@ jobs:
         with:
           name: ChatPHT-${{ steps.release_identity.outputs.release_id }}
           path: |
-            ./app-release.apk
+            ${{ steps.release_identity.outputs.asset_file }}
             ${{ steps.release_identity.outputs.checksum_file }}
           if-no-files-found: error
           retention-days: 30
@@ -102,7 +105,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
-          APK_OUTPUT: ./app-release.apk
+          ASSET_FILE: ${{ steps.release_identity.outputs.asset_file }}
           RELEASE_ID: ${{ steps.release_identity.outputs.release_id }}
           ASSET_NAME: ${{ steps.release_identity.outputs.asset_name }}
           CHECKSUM_NAME: ${{ steps.release_identity.outputs.checksum_name }}
@@ -111,9 +114,10 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$APK_OUTPUT#$ASSET_NAME" "$CHECKSUM_FILE#$CHECKSUM_NAME" --clobber
+            gh release delete-asset "$RELEASE_TAG" app-release.apk --yes >/dev/null 2>&1 || true
+            gh release upload "$RELEASE_TAG" "$ASSET_FILE" "$CHECKSUM_FILE" --clobber
           else
-            gh release create "$RELEASE_TAG" "$APK_OUTPUT#$ASSET_NAME" "$CHECKSUM_FILE#$CHECKSUM_NAME" \
+            gh release create "$RELEASE_TAG" "$ASSET_FILE" "$CHECKSUM_FILE" \
               --title "ChatPHT $RELEASE_ID" \
               --generate-notes \
               --target "$GITHUB_SHA"

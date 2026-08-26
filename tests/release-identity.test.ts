@@ -21,6 +21,8 @@ describe("mã phát hành ChatPHT", () => {
     const workflow = readFileSync(resolve(root, ".github/workflows/build-ota-base-apk.yml"), "utf8");
     expect(workflow).toContain('release_id="CPHT-${tag#v}-${short_sha}"');
     expect(workflow).toContain('asset_name="ChatPHT-${release_id}.apk"');
+    expect(workflow).toContain('asset_file="./${asset_name}"');
+    expect(workflow).toContain('cp "$APK_OUTPUT" "$asset_file"');
     expect(workflow).toContain('checksum_name="${asset_name}.sha256"');
     expect(workflow).toContain("--title \"ChatPHT $RELEASE_ID\"");
   });
