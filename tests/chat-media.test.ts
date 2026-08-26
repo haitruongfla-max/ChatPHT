@@ -8,6 +8,9 @@ vi.mock("../server/db", () => ({
   hideConversationForUser: vi.fn(),
   clearConversationForUserAndExitInbox: vi.fn(),
   clearConversationContent: vi.fn(),
+  deleteSelectedMessagePermanently: vi.fn(),
+  touchUserActivity: vi.fn(),
+  getConversationPeerPresence: vi.fn(),
   getInAppNotificationSummary: vi.fn(),
   recallMessage: vi.fn(),
   toggleMessageReaction: vi.fn(),
@@ -40,9 +43,9 @@ import * as db from "../server/db";
 import { appRouter } from "../server/routers";
 import * as storage from "../server/storage";
 
-function callerFor(userId = 7) {
+function callerFor(userId = 7, role: "user" | "admin" = "user") {
   return appRouter.createCaller({
-    user: { id: userId, role: "user", accessExpiresAt: null },
+    user: { id: userId, role, accessExpiresAt: null },
     req: { headers: { host: "api.example" }, protocol: "https" },
     res: { cookie: vi.fn(), clearCookie: vi.fn() },
   } as any);
@@ -270,17 +273,28 @@ describe("chat media access controls", () => {
       clearedMessages: 3,
       clearedMedia: 2,
     });
-    expect(db.clearConversationContent).toHaveBeenCalledWith(18, 7);
+    expect(db.clearConversationContent).toHaveBeenCalledWith({
+      conversationId: 18,
+      requesterId: 7,
+      authorizedBySystemAdmin: false,
+    });
     expect(storage.storageDelete).toHaveBeenCalledTimes(2);
     expect(storage.storageDelete).toHaveBeenCalledWith("swiftchat/18/7/photo.jpg");
     expect(storage.storageDelete).toHaveBeenCalledWith("swiftchat/18/9/video.mp4");
   });
 
-  it("does not expose clear-content to a caller that fails the membership check", async () => {
-    vi.mocked(db.clearConversationContent).mockRejectedValue(new Error("Bạn không có quyền xóa sạch hội thoại này."));
+  it("does not clean storage if protected system-history deletion is rejected", async () => {
+    vi.mocked(db.clearConversationContent).mockRejectedValue(new Error("Bạn không có quyền xóa sạch lịch sử hội thoại này."));
 
     await expect(callerFor(11).conversations.clearContent({ conversationId: 18 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(storage.storageDelete).not.toHaveBeenCalled();
+  });
+
+  it("passes the system-admin authority explicitly when clearing history", async () => {
+    vi.mocked(db.clearConversationContent).mockResolvedValue({ messagesDeleted: 0, mediaKeys: [] });
+
+    await expect(callerFor(7, "admin").conversations.clearContent({ conversationId: 18 })).resolves.toMatchObject({ success: true });
+    expect(db.clearConversationContent).toHaveBeenCalledWith(expect.objectContaining({ authorizedBySystemAdmin: true }));
   });
 
   it("returns a recalled marker without issuing a new media URL", async () => {
@@ -305,6 +319,22 @@ describe("chat media access controls", () => {
       mediaUrl: null,
     });
     expect(db.recallMessage).toHaveBeenCalledWith(55, 7);
+  });
+
+  it("permanently deletes only a selected message through the authenticated sender and cleans detached media", async () => {
+    vi.mocked(db.deleteSelectedMessagePermanently).mockResolvedValue({ mediaKey: "chatpht/media/18/7/private.jpg" });
+    vi.mocked(storage.storageDelete).mockResolvedValue(undefined);
+
+    await expect(callerFor(7).messages.deleteSelected({ messageId: 55 })).resolves.toEqual({ success: true });
+    expect(db.deleteSelectedMessagePermanently).toHaveBeenCalledWith({ messageId: 55, requesterId: 7 });
+    expect(storage.storageDelete).toHaveBeenCalledWith("chatpht/media/18/7/private.jpg");
+  });
+
+  it("does not clean storage if permanent deletion is rejected by data authorization", async () => {
+    vi.mocked(db.deleteSelectedMessagePermanently).mockRejectedValue(new Error("Bạn chỉ có thể xóa vĩnh viễn tin nhắn do mình gửi."));
+
+    await expect(callerFor(9).messages.deleteSelected({ messageId: 55 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(storage.storageDelete).not.toHaveBeenCalled();
   });
 
   it("toggles an allowed emoji using the authenticated user identity", async () => {
@@ -341,6 +371,21 @@ describe("chat media access controls", () => {
       typingUntil,
     });
     expect(db.setConversationTyping).toHaveBeenCalledWith(18, 9, true);
+  });
+
+  it("updates foreground activity only for the authenticated account", async () => {
+    const lastActiveAt = new Date("2026-08-26T09:00:00.000Z");
+    vi.mocked(db.touchUserActivity).mockResolvedValue({ lastActiveAt } as any);
+
+    await expect(callerFor(9).presence.heartbeat()).resolves.toMatchObject({ lastActiveAt });
+    expect(db.touchUserActivity).toHaveBeenCalledWith(9);
+  });
+
+  it("returns direct-chat peer presence only for the authenticated requesting member", async () => {
+    vi.mocked(db.getConversationPeerPresence).mockResolvedValue({ isOnline: false, lastActiveAt: new Date("2026-08-26T08:30:00.000Z") } as any);
+
+    await expect(callerFor(9).presence.forConversation({ conversationId: 18 })).resolves.toMatchObject({ isOnline: false });
+    expect(db.getConversationPeerPresence).toHaveBeenCalledWith(18, 9);
   });
 
   it("returns only the other member's non-expired typing status", async () => {

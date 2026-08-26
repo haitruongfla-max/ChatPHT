@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `lastActiveAt` timestamp DEFAULT (now()) NOT NULL;

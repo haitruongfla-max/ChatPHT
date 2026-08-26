@@ -68,8 +68,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   const db = await getDb();
   if (!db) return;
 
-  const values: InsertUser = { openId: user.openId, lastSignedIn: user.lastSignedIn ?? new Date() };
-  const updateSet: Record<string, unknown> = { lastSignedIn: values.lastSignedIn };
+  const lastSignedIn = user.lastSignedIn ?? new Date();
+  const values: InsertUser = { openId: user.openId, lastSignedIn, lastActiveAt: user.lastActiveAt ?? lastSignedIn };
+  const updateSet: Record<string, unknown> = { lastSignedIn: values.lastSignedIn, lastActiveAt: values.lastActiveAt };
   for (const field of ["username", "name", "email", "passwordHash", "loginMethod"] as const) {
     if (user[field] !== undefined) {
       values[field] = user[field];
@@ -100,6 +101,38 @@ export async function getUserById(id: number) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return result[0];
+}
+
+const PRESENCE_ONLINE_WINDOW_MS = 90_000;
+
+/** Updates only the authenticated user's last activity marker for presence display. */
+export async function touchUserActivity(userId: number) {
+  const db = requireDb(await getDb());
+  const lastActiveAt = new Date();
+  await db.update(users).set({ lastActiveAt }).where(eq(users.id, userId));
+  return { lastActiveAt };
+}
+
+/** Returns a private-chat peer's presence after verifying that the requester belongs to the conversation. */
+export async function getConversationPeerPresence(conversationId: number, userId: number) {
+  const db = requireDb(await getDb());
+  const [conversation] = await db
+    .select({ kind: conversations.kind })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+  if (!conversation || conversation.kind !== "direct" || !(await isConversationMember(conversationId, userId))) {
+    throw new Error("Bạn không có quyền xem trạng thái người dùng này.");
+  }
+  const [peer] = await db
+    .select({ id: users.id, lastActiveAt: users.lastActiveAt })
+    .from(conversationMembers)
+    .innerJoin(users, eq(users.id, conversationMembers.userId))
+    .where(and(eq(conversationMembers.conversationId, conversationId), ne(conversationMembers.userId, userId)))
+    .limit(1);
+  if (!peer) throw new Error("Không tìm thấy người liên hệ.");
+  const isOnline = Boolean(peer.lastActiveAt && Date.now() - peer.lastActiveAt.getTime() <= PRESENCE_ONLINE_WINDOW_MS);
+  return { isOnline, lastActiveAt: peer.lastActiveAt ?? null };
 }
 
 export async function upsertPushDevice(input: {
@@ -159,7 +192,8 @@ export async function createLocalUser(input: {
 
 export async function touchUser(id: number) {
   const db = requireDb(await getDb());
-  await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, id));
+  const now = new Date();
+  await db.update(users).set({ lastSignedIn: now, lastActiveAt: now }).where(eq(users.id, id));
 }
 
 export async function updateOwnProfile(input: { userId: number; displayName: string; avatarKey?: string | null }) {
@@ -685,6 +719,15 @@ export type DeletedGroupConversation = {
   messagesDeleted: number;
 };
 
+export type DeletedConversationContent = {
+  mediaKeys: string[];
+  messagesDeleted: number;
+};
+
+export type DeletedSelectedMessage = {
+  mediaKey: string | null;
+};
+
 /**
  * Permanently removes one group and its content. Database rows are removed
  * before best-effort object storage cleanup performed by the authenticated router.
@@ -1119,38 +1162,84 @@ export async function getInAppNotificationSummary(userId: number) {
 }
 
 /**
- * Removes every message visible to both members and returns the associated media keys
- * so the caller can also clear the private object-store payloads.
+ * Permanently removes one message owned by the requester. Reactions are removed
+ * in the same transaction; the router cleans the detached media object afterwards.
  */
-export async function clearConversationContent(conversationId: number, requesterId: number) {
+export async function deleteSelectedMessagePermanently(input: {
+  messageId: number;
+  requesterId: number;
+}): Promise<DeletedSelectedMessage> {
   const db = requireDb(await getDb());
-  if (!(await isConversationMember(conversationId, requesterId))) {
-    throw new Error("Bạn không có quyền xóa sạch hội thoại này.");
-  }
+  return db.transaction(async (tx) => {
+    const [message] = await tx
+      .select({ id: messages.id, conversationId: messages.conversationId, senderId: messages.senderId, mediaKey: messages.mediaKey })
+      .from(messages)
+      .where(eq(messages.id, input.messageId))
+      .limit(1);
+    if (!message) throw new Error("Tin nhắn không còn tồn tại.");
+    if (message.senderId !== input.requesterId) throw new Error("Bạn chỉ có thể xóa vĩnh viễn tin nhắn do mình gửi.");
 
-  const messageRows = await db
-    .select({ id: messages.id, mediaKey: messages.mediaKey })
-    .from(messages)
-    .where(eq(messages.conversationId, conversationId));
-  const mediaKeys = Array.from(
-    new Set(
-      messageRows
-        .map(({ mediaKey }) => mediaKey)
-        .filter((mediaKey): mediaKey is string => Boolean(mediaKey)),
-    ),
-  );
+    const [membership] = await tx
+      .select({ id: conversationMembers.id })
+      .from(conversationMembers)
+      .where(and(eq(conversationMembers.conversationId, message.conversationId), eq(conversationMembers.userId, input.requesterId)))
+      .limit(1);
+    if (!membership) throw new Error("Bạn không còn quyền truy cập hội thoại này.");
 
-  const messageIds = messageRows.map((message) => message.id);
-  if (messageIds.length) {
-    await db.delete(messageReactions).where(inArray(messageReactions.messageId, messageIds));
-  }
-  await db.delete(messages).where(eq(messages.conversationId, conversationId));
-  await db
-    .update(conversationMembers)
-    .set({ hiddenAt: null })
-    .where(eq(conversationMembers.conversationId, conversationId));
+    await tx.delete(messageReactions).where(eq(messageReactions.messageId, message.id));
+    await tx.delete(messages).where(eq(messages.id, message.id));
+    return { mediaKey: message.mediaKey };
+  });
+}
 
-  return { mediaKeys, messagesDeleted: messageRows.length };
+/**
+ * Permanently removes shared messages and their media references while retaining
+ * the conversation and its settings. Direct-chat members may request it; groups
+ * require the group owner or a system administrator.
+ */
+export async function clearConversationContent(input: {
+  conversationId: number;
+  requesterId: number;
+  authorizedBySystemAdmin?: boolean;
+}): Promise<DeletedConversationContent> {
+  const db = requireDb(await getDb());
+  return db.transaction(async (tx) => {
+    const [conversation] = await tx
+      .select({ id: conversations.id, kind: conversations.kind })
+      .from(conversations)
+      .where(eq(conversations.id, input.conversationId))
+      .limit(1);
+    if (!conversation) throw new Error("Hội thoại không còn tồn tại.");
+
+    const [membership] = await tx
+      .select({ id: conversationMembers.id, role: conversationMembers.role })
+      .from(conversationMembers)
+      .where(and(eq(conversationMembers.conversationId, input.conversationId), eq(conversationMembers.userId, input.requesterId)))
+      .limit(1);
+    const isGroupSystemAdmin = conversation.kind === "group" && Boolean(input.authorizedBySystemAdmin);
+    if (!membership && !isGroupSystemAdmin) throw new Error("Bạn không có quyền xóa sạch hội thoại này.");
+    if (conversation.kind === "group" && !input.authorizedBySystemAdmin && membership.role !== "owner") {
+      throw new Error("Chỉ chủ nhóm hoặc quản trị viên hệ thống mới có thể xóa lịch sử của mọi thành viên.");
+    }
+
+    const messageRows = await tx
+      .select({ id: messages.id, mediaKey: messages.mediaKey })
+      .from(messages)
+      .where(eq(messages.conversationId, input.conversationId));
+    const messageIds = messageRows.map((message) => message.id);
+    const mediaKeys = Array.from(new Set(messageRows.map((message) => message.mediaKey).filter((key): key is string => Boolean(key))));
+    if (messageIds.length) await tx.delete(messageReactions).where(inArray(messageReactions.messageId, messageIds));
+    await tx.delete(messages).where(eq(messages.conversationId, input.conversationId));
+
+    const resetAt = new Date();
+    await tx.update(conversations).set({ pinnedMessageId: null }).where(eq(conversations.id, input.conversationId));
+    await tx
+      .update(conversationMembers)
+      .set({ hiddenAt: null, clearedThroughMessageId: null, lastDeliveredAt: resetAt, lastReadAt: resetAt })
+      .where(eq(conversationMembers.conversationId, input.conversationId));
+
+    return { mediaKeys, messagesDeleted: messageRows.length };
+  });
 }
 
 /**

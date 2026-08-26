@@ -307,6 +307,24 @@ export const appRouter = router({
         return { success: true } as const;
       }),
   }),
+  presence: router({
+    heartbeat: protectedProcedure.mutation(async ({ ctx }) => {
+      try {
+        return await db.touchUserActivity(ctx.user.id);
+      } catch (error) {
+        return appError(error, "Không thể cập nhật trạng thái hoạt động.");
+      }
+    }),
+    forConversation: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        try {
+          return await db.getConversationPeerPresence(input.conversationId, ctx.user.id);
+        } catch (error) {
+          return appError(error, "Không thể tải trạng thái hoạt động.");
+        }
+      }),
+  }),
   friends: router({
     search: protectedProcedure
       .input(z.object({ query: z.string().trim().min(1).max(24) }))
@@ -559,8 +577,12 @@ export const appRouter = router({
       .input(z.object({ conversationId: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => {
         try {
-          const cleared = await db.clearConversationContent(input.conversationId, ctx.user.id);
-          await Promise.all(cleared.mediaKeys.map((mediaKey) => storageDelete(mediaKey)));
+          const cleared = await db.clearConversationContent({
+            conversationId: input.conversationId,
+            requesterId: ctx.user.id,
+            authorizedBySystemAdmin: ctx.user.role === "admin",
+          });
+          await Promise.allSettled(cleared.mediaKeys.map((mediaKey) => storageDelete(mediaKey)));
           return {
             success: true as const,
             clearedMessages: cleared.messagesDeleted,
@@ -813,6 +835,17 @@ export const appRouter = router({
           return publicMessage(message, null);
         } catch (error) {
           return appError(error, "Không thể thu hồi tin nhắn.");
+        }
+      }),
+    deleteSelected: protectedProcedure
+      .input(z.object({ messageId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const deleted = await db.deleteSelectedMessagePermanently({ messageId: input.messageId, requesterId: ctx.user.id });
+          if (deleted.mediaKey) await Promise.allSettled([storageDelete(deleted.mediaKey)]);
+          return { success: true as const };
+        } catch (error) {
+          return appError(error, "Không thể xóa vĩnh viễn tin nhắn.");
         }
       }),
   }),

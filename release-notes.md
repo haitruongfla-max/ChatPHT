@@ -1,19 +1,18 @@
-# ChatPHT 1.0.38
+# ChatPHT 1.0.39
 
-## Giao diện trò chuyện
+## Xóa nội dung có kiểm soát
 
-- Ảnh và video trong tin nhắn nay chỉ có **một đường viền trắng rất mảnh**, giảm cảm giác khung dày nhưng vẫn tách bạch với nền chat.
-- Tiêu đề cuộc trò chuyện 1:1 hiển thị **tên người liên hệ** thay cho nhãn chung “Hội thoại riêng tư”.
-- Trình xem ảnh/video toàn màn hình, gửi nhiều media, phản hồi, thả cảm xúc và trạng thái gửi/đã nhận/đã đọc vẫn được giữ nguyên.
+- Tin nhắn của chính bạn có thêm lựa chọn **xóa vĩnh viễn**; ảnh hoặc video đính kèm được dọn khỏi lưu trữ theo cơ chế an toàn.
+- Thêm **Xóa toàn bộ lịch sử trên hệ thống** với cảnh báo không thể hoàn tác. Chat riêng cho phép hai thành viên xóa chung; nhóm chỉ chủ nhóm hoặc quản trị viên hệ thống được phép thực hiện.
+- Giữ nguyên lựa chọn **Xóa lịch sử và rời hộp thư**: thao tác này chỉ ẩn lịch sử đối với riêng người dùng, không xóa dữ liệu của thành viên khác.
 
-## Camera trong chat
+## Hiện diện và giao diện
 
-- Camera có hai nút chọn rõ ràng: **Ảnh** và **Video HD**.
-- Chụp ảnh chỉ cần bấm nút chụp; quay video chọn Video HD rồi bấm để bắt đầu và bấm lần nữa để dừng.
-- Không còn phụ thuộc vào thao tác chạm nhanh hoặc giữ nút để phân biệt chụp/quay.
+- Đầu chat 1:1 hiển thị chấm trạng thái cùng **Đang trực tuyến** hoặc thời gian hoạt động gần nhất. Trạng thái được cập nhật khi ứng dụng đang ở foreground, không tuyên bố online chính xác khi chạy nền.
+- Bỏ các bề mặt xanh còn lại quanh ảnh/video; media chỉ dùng nền trung tính và đường phân tách trắng tối thiểu khi cần tương phản.
+- Các tùy chọn tin nhắn, hội thoại và ảnh nền được đưa về bottom sheet đồng nhất, dễ thao tác và mô tả rõ hậu quả của thao tác xóa.
 
-## Ổn định và quyền riêng tư
+## Bảo toàn chức năng
 
-- Giữ cơ chế xóa lịch sử chỉ cho người thực hiện: dữ liệu của thành viên khác không bị xóa.
-- Giữ huy hiệu nội bộ cho tin chưa đọc, lời mời kết bạn và nhóm mới.
-- Tính năng gọi vẫn không được đưa trở lại trong bản này.
+- Trình xem media, gửi nhiều ảnh/video, phản hồi, thả cảm xúc, trạng thái đã gửi/đã nhận/đã đọc và quản trị nhóm vẫn được giữ nguyên.
+- Tính năng gọi không được thêm lại trong bản này.

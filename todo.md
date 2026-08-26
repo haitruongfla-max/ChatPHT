@@ -421,4 +421,10 @@
 - [x] Hiển thị tên người liên hệ thay cho tiêu đề chung “Hội thoại riêng tư” ở đầu chat 1:1.
 - [x] Thêm điều khiển chuyển rõ ràng giữa chụp ảnh và quay video trong camera chat, không còn phụ thuộc thao tác chạm/giữ.
 - [x] Hiển thị ghi chú phát hành chi tiết của bản mới trong mục Cập nhật ứng dụng trước khi tải APK.
-- [ ] Tăng định danh phát hành, kiểm thử và build APK GitHub cho các tinh chỉnh giao diện chat này.
+- [x] Tăng định danh phát hành, kiểm thử và build APK GitHub cho các tinh chỉnh giao diện chat này.
+- [x] Thêm thao tác xóa có xác nhận cho tin nhắn đang được chọn, giới hạn đúng quyền người gửi hoặc quản trị theo loại hội thoại.
+- [x] Thêm thao tác xóa toàn bộ lịch sử trên hệ thống có xác nhận không thể hoàn tác, phân quyền theo chat riêng/nhóm và dọn media dùng chung an toàn.
+- [x] Bổ sung trạng thái trực tuyến và thời điểm offline theo thời gian thực cạnh tên liên hệ trong chat 1:1.
+- [x] Gỡ hoàn toàn viền xanh ngoài ảnh/video, chỉ giữ bề mặt media và đường phân tách trắng tối thiểu khi cần tương phản.
+- [x] Thiết kế lại các hộp tùy chọn tin nhắn và hội thoại theo phong cách nhất quán, rõ hậu quả các thao tác xóa.
+- [ ] Cập nhật ghi chú phát hành, kiểm thử toàn bộ và build APK GitHub mới cho phạm vi này.

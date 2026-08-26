@@ -64,6 +64,14 @@ type ChatMessage = {
 
 type TimelineMessage = ChatMessage & { albumItems?: ChatMessage[] };
 
+type OptionSheetAction = {
+  key: string;
+  label: string;
+  detail: string;
+  tone?: "danger";
+  onPress: () => void;
+};
+
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
 
 function VideoBubble({ uri, onOpen }: { uri: string; onOpen: () => void }) {
@@ -100,7 +108,18 @@ function readTime(value: Date) {
   }).format(new Date(value));
 }
 
-function MessageTime({ item, mine }: { item: ChatMessage; mine: boolean }) {
+function presenceLabel(presence: { isOnline: boolean; lastActiveAt: Date | string | null } | undefined) {
+  if (!presence) return "Đang kiểm tra trạng thái";
+  if (presence.isOnline) return "Đang trực tuyến";
+  if (!presence.lastActiveAt) return "Ngoại tuyến";
+  const elapsedMinutes = Math.max(1, Math.floor((Date.now() - new Date(presence.lastActiveAt).getTime()) / 60_000));
+  if (elapsedMinutes < 60) return `Hoạt động ${elapsedMinutes} phút trước`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `Hoạt động ${elapsedHours} giờ trước`;
+  return `Hoạt động ${Math.floor(elapsedHours / 24)} ngày trước`;
+}
+
+function MessageTime({ item, mine, mediaOnly = false }: { item: ChatMessage; mine: boolean; mediaOnly?: boolean }) {
   const createdAt = new Date(item.createdAt).getTime();
   const deliveryState =
     item.recipientReadAt &&
@@ -113,10 +132,10 @@ function MessageTime({ item, mine }: { item: ChatMessage; mine: boolean }) {
 
   return (
     <View style={styles.messageMeta}>
-      <Text style={[styles.messageTime, mine && styles.mineTime]}>
+      <Text style={[styles.messageTime, mine && styles.mineTime, mediaOnly && styles.mediaMessageTime]}>
         {relativeTime(item.createdAt)}
       </Text>
-      {mine ? <Text style={styles.deliveryState}>{deliveryState}</Text> : null}
+      {mine ? <Text style={[styles.deliveryState, mediaOnly && styles.mediaDeliveryState]}>{deliveryState}</Text> : null}
     </View>
   );
 }
@@ -145,6 +164,11 @@ export default function ChatScreen() {
   const [sendingCapturedMedia, setSendingCapturedMedia] = useState(false);
   const [preview, setPreview] = useState<ChatMediaPreview | null>(null);
   const [previewItems, setPreviewItems] = useState<ChatMediaPreview[]>([]);
+  const [optionSheet, setOptionSheet] = useState<{
+    title: string;
+    subtitle: string;
+    actions: OptionSheetAction[];
+  } | null>(null);
   const openMediaPreview = (entries: ChatMessage[], selectedId: number) => {
     const media = entries.flatMap((entry) => {
       if (!entry.mediaUrl || (entry.contentType !== "image" && entry.contentType !== "video")) return [];
@@ -197,6 +221,10 @@ export default function ChatScreen() {
     enabled: Boolean(user) && !isGroup,
     staleTime: 15_000,
   });
+  const peerPresence = trpc.presence.forConversation.useQuery(
+    { conversationId },
+    { enabled: Boolean(user) && !isGroup && Number.isInteger(conversationId), refetchInterval: 12_000 },
+  );
   const messageCount = messages.data?.length ?? 0;
   const stableMediaUrls = useRef(new Map<string, string>());
   const sendText = trpc.messages.sendText.useMutation();
@@ -207,6 +235,7 @@ export default function ChatScreen() {
   const { mutateAsync: markRead } = trpc.messages.markRead.useMutation();
   const { mutateAsync: setTyping } = trpc.messages.setTyping.useMutation();
   const recall = trpc.messages.recall.useMutation();
+  const deleteSelectedMessage = trpc.messages.deleteSelected.useMutation();
   const removeConversation = trpc.conversations.clearForSelfAndExitInbox.useMutation();
   const clearConversation = trpc.conversations.clearContent.useMutation();
   const requestWallpaperUpload = trpc.conversations.requestWallpaperUpload.useMutation();
@@ -216,6 +245,8 @@ export default function ChatScreen() {
   const isGroupAdmin = Boolean(
     groupMembers.data?.some((member) => member.id === userId && (member.groupRole === "owner" || member.groupRole === "admin")),
   );
+  const isGroupOwner = Boolean(groupMembers.data?.some((member) => member.id === userId && member.groupRole === "owner"));
+  const canClearSystemHistory = !isGroup || isGroupOwner || user?.role === "admin";
   const header = useMemo(
     () => ({
       title: isGroup
@@ -223,9 +254,9 @@ export default function ChatScreen() {
         : conversations.data?.find((conversation) => conversation.id === conversationId)?.peer?.displayName ?? "Đang tải liên hệ",
       subtitle: isGroup
         ? group ? `${group.memberCount} thành viên · Chỉ thành viên có thể xem tin nhắn` : "Đang tải thông tin nhóm"
-        : "Chỉ thành viên có thể xem tin nhắn",
+        : presenceLabel(peerPresence.data),
     }),
-    [conversationId, conversations.data, group, isGroup],
+    [conversationId, conversations.data, group, isGroup, peerPresence.data],
   );
   const timeline = useMemo<TimelineMessage[]>(() => {
     const sourceMessages = ((messages.data ?? []) as ChatMessage[]).map((message) =>
@@ -299,16 +330,19 @@ export default function ChatScreen() {
       Alert.alert("Không thể ghim tin nhắn", error instanceof Error ? error.message : "Vui lòng thử lại.");
     }
   };
+  const openOptionSheet = (title: string, subtitle: string, actions: OptionSheetAction[]) => {
+    setOptionSheet({ title, subtitle, actions });
+  };
   const openMessageActions = (item: TimelineMessage, mine: boolean) => {
     if (item.recalledAt) return;
     const isPinned = group?.pinnedMessageId === item.id;
-    const actions: { text: string; style?: "cancel" | "destructive"; onPress?: () => void }[] = [
-      { text: "Trả lời", onPress: () => setReplyTarget(item) },
+    const actions: OptionSheetAction[] = [
+      { key: "reply", label: "Trả lời", detail: "Soạn tin nhắn phản hồi trực tiếp", onPress: () => setReplyTarget(item) },
     ];
-    if (isGroup && isGroupAdmin) actions.push({ text: isPinned ? "Bỏ ghim" : "Ghim tin nhắn", onPress: () => void pinMessage(isPinned ? null : item.id) });
-    if (mine) actions.push({ text: "Thu hồi", style: "destructive", onPress: () => confirmRecall(item) });
-    actions.push({ text: "Hủy", style: "cancel" });
-    Alert.alert("Tùy chọn tin nhắn", isGroup && isGroupAdmin ? "Quản trị viên có thể ghim tin nhắn quan trọng cho cả nhóm." : "Bạn có thể trả lời trực tiếp tin nhắn này.", actions);
+    if (isGroup && isGroupAdmin) actions.push({ key: "pin", label: isPinned ? "Bỏ ghim tin nhắn" : "Ghim tin nhắn", detail: isPinned ? "Gỡ tin nhắn khỏi vị trí ghim của nhóm" : "Đưa tin nhắn lên đầu cuộc trò chuyện", onPress: () => void pinMessage(isPinned ? null : item.id) });
+    if (mine) actions.push({ key: "recall", label: "Thu hồi", detail: "Gỡ nội dung cho mọi thành viên", tone: "danger", onPress: () => confirmRecall(item) });
+    if (mine) actions.push({ key: "delete", label: "Xóa vĩnh viễn", detail: "Xóa hẳn tin nhắn và media kèm theo", tone: "danger", onPress: () => confirmDeleteSelected(item) });
+    openOptionSheet("Tùy chọn tin nhắn", isGroup && isGroupAdmin ? "Bạn có quyền ghim thông tin quan trọng cho cả nhóm." : "Chọn thao tác phù hợp với tin nhắn này.", actions);
   };
   const send = async () => {
     const body = draft.trim();
@@ -398,13 +432,12 @@ export default function ChatScreen() {
   };
 
   const openWallpaperMenu = () =>
-    Alert.alert(
+    openOptionSheet(
       "Ảnh nền cuộc trò chuyện",
-      "Ảnh nền này hiển thị chung cho mọi thành viên trong cuộc trò chuyện và được tính vào quota lưu trữ chung.",
+      "Ảnh nền được đồng bộ cho mọi thành viên và tính vào quota lưu trữ chung.",
       [
-        { text: "Hủy", style: "cancel" },
-        ...(wallpaper.data?.url ? [{ text: "Xóa ảnh nền", style: "destructive" as const, onPress: () => void clearWallpaper() }] : []),
-        { text: "Chọn ảnh từ thư viện", onPress: () => void chooseWallpaper() },
+        { key: "choose-wallpaper", label: "Chọn ảnh từ thư viện", detail: "Tối ưu ảnh trước khi đồng bộ cho cuộc trò chuyện", onPress: () => void chooseWallpaper() },
+        ...(wallpaper.data?.url ? [{ key: "clear-wallpaper", label: "Xóa ảnh nền", detail: "Trở về nền mặc định của ChatPHT", tone: "danger" as const, onPress: () => void clearWallpaper() }] : []),
       ],
     );
 
@@ -621,12 +654,14 @@ export default function ChatScreen() {
 
   const confirmClearContent = () =>
     Alert.alert(
-      "Xóa sạch toàn bộ nội dung?",
-      "Tin nhắn, ảnh và video sẽ bị xóa vĩnh viễn cho cả hai người. Thao tác này không thể hoàn tác.",
+      "Xóa toàn bộ lịch sử trên hệ thống?",
+      isGroup
+        ? "Tin nhắn, ảnh và video của tất cả thành viên sẽ bị xóa vĩnh viễn. Nhóm, thành viên và ảnh nền vẫn được giữ lại. Thao tác này không thể hoàn tác."
+        : "Tin nhắn, ảnh và video sẽ bị xóa vĩnh viễn trên hệ thống cho cả hai người. Thao tác này không thể hoàn tác.",
       [
         { text: "Hủy", style: "cancel" },
         {
-          text: "Xóa sạch",
+          text: "Xóa vĩnh viễn",
           style: "destructive",
           onPress: () => void clearContent(),
         },
@@ -634,19 +669,19 @@ export default function ChatScreen() {
     );
 
   const openConversationMenu = () => {
-    const actions: { text: string; style?: "cancel" | "destructive"; onPress?: () => void }[] = [
-      { text: "Hủy", style: "cancel" },
-      { text: "Ảnh nền cuộc trò chuyện", onPress: openWallpaperMenu },
+    const actions: OptionSheetAction[] = [
+      { key: "wallpaper", label: "Ảnh nền cuộc trò chuyện", detail: "Đồng bộ nền cho mọi thành viên", onPress: openWallpaperMenu },
     ];
     if (isGroup) {
-      actions.push({ text: "Thông tin và quản trị nhóm", onPress: () => router.push(`/group/${conversationId}` as never) });
+      actions.push({ key: "group", label: "Thông tin và quản trị nhóm", detail: "Thành viên, quyền và tùy chọn nhóm", onPress: () => router.push(`/group/${conversationId}` as never) });
+      if (canClearSystemHistory) actions.push({ key: "purge", label: "Xóa toàn bộ lịch sử hệ thống", detail: "Không thể hoàn tác; giữ lại nhóm và thành viên", tone: "danger", onPress: () => void confirmClearContent() });
     } else {
       actions.push(
-        { text: "Xóa lịch sử và rời hộp thư", style: "destructive", onPress: () => void confirmRemove() },
-        { text: "Xóa sạch toàn bộ nội dung", style: "destructive", onPress: () => void confirmClearContent() },
+        { key: "clear-self", label: "Xóa lịch sử và rời hộp thư", detail: "Chỉ ẩn lịch sử ở hộp thư của bạn", tone: "danger", onPress: () => void confirmRemove() },
+        { key: "purge", label: "Xóa toàn bộ lịch sử hệ thống", detail: "Xóa vĩnh viễn tin nhắn và media cho cả hai", tone: "danger", onPress: () => void confirmClearContent() },
       );
     }
-    Alert.alert("Tùy chọn hội thoại", "Các thay đổi ảnh nền được đồng bộ cho mọi thành viên.", actions);
+    openOptionSheet("Tùy chọn hội thoại", "Các lựa chọn được trình bày rõ ràng để bạn kiểm soát nội dung an toàn.", actions);
   };
 
   const confirmRecall = (item: ChatMessage) =>
@@ -665,6 +700,32 @@ export default function ChatScreen() {
               .catch((error) =>
                 Alert.alert(
                   "Không thể thu hồi",
+                  error instanceof Error ? error.message : "Vui lòng thử lại.",
+                ),
+              ),
+        },
+      ],
+    );
+
+  const confirmDeleteSelected = (item: ChatMessage) =>
+    Alert.alert(
+      "Xóa vĩnh viễn tin nhắn?",
+      "Tin nhắn này sẽ bị xóa hẳn cho mọi thành viên. Ảnh hoặc video đính kèm cũng sẽ được dọn khỏi hệ thống. Thao tác này không thể hoàn tác.",
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Xóa vĩnh viễn",
+          style: "destructive",
+          onPress: () =>
+            void deleteSelectedMessage
+              .mutateAsync({ messageId: item.id })
+              .then(() => {
+                if (replyTarget?.id === item.id) setReplyTarget(null);
+                refresh();
+              })
+              .catch((error) =>
+                Alert.alert(
+                  "Không thể xóa tin nhắn",
                   error instanceof Error ? error.message : "Vui lòng thử lại.",
                 ),
               ),
@@ -717,9 +778,12 @@ export default function ChatScreen() {
           </Pressable>
           <View style={styles.headerText}>
             <Text style={styles.headerTitle}>{header.title}</Text>
-            <Text style={styles.headerSubtitle}>
-              {wallpaperProgress !== null ? `Đang tải ảnh nền ${wallpaperProgress}%` : header.subtitle}
-            </Text>
+            <View style={styles.headerSubtitleRow}>
+              {!isGroup && wallpaperProgress === null ? <View style={[styles.presenceDot, peerPresence.data?.isOnline ? styles.presenceOnline : styles.presenceOffline]} /> : null}
+              <Text style={styles.headerSubtitle}>
+                {wallpaperProgress !== null ? `Đang tải ảnh nền ${wallpaperProgress}%` : header.subtitle}
+              </Text>
+            </View>
           </View>
           <Pressable
             onPress={openConversationMenu}
@@ -750,6 +814,7 @@ export default function ChatScreen() {
           }
           renderItem={({ item }) => {
             const mine = item.senderId === user.id;
+            const mediaOnly = (item.contentType === "image" || item.contentType === "video") && !item.body && !item.replyTo && (!item.albumItems || item.albumItems.length === 1);
             const groupedReactions = item.reactions.reduce<
               Record<string, { count: number; mine: boolean }>
             >((accumulator, reaction) => {
@@ -773,9 +838,10 @@ export default function ChatScreen() {
                   <Pressable
                     onLongPress={!item.recalledAt ? () => openMessageActions(item, mine) : undefined}
                     delayLongPress={750}
-                    style={[
-                      styles.bubble,
-                      mine ? styles.mineBubble : styles.theirBubble,
+                      style={[
+                        styles.bubble,
+                        mine ? styles.mineBubble : styles.theirBubble,
+                        mediaOnly && styles.mediaOnlyBubble,
                     ]}
                   >
                     {item.recalledAt ? (
@@ -861,7 +927,7 @@ export default function ChatScreen() {
                         ) : null}
                       </>
                     )}
-                    <MessageTime item={item} mine={mine} />
+                    <MessageTime item={item} mine={mine} mediaOnly={mediaOnly} />
                   </Pressable>
                   {!item.recalledAt ? (
                     <View
@@ -1058,6 +1124,46 @@ export default function ChatScreen() {
           </View>
         </View>
         <ChatMediaViewer item={preview} items={previewItems} onClose={() => { setPreview(null); setPreviewItems([]); }} />
+        <Modal
+          visible={Boolean(optionSheet)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setOptionSheet(null)}
+        >
+          <View style={styles.optionSheetOverlay}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setOptionSheet(null)} accessibilityLabel="Đóng tùy chọn" />
+            <View style={styles.optionSheet} accessibilityViewIsModal>
+              <View style={styles.optionSheetHandle} />
+              <Text style={styles.optionSheetTitle}>{optionSheet?.title}</Text>
+              <Text style={styles.optionSheetSubtitle}>{optionSheet?.subtitle}</Text>
+              <View style={styles.optionSheetActions}>
+                {optionSheet?.actions.map((action) => (
+                  <Pressable
+                    key={action.key}
+                    onPress={() => {
+                      setOptionSheet(null);
+                      action.onPress();
+                    }}
+                    style={({ pressed }) => [styles.optionSheetAction, action.tone === "danger" && styles.optionSheetDangerAction, pressed && styles.pressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel={action.label}
+                  >
+                    <View style={[styles.optionSheetIcon, action.tone === "danger" && styles.optionSheetDangerIcon]}>
+                      <MaterialIcons name={action.tone === "danger" ? "delete-outline" : "chevron-right"} size={20} color={action.tone === "danger" ? "#B42318" : "#1D4ED8"} />
+                    </View>
+                    <View style={styles.optionSheetActionCopy}>
+                      <Text style={[styles.optionSheetActionLabel, action.tone === "danger" && styles.optionSheetDangerLabel]}>{action.label}</Text>
+                      <Text style={styles.optionSheetActionDetail}>{action.detail}</Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+              <Pressable onPress={() => setOptionSheet(null)} style={({ pressed }) => [styles.optionSheetCancel, pressed && styles.pressed]} accessibilityRole="button">
+                <Text style={styles.optionSheetCancelText}>Đóng</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
         <ChatCameraCapture
           visible={cameraOpen}
           onClose={() => setCameraOpen(false)}
@@ -1139,7 +1245,11 @@ const styles = StyleSheet.create({
   },
   headerText: { flex: 1 },
   headerTitle: { color: "#172554", fontSize: 16, fontWeight: "800" },
-  headerSubtitle: { marginTop: 3, color: "#718096", fontSize: 11.5 },
+  headerSubtitleRow: { alignItems: "center", flexDirection: "row", gap: 5, marginTop: 3 },
+  headerSubtitle: { color: "#718096", fontSize: 11.5 },
+  presenceDot: { width: 7, height: 7, borderRadius: 4 },
+  presenceOnline: { backgroundColor: "#16A34A" },
+  presenceOffline: { backgroundColor: "#94A3B8" },
   callButton: {
     height: 36,
     width: 36,
@@ -1216,6 +1326,7 @@ const styles = StyleSheet.create({
   },
   mineBubble: { backgroundColor: "#2563EB", borderBottomRightRadius: 5 },
   theirBubble: { backgroundColor: "#E9EEF8", borderBottomLeftRadius: 5 },
+  mediaOnlyBubble: { backgroundColor: "transparent", paddingHorizontal: 0, paddingVertical: 0 },
   screenShareInvite: { minWidth: 215, flexDirection: "row", gap: 10, alignItems: "flex-start", paddingVertical: 3 },
   mineScreenShareInvite: {},
   screenShareInviteIcon: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#DCEAFF" },
@@ -1245,6 +1356,8 @@ const styles = StyleSheet.create({
   messageTime: { color: "#718096", fontSize: 10.5 },
   mineTime: { color: "#D9E5FF" },
   deliveryState: { color: "#D9E5FF", fontSize: 10.5, fontWeight: "700" },
+  mediaMessageTime: { color: "#64748B" },
+  mediaDeliveryState: { color: "#475569" },
   image: { width: 220, height: 190, borderRadius: 12, marginBottom: 3, borderColor: "rgba(255,255,255,0.92)", borderWidth: StyleSheet.hairlineWidth },
   videoFrame: {
     width: 220,
@@ -1252,7 +1365,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 3,
     overflow: "hidden",
-    backgroundColor: "#0B1630",
+    backgroundColor: "#17191D",
     borderColor: "rgba(255,255,255,0.92)",
     borderWidth: StyleSheet.hairlineWidth,
   },
@@ -1261,7 +1374,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 9,
-    backgroundColor: "#102A5A",
+    backgroundColor: "#24272D",
     pointerEvents: "none",
   },
   videoIcon: {
@@ -1273,6 +1386,22 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,.22)",
   },
   videoPreviewText: { color: "#E6F0FF", fontSize: 12.5, fontWeight: "700" },
+  optionSheetOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(15, 23, 42, 0.38)" },
+  optionSheet: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 18, borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: "#FFFFFF", shadowColor: "#0F172A", shadowOpacity: 0.2, shadowRadius: 20, elevation: 12 },
+  optionSheetHandle: { alignSelf: "center", width: 42, height: 5, borderRadius: 999, backgroundColor: "#CBD5E1", marginBottom: 14 },
+  optionSheetTitle: { color: "#172554", fontSize: 18, fontWeight: "800" },
+  optionSheetSubtitle: { color: "#64748B", fontSize: 12.5, lineHeight: 18, marginTop: 4 },
+  optionSheetActions: { gap: 8, marginTop: 16 },
+  optionSheetAction: { flexDirection: "row", alignItems: "center", gap: 11, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: "#F6F8FC", borderWidth: StyleSheet.hairlineWidth, borderColor: "#E2E8F0" },
+  optionSheetDangerAction: { backgroundColor: "#FFF7F6", borderColor: "#FECACA" },
+  optionSheetIcon: { width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center", backgroundColor: "#EAF2FF" },
+  optionSheetDangerIcon: { backgroundColor: "#FEE4E2" },
+  optionSheetActionCopy: { flex: 1, minWidth: 0 },
+  optionSheetActionLabel: { color: "#173F6C", fontSize: 14, fontWeight: "800" },
+  optionSheetDangerLabel: { color: "#B42318" },
+  optionSheetActionDetail: { color: "#64748B", fontSize: 11.5, lineHeight: 16, marginTop: 2 },
+  optionSheetCancel: { alignItems: "center", justifyContent: "center", minHeight: 46, marginTop: 12, borderRadius: 14, backgroundColor: "#EDF2F7" },
+  optionSheetCancelText: { color: "#334155", fontSize: 14, fontWeight: "800" },
   mediaCleaned: { flexDirection: "row", alignItems: "center", gap: 7, marginVertical: 3, paddingVertical: 5, paddingHorizontal: 7, borderRadius: 10, backgroundColor: "#F1F5F9" },
   mineMediaCleaned: { backgroundColor: "rgba(255,255,255,0.16)" },
   mediaCleanedText: { flex: 1, color: "#64748B", fontSize: 12, lineHeight: 17, fontStyle: "italic" },
