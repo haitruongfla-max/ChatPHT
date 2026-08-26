@@ -20,8 +20,7 @@ import {
 import { runMediaUploadQueue } from "@/lib/media-upload-queue";
 import { preserveStableMediaUrl } from "@/lib/stable-media-url";
 import { subscribeToConversationBackground } from "@/lib/conversation-background-realtime.native";
-import { CallingOverlay } from "@/src/features/webrtc-calling/components/CallingOverlay";
-import { useWebRTC } from "@/src/features/webrtc-calling/hooks/useWebRTC";
+import { useCalling } from "@/components/calling-manager";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
@@ -75,6 +74,12 @@ type OptionSheetAction = {
 };
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
+
+function formatCallMoment(value: Date | string | null) {
+  if (!value) return "Chưa có thời điểm";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Chưa có thời điểm" : date.toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
+}
 
 function VideoBubble({ uri, onOpen }: { uri: string; onOpen: () => void }) {
   return (
@@ -149,7 +154,7 @@ export default function ChatScreen() {
   const rawId = routeParams.id;
   const conversationId = Number(rawId);
   const isGroup = routeParams.group === "1";
-  const calling = useWebRTC({ conversationId, userId });
+  const calling = useCalling();
   const listRef = useRef<FlatList<TimelineMessage>>(null);
   const lastTypingHeartbeatAt = useRef(0);
   const [draft, setDraft] = useState("");
@@ -227,6 +232,10 @@ export default function ChatScreen() {
   const peerPresence = trpc.presence.forConversation.useQuery(
     { conversationId },
     { enabled: Boolean(user) && !isGroup && Number.isInteger(conversationId), refetchInterval: 12_000 },
+  );
+  const callHistory = trpc.calling.history.useQuery(
+    { conversationId },
+    { enabled: Boolean(user) && !isGroup && Number.isInteger(conversationId), refetchInterval: 8_000 },
   );
   const messageCount = messages.data?.length ?? 0;
   const stableMediaUrls = useRef(new Map<string, string>());
@@ -790,13 +799,13 @@ export default function ChatScreen() {
           </View>
           {!isGroup ? (
             <View style={styles.callActions}>
-              <Pressable onPress={() => void calling.startCall("voice")} style={({ pressed }) => [styles.callButton, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Gọi thoại">
+              <Pressable onPress={() => void calling.startCall({ conversationId, mode: "voice", peerName: header.title })} style={({ pressed }) => [styles.callButton, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Gọi thoại">
                 <MaterialIcons name="call" size={19} color="#1D4ED8" />
               </Pressable>
-              <Pressable onPress={() => void calling.startCall("video")} style={({ pressed }) => [styles.callButton, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Gọi video">
+              <Pressable onPress={() => void calling.startCall({ conversationId, mode: "video", peerName: header.title })} style={({ pressed }) => [styles.callButton, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Gọi video">
                 <MaterialIcons name="videocam" size={20} color="#1D4ED8" />
               </Pressable>
-              <Pressable onPress={() => void calling.startCall("screen")} style={({ pressed }) => [styles.callButton, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Chia sẻ màn hình">
+              <Pressable onPress={() => void calling.startCall({ conversationId, mode: "screen", peerName: header.title })} style={({ pressed }) => [styles.callButton, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Chia sẻ màn hình">
                 <MaterialIcons name="screen-share" size={19} color="#1D4ED8" />
               </Pressable>
             </View>
@@ -824,6 +833,33 @@ export default function ChatScreen() {
           keyExtractor={(item) => `message-${item.id}`}
           style={styles.list}
           contentContainerStyle={styles.listContent}
+          ListHeaderComponent={!isGroup && callHistory.data?.length ? (
+            <View style={styles.callHistorySection}>
+              <Text style={styles.callHistoryHeading}>Lịch sử cuộc gọi</Text>
+              {callHistory.data.slice(0, 6).map((call) => {
+                const missed = call.status === "missed";
+                const answered = Boolean(call.answeredAt);
+                const outgoing = call.callerId === user?.id;
+                const title = missed
+                  ? outgoing ? "Cuộc gọi đi nhỡ" : "Cuộc gọi nhỡ"
+                  : call.status === "declined" ? outgoing ? "Cuộc gọi bị từ chối" : "Đã từ chối cuộc gọi"
+                  : answered ? outgoing ? "Cuộc gọi đi đã kết nối" : "Cuộc gọi đến đã nghe"
+                  : "Cuộc gọi đã kết thúc";
+                const moment = answered ? call.answeredAt : call.endedAt ?? call.createdAt;
+                return (
+                  <View key={call.id} style={[styles.callHistoryCard, missed && styles.callHistoryMissed]}>
+                    <View style={[styles.callHistoryIcon, missed && styles.callHistoryIconMissed]}>
+                      <MaterialIcons name={missed ? "phone-missed" : outgoing ? "call-made" : "call-received"} size={19} color={missed ? "#DC2626" : "#2563EB"} />
+                    </View>
+                    <View style={styles.callHistoryContent}>
+                      <Text style={[styles.callHistoryTitle, missed && styles.callHistoryTitleMissed]}>{title}</Text>
+                      <Text style={styles.callHistoryDetail}>{call.p2pMode === "video" ? "Video" : call.p2pMode === "screen" ? "Chia sẻ màn hình" : "Thoại"} · {formatCallMoment(moment)}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() =>
             listRef.current?.scrollToEnd({ animated: false })
@@ -1221,7 +1257,6 @@ export default function ChatScreen() {
             </View>
           </SafeAreaView>
         </Modal>
-        {!isGroup ? <CallingOverlay controller={calling} peerName={header.title} /> : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1305,6 +1340,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   messageRow: { flexDirection: "row" },
+  callHistorySection: { paddingHorizontal: 16, paddingTop: 10 },
+  callHistoryHeading: { color: "#64748B", fontSize: 12, fontWeight: "800", marginBottom: 7, textTransform: "uppercase" },
   callHistoryRow: { alignItems: "center", marginVertical: 4 },
   callHistoryCard: {
     minWidth: 205,

@@ -10,7 +10,7 @@ import * as db from "./db";
 import { runMediaCleanup } from "./media-cleanup";
 import { dispatchNewMessagePushNotifications } from "./push";
 import { createMediaAccessUrl } from "./media-access";
-import { emitConversationBackgroundUpdated } from "./_core/realtime";
+import { emitConversationBackgroundUpdated, emitWebRTCCallInvite, emitWebRTCCallLifecycle } from "./_core/realtime";
 import { createOpaqueStorageKey, storageCreateUploadUrl, storageDelete, storagePut } from "./storage";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
@@ -846,6 +846,64 @@ export const appRouter = router({
           return { success: true as const };
         } catch (error) {
           return appError(error, "Không thể xóa vĩnh viễn tin nhắn.");
+        }
+      }),
+  }),
+  calling: router({
+    start: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), mode: z.enum(["voice", "video", "screen"]) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const session = await db.startWebRTCCall({ conversationId: input.conversationId, callerId: ctx.user.id, mode: input.mode });
+          emitWebRTCCallInvite(session);
+          return session;
+        } catch (error) {
+          return appError(error, "Không thể bắt đầu cuộc gọi.");
+        }
+      }),
+    incoming: protectedProcedure.query(async ({ ctx }) => {
+      return withSecureAvatarUrls(ctx, await db.listIncomingWebRTCCalls(ctx.user.id));
+    }),
+    accept: protectedProcedure
+      .input(z.object({ callId: z.string().trim().min(8).max(40) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const session = await db.acceptWebRTCCall(input.callId, ctx.user.id);
+          emitWebRTCCallLifecycle(session);
+          return session;
+        } catch (error) {
+          return appError(error, "Không thể nhận cuộc gọi.");
+        }
+      }),
+    decline: protectedProcedure
+      .input(z.object({ callId: z.string().trim().min(8).max(40) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const session = await db.declineWebRTCCall(input.callId, ctx.user.id);
+          emitWebRTCCallLifecycle(session);
+          return session;
+        } catch (error) {
+          return appError(error, "Không thể từ chối cuộc gọi.");
+        }
+      }),
+    end: protectedProcedure
+      .input(z.object({ callId: z.string().trim().min(8).max(40) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const session = await db.endWebRTCCall(input.callId, ctx.user.id);
+          emitWebRTCCallLifecycle(session);
+          return session;
+        } catch (error) {
+          return appError(error, "Không thể kết thúc cuộc gọi.");
+        }
+      }),
+    history: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        try {
+          return await db.listWebRTCCallHistory(input.conversationId, ctx.user.id);
+        } catch (error) {
+          return appError(error, "Không thể tải lịch sử cuộc gọi.");
         }
       }),
   }),

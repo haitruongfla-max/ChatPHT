@@ -1,6 +1,7 @@
 import { Modal, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
 import { CallControls } from "./CallControls";
+import { CallConnectionMeta } from "./CallConnectionMeta";
 import { CallMediaView } from "./CallMediaView";
 import type { WebRTCController } from "../types";
 
@@ -12,7 +13,7 @@ export function VideoCall({ controller, peerName }: { controller: WebRTCControll
       <SafeAreaView style={styles.screen}>
         <CallMediaView stream={state.remoteStream} style={styles.remote} />
         {!state.remoteStream ? <View style={styles.waiting}><Text style={styles.waitingText}>{state.status === "connected" ? "Đang chờ video đối phương" : "Đang kết nối P2P…"}</Text></View> : null}
-        <View style={styles.top}><Text style={styles.name}>{peerName}</Text><Text style={styles.status}>{state.isScreenSharing ? "Đang chia sẻ màn hình" : state.status === "connected" ? "Đã kết nối" : "Đang kết nối"}</Text></View>
+        <View style={styles.top}><Text style={styles.name}>{peerName}</Text><Text style={styles.status}>{state.isScreenSharing ? "Đang chia sẻ màn hình" : state.status === "connected" ? "Đã kết nối" : "Đang kết nối"}</Text><CallConnectionMeta controller={controller} light /></View>
         <View style={styles.local}><CallMediaView stream={state.localStream} mirror={!state.isScreenSharing} style={styles.localMedia} /></View>
         <View style={styles.bottom}><CallControls controller={controller} mode="video" /></View>
       </SafeAreaView>

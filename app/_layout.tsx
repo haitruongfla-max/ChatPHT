@@ -21,6 +21,7 @@ import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-run
 import { AppLockGate } from "@/components/app-lock-gate";
 import { PushNotificationManager } from "@/components/push-notification-manager";
 import { PresenceManager } from "@/components/presence-manager";
+import { CallingProvider } from "@/components/calling-manager";
 import { OtaUpdateManager } from "@/components/ota-update-manager";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
@@ -86,21 +87,23 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
-          {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
-          {/* If a screen needs the native header, explicitly enable it and set a human title via Stack.Screen options. */}
-          {/* in order for ios apps tab switching to work properly, use presentation: "fullScreenModal" for login page, whenever you decide to use presentation: "modal*/}
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="login" options={{ animation: "fade" }} />
-            <Stack.Screen name="search" options={{ presentation: "card" }} />
-            <Stack.Screen name="requests" options={{ presentation: "card" }} />
-            <Stack.Screen name="settings" options={{ presentation: "card" }} />
-            <Stack.Screen name="chat/[id]" options={{ presentation: "card" }} />
-          </Stack>
-          <PushNotificationManager />
-          <PresenceManager />
-          <OtaUpdateManager />
-          <AppLockGate />
+          <CallingProvider>
+            {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
+            {/* If a screen needs the native header, explicitly enable it and set a human title via Stack.Screen options. */}
+            {/* in order for ios apps tab switching to work properly, use presentation: "fullScreenModal" for login page, whenever you decide to use presentation: "modal*/}
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="login" options={{ animation: "fade" }} />
+              <Stack.Screen name="search" options={{ presentation: "card" }} />
+              <Stack.Screen name="requests" options={{ presentation: "card" }} />
+              <Stack.Screen name="settings" options={{ presentation: "card" }} />
+              <Stack.Screen name="chat/[id]" options={{ presentation: "card" }} />
+            </Stack>
+            <PushNotificationManager />
+            <PresenceManager />
+            <OtaUpdateManager />
+            <AppLockGate />
+          </CallingProvider>
           <StatusBar style="auto" />
         </QueryClientProvider>
       </trpc.Provider>

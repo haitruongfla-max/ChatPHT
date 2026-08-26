@@ -1,6 +1,7 @@
 import { Modal, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
 import { CallControls } from "./CallControls";
+import { CallConnectionMeta } from "./CallConnectionMeta";
 import { CallMediaView } from "./CallMediaView";
 import type { WebRTCController } from "../types";
 
@@ -12,7 +13,7 @@ export function ScreenShare({ controller, peerName }: { controller: WebRTCContro
       <SafeAreaView style={styles.screen}>
         <CallMediaView stream={state.remoteStream} style={styles.remote} />
         {!state.remoteStream ? <View style={styles.waiting}><Text style={styles.waitingText}>Đang chờ nội dung được chia sẻ…</Text></View> : null}
-        <View style={styles.top}><Text style={styles.name}>{peerName}</Text><Text style={styles.status}>{state.hasSystemAudio ? "Chia sẻ màn hình kèm âm thanh hệ thống" : "Đang chia sẻ màn hình"}</Text></View>
+        <View style={styles.top}><Text style={styles.name}>{peerName}</Text><Text style={styles.status}>{state.hasSystemAudio ? "Chia sẻ màn hình kèm âm thanh hệ thống" : "Đang chia sẻ màn hình"}</Text><CallConnectionMeta controller={controller} light /></View>
         <View style={styles.preview}><CallMediaView stream={state.localStream} style={styles.previewMedia} /></View>
         <View style={styles.bottom}><CallControls controller={controller} mode="screen" /></View>
       </SafeAreaView>

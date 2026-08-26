@@ -2,23 +2,20 @@ import { getSessionToken } from "@/lib/_core/auth";
 import { getApiBaseUrl } from "@/constants/oauth";
 import { io, type Socket } from "socket.io-client";
 
-import type { CallSignal } from "../types";
-
-type SignalingOptions = {
-  conversationId: number;
-  onSignal: (signal: CallSignal) => void;
-};
+import type { CallLifecycleEvent, CallSignal } from "../types";
 
 type Acknowledgement = { ok: boolean; error?: string };
 
-/**
- * Kết nối signaling ngắn hạn, xác thực bằng token trên native hoặc cookie trên web.
- * Không lưu SDP/candidate: Socket.IO chỉ relay cho phòng chat 1:1 đang hoạt động.
- */
-export function createCallSignaling({ conversationId, onSignal }: SignalingOptions) {
-  let socket: Socket | null = null;
+type SignalingListener = {
+  onSignal?: (signal: CallSignal) => void;
+  onInvite?: (event: CallLifecycleEvent) => void;
+  onLifecycle?: (event: CallLifecycleEvent) => void;
+};
 
-  const awaitAcknowledgement = (event: string, payload: unknown) =>
+let socket: Socket | null = null;
+const listeners = new Set<SignalingListener>();
+
+const awaitAcknowledgement = (event: string, payload: unknown) =>
     new Promise<Acknowledgement>((resolve) => {
       if (!socket) {
         resolve({ ok: false, error: "Kết nối signaling chưa sẵn sàng." });
@@ -30,9 +27,14 @@ export function createCallSignaling({ conversationId, onSignal }: SignalingOptio
       });
     });
 
-  return {
-    async connect() {
-      if (socket?.connected) return;
+/**
+ * Một kết nối Socket.IO xác thực duy nhất cho toàn bộ tài khoản. Server tự đưa socket
+ * vào room `user:<id>`, vì vậy lời mời không còn phụ thuộc màn hình chat đang mount.
+ */
+export const callSignaling = {
+  async connect() {
+    if (socket?.connected) return;
+    if (socket) socket.disconnect();
       const token = await getSessionToken();
       socket = io(getApiBaseUrl(), {
         path: "/api/realtime",
@@ -53,19 +55,21 @@ export function createCallSignaling({ conversationId, onSignal }: SignalingOptio
           reject(new Error("Phiên đăng nhập signaling không hợp lệ hoặc máy chủ không phản hồi."));
         });
       });
-      socket.on("webrtc_call_signal", onSignal);
-      const joined = await awaitAcknowledgement("join_conversation", { conversationId });
-      if (!joined.ok) throw new Error(joined.error ?? "Bạn không có quyền gọi trong hội thoại này.");
-    },
-    async send(signal: CallSignal) {
-      const result = await awaitAcknowledgement("webrtc_call_signal", signal);
-      if (!result.ok) throw new Error(result.error ?? "Không thể gửi tín hiệu cuộc gọi.");
-    },
-    disconnect() {
-      socket?.off("webrtc_call_signal", onSignal);
-      socket?.emit("leave_conversation", { conversationId });
-      socket?.disconnect();
-      socket = null;
-    },
-  };
-}
+      socket.on("webrtc_call_signal", (event: CallSignal) => listeners.forEach((listener) => listener.onSignal?.(event)));
+      socket.on("webrtc_call_invite", (event: CallLifecycleEvent) => listeners.forEach((listener) => listener.onInvite?.(event)));
+      socket.on("webrtc_call_lifecycle", (event: CallLifecycleEvent) => listeners.forEach((listener) => listener.onLifecycle?.(event)));
+  },
+  async send(signal: CallSignal) {
+    await this.connect();
+    const result = await awaitAcknowledgement("webrtc_call_signal", signal);
+    if (!result.ok) throw new Error(result.error ?? "Không thể gửi tín hiệu cuộc gọi.");
+  },
+  subscribe(listener: SignalingListener) {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  },
+  disconnect() {
+    socket?.disconnect();
+    socket = null;
+  },
+};

@@ -436,3 +436,9 @@
 - [x] Chạy hồi quy nguồn 110 kiểm thử, web export, Android export/config và lập checklist nghiệm thu hai Android thật cho WebRTC Calling.
 - [ ] Nghiệm thu media WebRTC thủ công: hai tài khoản ở hai phiên web độc lập, sau đó hai Android qua Wi-Fi và 4G.
 - [x] Tăng version/releaseId, tạo checkpoint, build APK signed GitHub và xác minh asset/checksum trước bàn giao.
+- [x] Chẩn đoán signaling thực tế khi người nhận không nhận được lời mời và sửa luồng offer/answer/ICE cho cuộc gọi 1:1.
+- [x] Bổ sung vòng đời cuộc gọi có trạng thái đổ chuông, đang gọi, đã nhận, bị từ chối, đã kết thúc và cuộc gọi nhỡ với thời điểm chính xác.
+- [x] Thêm nhạc chờ cho người gọi và nhạc chuông cho người nhận, dừng đúng lúc nhận/từ chối/kết thúc và tuân thủ chế độ âm thanh thiết bị.
+- [x] Hiển thị thời lượng sau kết nối thành công và ping ước lượng từ WebRTC stats trong màn hình Voice/Video/Screen Share.
+- [x] Hiển thị lời mời đến đáng tin cậy cho người nhận trong khi ứng dụng đang hoạt động, cùng ghi nhận lịch sử cuộc gọi trong chat/inbox.
+- [ ] Chạy hồi quy, nghiệm thu hai tài khoản thực trên Wi-Fi/4G, tăng định danh và phát hành APK GitHub mới.

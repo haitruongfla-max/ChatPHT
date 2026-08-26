@@ -144,8 +144,9 @@ export const storageSettings = mysqlTable("storage_settings", {
 });
 
 /**
- * Historical call records retained only to preserve existing MySQL data.
- * The application has no active call feature and must not re-enable the retired P2P architecture.
+ * Phiên gọi 1:1 của module `webrtc-calling` cô lập.
+ * Bảng này chỉ lưu metadata lifecycle (không bao giờ lưu SDP, ICE candidate hoặc TURN credential)
+ * và không tái sử dụng bất kỳ route/transport P2P cũ nào đã nghỉ hưu.
  */
 export const callSessions = mysqlTable(
   "call_sessions",

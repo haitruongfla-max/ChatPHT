@@ -1027,6 +1027,202 @@ export async function getConversationPeer(conversationId: number, userId: number
   return peer ? toPublicProfile(peer) : undefined;
 }
 
+export type WebRTCCallMode = "voice" | "video" | "screen";
+export type WebRTCCallStatus = "ringing" | "active" | "declined" | "ended" | "missed";
+
+const WEBRTC_RING_TIMEOUT_MS = 45_000;
+
+function isWebRTCCallMode(value: string): value is WebRTCCallMode {
+  return value === "voice" || value === "video" || value === "screen";
+}
+
+function createWebRTCCallId() {
+  return `call_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
+function getCallKind(mode: WebRTCCallMode): "audio" | "video" {
+  return mode === "voice" ? "audio" : "video";
+}
+
+/** Đánh dấu các cuộc đổ chuông quá hạn là cuộc gọi nhỡ trước mọi truy vấn lifecycle. */
+export async function expireWebRTCRingingCalls(now = new Date()) {
+  const db = requireDb(await getDb());
+  await db
+    .update(callSessions)
+    .set({ status: "missed", endedAt: now })
+    .where(and(eq(callSessions.status, "ringing"), lt(callSessions.expiresAt, now)));
+}
+
+/**
+ * Tạo phiên gọi 1:1 có thời hạn tại server. ID không do client sinh và database
+ * chỉ nhận metadata cần cho lịch sử/lifecycle, tuyệt đối không chứa SDP/ICE.
+ */
+export async function startWebRTCCall(input: {
+  conversationId: number;
+  callerId: number;
+  mode: WebRTCCallMode;
+}) {
+  if (!isWebRTCCallMode(input.mode)) throw new Error("Chế độ gọi không hợp lệ.");
+  const db = requireDb(await getDb());
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    await tx
+      .update(callSessions)
+      .set({ status: "missed", endedAt: now })
+      .where(and(eq(callSessions.status, "ringing"), lt(callSessions.expiresAt, now)));
+
+    const [conversation] = await tx
+      .select({ id: conversations.id, kind: conversations.kind })
+      .from(conversations)
+      .where(eq(conversations.id, input.conversationId))
+      .limit(1);
+    if (!conversation || conversation.kind !== "direct") {
+      throw new Error("Chỉ hội thoại 1:1 mới có thể bắt đầu cuộc gọi.");
+    }
+
+    const members = await tx
+      .select({ userId: conversationMembers.userId })
+      .from(conversationMembers)
+      .where(eq(conversationMembers.conversationId, input.conversationId));
+    const recipient = members.find((member) => member.userId !== input.callerId);
+    if (!members.some((member) => member.userId === input.callerId) || !recipient || members.length !== 2) {
+      throw new Error("Không thể xác định hai thành viên của cuộc gọi 1:1.");
+    }
+
+    const activeSessions = await tx
+      .select({ id: callSessions.id, status: callSessions.status, callerId: callSessions.callerId })
+      .from(callSessions)
+      .where(and(eq(callSessions.conversationId, input.conversationId), inArray(callSessions.status, ["ringing", "active"])) )
+      .limit(1);
+    if (activeSessions[0]) {
+      if (activeSessions[0].callerId === input.callerId && activeSessions[0].status === "ringing") {
+        const [existing] = await tx.select().from(callSessions).where(eq(callSessions.id, activeSessions[0].id)).limit(1);
+        if (existing) return existing;
+      }
+      throw new Error("Hội thoại này đang có một cuộc gọi khác.");
+    }
+
+    const id = createWebRTCCallId();
+    const expiresAt = new Date(now.getTime() + WEBRTC_RING_TIMEOUT_MS);
+    const p2pMode: "audio" | "video" | "screen" = input.mode === "voice" ? "audio" : input.mode;
+    const session = {
+      id,
+      conversationId: input.conversationId,
+      callerId: input.callerId,
+      recipientId: recipient.userId,
+      room: `webrtc:${id}`,
+      kind: getCallKind(input.mode),
+      p2pMode,
+      provider: "p2p" as const,
+      isGroup: false,
+      status: "ringing" as const,
+      expiresAt,
+    };
+    await tx.insert(callSessions).values(session);
+    await tx.insert(callParticipants).values([
+      { callId: id, userId: input.callerId, joinedAt: now },
+      { callId: id, userId: recipient.userId },
+    ]);
+    return { ...session, answeredAt: null, endedAt: null, createdAt: now };
+  });
+}
+
+/** Chỉ trả về phiên gọi nếu người yêu cầu thực sự là một trong hai thành viên 1:1. */
+export async function getWebRTCCallForParticipant(callId: string, userId: number) {
+  await expireWebRTCRingingCalls();
+  const db = requireDb(await getDb());
+  const [session] = await db.select().from(callSessions).where(eq(callSessions.id, callId)).limit(1);
+  if (!session || (session.callerId !== userId && session.recipientId !== userId) || session.isGroup || session.provider !== "p2p") {
+    return undefined;
+  }
+  return session;
+}
+
+/** Danh sách cuộc gọi đến còn đổ chuông của người dùng đang đăng nhập. */
+export async function listIncomingWebRTCCalls(recipientId: number) {
+  await expireWebRTCRingingCalls();
+  const db = requireDb(await getDb());
+  const sessions = await db
+    .select()
+    .from(callSessions)
+    .where(and(eq(callSessions.recipientId, recipientId), eq(callSessions.status, "ringing")))
+    .orderBy(desc(callSessions.createdAt));
+  return Promise.all(sessions.map(async (session) => ({
+    ...session,
+    caller: await getUserById(session.callerId).then((user) => user ? toPublicProfile(user) : null),
+  })));
+}
+
+/** Người nhận chấp nhận cuộc gọi trước khi caller gửi offer SDP. */
+export async function acceptWebRTCCall(callId: string, recipientId: number) {
+  const db = requireDb(await getDb());
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    await tx
+      .update(callSessions)
+      .set({ status: "missed", endedAt: now })
+      .where(and(eq(callSessions.status, "ringing"), lt(callSessions.expiresAt, now)));
+    const [session] = await tx.select().from(callSessions).where(eq(callSessions.id, callId)).limit(1);
+    if (!session || session.recipientId !== recipientId || session.status !== "ringing" || session.expiresAt.getTime() <= now.getTime()) {
+      throw new Error("Cuộc gọi không còn chờ để nhận.");
+    }
+    await tx
+      .update(callSessions)
+      .set({ status: "active", answeredAt: now })
+      .where(eq(callSessions.id, callId));
+    await tx
+      .update(callParticipants)
+      .set({ joinedAt: now })
+      .where(and(eq(callParticipants.callId, callId), eq(callParticipants.userId, recipientId)));
+    return { ...session, status: "active" as const, answeredAt: now };
+  });
+}
+
+export async function declineWebRTCCall(callId: string, recipientId: number) {
+  const db = requireDb(await getDb());
+  const now = new Date();
+  const [session] = await db.select().from(callSessions).where(eq(callSessions.id, callId)).limit(1);
+  if (!session || session.recipientId !== recipientId || session.status !== "ringing") {
+    throw new Error("Cuộc gọi không còn chờ để từ chối.");
+  }
+  await db.update(callSessions).set({ status: "declined", endedAt: now }).where(eq(callSessions.id, callId));
+  await db
+    .update(callParticipants)
+    .set({ leftAt: now })
+    .where(and(eq(callParticipants.callId, callId), eq(callParticipants.userId, recipientId)));
+  return { ...session, status: "declined" as const, endedAt: now };
+}
+
+/** Caller có thể hủy lúc đổ chuông; cả hai bên có thể kết thúc sau khi đã nhận. */
+export async function endWebRTCCall(callId: string, actorId: number) {
+  const db = requireDb(await getDb());
+  const now = new Date();
+  const [session] = await db.select().from(callSessions).where(eq(callSessions.id, callId)).limit(1);
+  if (!session || (session.callerId !== actorId && session.recipientId !== actorId) || !["ringing", "active"].includes(session.status)) {
+    throw new Error("Cuộc gọi không thể kết thúc từ tài khoản này.");
+  }
+  const terminalStatus: "ended" | "missed" = session.status === "ringing" && session.expiresAt.getTime() <= now.getTime() ? "missed" : "ended";
+  await db.update(callSessions).set({ status: terminalStatus, endedAt: now }).where(eq(callSessions.id, callId));
+  await db
+    .update(callParticipants)
+    .set({ leftAt: now })
+    .where(and(eq(callParticipants.callId, callId), eq(callParticipants.userId, actorId)));
+  return { ...session, status: terminalStatus, endedAt: now };
+}
+
+/** Lịch sử tối thiểu cho chat 1:1, gồm mốc tạo/nhận/kết thúc và đối tác hiển thị. */
+export async function listWebRTCCallHistory(conversationId: number, userId: number) {
+  if (!(await isDirectConversationMember(conversationId, userId))) throw new Error("Bạn không có quyền xem lịch sử cuộc gọi này.");
+  await expireWebRTCRingingCalls();
+  const db = requireDb(await getDb());
+  return db
+    .select()
+    .from(callSessions)
+    .where(and(eq(callSessions.conversationId, conversationId), eq(callSessions.provider, "p2p"), eq(callSessions.isGroup, false)))
+    .orderBy(desc(callSessions.createdAt))
+    .limit(40);
+}
+
 export async function getAdminOperationalStats() {
   const db = requireDb(await getDb());
   const groupRows = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.kind, "group"));

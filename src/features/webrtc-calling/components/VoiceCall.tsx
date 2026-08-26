@@ -2,6 +2,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Modal, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
 import { CallControls } from "./CallControls";
+import { CallConnectionMeta } from "./CallConnectionMeta";
 import type { WebRTCController } from "../types";
 
 const STATUS = { preparing: "Đang chuẩn bị micro", connecting: "Đang kết nối P2P", connected: "Đã kết nối", failed: "Không thể kết nối" } as const;
@@ -15,6 +16,7 @@ export function VoiceCall({ controller, peerName }: { controller: WebRTCControll
         <View style={styles.avatar}><MaterialIcons name="person" size={58} color="#BFDBFE" /></View>
         <Text style={styles.name}>{peerName}</Text>
         <Text style={styles.status}>{status}</Text>
+        <CallConnectionMeta controller={controller} />
         <View style={styles.spacer} />
         <CallControls controller={controller} mode="voice" />
       </SafeAreaView>

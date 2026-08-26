@@ -2,10 +2,13 @@ import { setAudioModeAsync } from "expo-audio";
 import { Platform } from "react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { trpc } from "@/lib/trpc";
+
 import { PEER_CONNECTION_CONFIG } from "../config/iceServers.js";
-import { createCallSignaling } from "../services/callSignaling";
+import { callSignaling } from "../services/callSignaling";
+import { callToneManager } from "../services/callToneManager";
 import { webrtcService } from "../services/webrtcService";
-import type { CallMode, CallSignal, CallStatus, WebRTCController, WebRTCMediaStream } from "../types";
+import type { CallLifecycleEvent, CallMode, CallSignal, CallStatus, WebRTCController, WebRTCMediaStream } from "../types";
 
 type PeerConnectionLike = {
   addTrack: (track: unknown, stream: unknown) => unknown;
@@ -14,11 +17,12 @@ type PeerConnectionLike = {
   close: () => void;
   createAnswer: () => Promise<RTCSessionDescriptionInit>;
   createOffer: (options?: RTCOfferOptions) => Promise<RTCSessionDescriptionInit>;
-  getSenders: () => Array<{ track?: { kind?: string } | null; replaceTrack: (track: unknown) => Promise<void> }>;
+  getSenders: () => { track?: { kind?: string } | null; replaceTrack: (track: unknown) => Promise<void> }[];
   setLocalDescription: (description: unknown) => Promise<void>;
   setRemoteDescription: (description: unknown) => Promise<void>;
   remoteDescription?: unknown;
   connectionState?: string;
+  getStats?: () => Promise<{ forEach: (callback: (report: unknown) => void) => void }>;
   onicecandidate: ((event: { candidate?: { toJSON?: () => Record<string, unknown> } | null }) => void) | null;
   ontrack: ((event: { track: unknown; streams?: WebRTCMediaStream[] }) => void) | null;
   onconnectionstatechange: (() => void) | null;
@@ -30,6 +34,8 @@ const INITIAL_STATE: ControllerState = {
   status: "idle",
   mode: null,
   callId: null,
+  conversationId: null,
+  direction: null,
   localStream: null,
   remoteStream: null,
   isMuted: false,
@@ -37,6 +43,8 @@ const INITIAL_STATE: ControllerState = {
   isSpeakerOn: false,
   isScreenSharing: false,
   hasSystemAudio: false,
+  durationSeconds: 0,
+  pingMs: null,
   error: null,
 };
 
@@ -48,10 +56,6 @@ function describeMediaError(error: unknown) {
   return error instanceof Error ? error.message : "Không thể chuẩn bị cuộc gọi. Vui lòng thử lại.";
 }
 
-function randomCallId() {
-  return globalThis.crypto?.randomUUID?.() ?? `call-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
 function stopStream(stream: WebRTCMediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop?.());
 }
@@ -60,11 +64,10 @@ function stopStream(stream: WebRTCMediaStream | null) {
  * Core WebRTC duy nhất của module. UI thoại/video/chia sẻ chỉ đọc state và gọi
  * các action ở đây; không có UI nào tự tạo peer connection hoặc socket riêng.
  */
-export function useWebRTC({ conversationId, userId }: { conversationId: number; userId: number | undefined }): WebRTCController {
+export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCController {
   const [state, setState] = useState<ControllerState>(INITIAL_STATE);
   const stateRef = useRef(state);
   const peerRef = useRef<PeerConnectionLike | null>(null);
-  const signalingRef = useRef<ReturnType<typeof createCallSignaling> | null>(null);
   const localStreamRef = useRef<WebRTCMediaStream | null>(null);
   const displayStreamRef = useRef<WebRTCMediaStream | null>(null);
   const remoteStreamRef = useRef<WebRTCMediaStream | null>(null);
@@ -73,6 +76,12 @@ export function useWebRTC({ conversationId, userId }: { conversationId: number; 
   const isFrontCameraRef = useRef(true);
   const systemAudioSenderRef = useRef<unknown | null>(null);
   const didAttemptIceRestartRef = useRef(false);
+  const outgoingOfferStartedRef = useRef(false);
+  const connectedAtRef = useRef<number | null>(null);
+  const startMutation = trpc.calling.start.useMutation();
+  const acceptMutation = trpc.calling.accept.useMutation();
+  const declineMutation = trpc.calling.decline.useMutation();
+  const endMutation = trpc.calling.end.useMutation();
 
   const updateState = useCallback((patch: Partial<ControllerState>) => {
     stateRef.current = { ...stateRef.current, ...patch };
@@ -101,6 +110,8 @@ export function useWebRTC({ conversationId, userId }: { conversationId: number; 
     remoteStreamRef.current = null;
     incomingOfferRef.current = null;
     pendingCandidatesRef.current = [];
+    outgoingOfferStartedRef.current = false;
+    connectedAtRef.current = null;
     try {
       await setAudioModeAsync({ allowsRecording: false, shouldRouteThroughEarpiece: false });
     } catch {
@@ -110,10 +121,10 @@ export function useWebRTC({ conversationId, userId }: { conversationId: number; 
   }, [updateState]);
 
   const sendSignal = useCallback(async (signal: CallSignal) => {
-    await signalingRef.current?.send(signal);
+    await callSignaling.send(signal);
   }, []);
 
-  const createPeer = useCallback((callId: string, mode: CallMode, localStream: WebRTCMediaStream) => {
+  const createPeer = useCallback((callId: string, conversationId: number, mode: CallMode, localStream: WebRTCMediaStream) => {
     const peer = webrtcService.createPeerConnection(PEER_CONNECTION_CONFIG as unknown as RTCConfiguration) as unknown as PeerConnectionLike;
     peerRef.current = peer;
     remoteStreamRef.current = webrtcService.createRemoteStream();
@@ -133,7 +144,10 @@ export function useWebRTC({ conversationId, userId }: { conversationId: number; 
       updateState({ remoteStream: stream });
     };
     peer.onconnectionstatechange = () => {
-      if (peer.connectionState === "connected") updateState({ status: "connected", error: null });
+      if (peer.connectionState === "connected") {
+        connectedAtRef.current ??= Date.now();
+        updateState({ status: "connected", error: null, durationSeconds: 0, pingMs: null });
+      }
       if (peer.connectionState !== "failed") return;
       const currentCall = stateRef.current;
       if (!didAttemptIceRestartRef.current && currentCall.callId === callId && currentCall.mode === mode) {
@@ -163,16 +177,17 @@ export function useWebRTC({ conversationId, userId }: { conversationId: number; 
     return stream;
   }, []);
 
-  const renegotiate = useCallback(async (callId: string, mode: CallMode) => {
+  const renegotiate = useCallback(async (callId: string, conversationId: number, mode: CallMode) => {
     const peer = peerRef.current;
     if (!peer) return;
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
     await sendSignal({ conversationId, callId, mode, type: "offer", payload: { description: offer } });
-  }, [conversationId, sendSignal]);
+  }, [sendSignal]);
 
   const handleSignal = useCallback(async (signal: CallSignal) => {
-    if (signal.conversationId !== conversationId || signal.fromUserId === userId) return;
+    const current = stateRef.current;
+    if (signal.conversationId !== current.conversationId || signal.fromUserId === userId) return;
     if (!signal.callId || !signal.type) return;
 
     if (signal.type === "offer") {
@@ -190,7 +205,7 @@ export function useWebRTC({ conversationId, userId }: { conversationId: number; 
         const answer = await activePeer.createAnswer();
         await activePeer.setLocalDescription(answer);
         await sendSignal({
-          conversationId,
+          conversationId: current.conversationId,
           callId: signal.callId,
           mode: signal.mode,
           type: "answer",
@@ -221,89 +236,165 @@ export function useWebRTC({ conversationId, userId }: { conversationId: number; 
       return;
     }
     if (signal.type === "hangup") await releaseResources("ended");
-  }, [conversationId, flushCandidates, releaseResources, updateState, userId]);
+  }, [flushCandidates, releaseResources, sendSignal, updateState, userId]);
 
-  useEffect(() => {
-    if (!Number.isInteger(conversationId) || !userId) return;
-    const signaling = createCallSignaling({ conversationId, onSignal: (signal) => void handleSignal(signal) });
-    signalingRef.current = signaling;
-    void signaling.connect().catch((error) => updateState({ error: describeMediaError(error) }));
-    return () => {
-      signaling.disconnect();
-      signalingRef.current = null;
-      void releaseResources("ended");
-    };
-  }, [conversationId, handleSignal, releaseResources, updateState, userId]);
+  const addInitialScreenTracks = useCallback(async (peer: PeerConnectionLike) => {
+    const display = await webrtcService.getDisplayMedia();
+    displayStreamRef.current = display;
+    const screenTrack = display.getVideoTracks()[0];
+    if (!screenTrack) throw new Error("Thiết bị không trả về hình ảnh màn hình để chia sẻ.");
+    peer.addTrack(screenTrack, display);
+    const systemAudioTrack = display.getAudioTracks()[0];
+    if (systemAudioTrack) systemAudioSenderRef.current = peer.addTrack(systemAudioTrack, display);
+    screenTrack.onended = () => { void releaseResources("ended"); };
+    updateState({ isScreenSharing: true, hasSystemAudio: display.getAudioTracks().length > 0, localStream: display });
+  }, [releaseResources, updateState]);
 
-  const startCall = useCallback(async (mode: CallMode) => {
-    if (stateRef.current.status !== "idle" && stateRef.current.status !== "ended") return;
-    const callId = randomCallId();
-    updateState({ ...INITIAL_STATE, status: "preparing", mode, callId, isCameraEnabled: mode === "video" });
-    try {
-      await signalingRef.current?.connect();
-      const mediaMode: CallMode = mode === "video" ? "video" : "voice";
-      const localStream = await prepareLocalMedia(mediaMode);
-      const peer = createPeer(callId, mode, localStream);
-      if (mode === "screen") await (async () => {
-        const display = await webrtcService.getDisplayMedia();
-        displayStreamRef.current = display;
-        const screenTrack = display.getVideoTracks()[0];
-        if (!screenTrack) throw new Error("Thiết bị không trả về hình ảnh màn hình để chia sẻ.");
-        peer.addTrack(screenTrack, display);
-        const systemAudioTrack = display.getAudioTracks()[0];
-        if (systemAudioTrack) systemAudioSenderRef.current = peer.addTrack(systemAudioTrack, display);
-        screenTrack.onended = () => { void releaseResources("ended"); };
-        updateState({ isScreenSharing: true, hasSystemAudio: display.getAudioTracks().length > 0, localStream: display });
-      })();
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      await sendSignal({ conversationId, callId, mode, type: "offer", payload: { description: offer } });
-      updateState({ status: "connecting", localStream: mode === "screen" ? displayStreamRef.current : localStream });
-    } catch (error) {
-      await releaseResources("failed");
-      updateState({ error: describeMediaError(error) });
-    }
-  }, [conversationId, createPeer, prepareLocalMedia, releaseResources, sendSignal, updateState]);
-
-  const answerIncomingCall = useCallback(async () => {
-    const incoming = incomingOfferRef.current;
-    if (!incoming) return;
+  const beginOutgoingOffer = useCallback(async () => {
+    const current = stateRef.current;
+    if (outgoingOfferStartedRef.current || !current.callId || !current.conversationId || !current.mode) return;
+    outgoingOfferStartedRef.current = true;
     updateState({ status: "preparing", error: null });
     try {
-      await signalingRef.current?.connect();
-      const mediaMode: CallMode = incoming.mode === "video" ? "video" : "voice";
+      await callSignaling.connect();
+      const mediaMode: CallMode = current.mode === "video" ? "video" : "voice";
       const localStream = await prepareLocalMedia(mediaMode);
-      const peer = createPeer(incoming.callId, incoming.mode, localStream);
-      const description = incoming.payload?.description as RTCSessionDescriptionInit | undefined;
-      if (!description) throw new Error("Lời mời gọi không chứa offer hợp lệ.");
-      await peer.setRemoteDescription(webrtcService.createSessionDescription(description));
-      await flushCandidates();
-      const answer = await peer.createAnswer();
-      await peer.setLocalDescription(answer);
-      await sendSignal({ conversationId, callId: incoming.callId, mode: incoming.mode, type: "answer", payload: { description: answer } });
-      updateState({ status: "connecting", mode: incoming.mode, callId: incoming.callId, localStream });
-      incomingOfferRef.current = null;
+      const peer = createPeer(current.callId, current.conversationId, current.mode, localStream);
+      if (current.mode === "screen") await addInitialScreenTracks(peer);
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      await sendSignal({ conversationId: current.conversationId, callId: current.callId, mode: current.mode, type: "offer", payload: { description: offer } });
+      updateState({ status: "connecting", localStream: current.mode === "screen" ? displayStreamRef.current : localStream });
     } catch (error) {
       await releaseResources("failed");
       updateState({ error: describeMediaError(error) });
     }
-  }, [conversationId, createPeer, flushCandidates, prepareLocalMedia, releaseResources, sendSignal, updateState]);
+  }, [addInitialScreenTracks, createPeer, prepareLocalMedia, releaseResources, sendSignal, updateState]);
+
+  const handleLifecycle = useCallback((event: CallLifecycleEvent) => {
+    if (!userId) return;
+    const current = stateRef.current;
+    if (event.status === "ringing" && event.recipientId === userId && (current.status === "idle" || current.status === "ended")) {
+      updateState({ ...INITIAL_STATE, status: "ringing", callId: event.callId, conversationId: event.conversationId, mode: event.mode, direction: "incoming" });
+      return;
+    }
+    if (event.callId !== current.callId) return;
+    if (event.status === "active") {
+      if (event.callerId === userId) void beginOutgoingOffer();
+      else if (current.status === "ringing") updateState({ status: "connecting", error: null });
+      return;
+    }
+    if (event.status === "declined" || event.status === "ended" || event.status === "missed") {
+      void releaseResources("ended").then(() => {
+        if (event.status === "missed") updateState({ error: "Cuộc gọi đã nhỡ." });
+        if (event.status === "declined") updateState({ error: "Người nhận đã từ chối cuộc gọi." });
+      });
+    }
+  }, [beginOutgoingOffer, releaseResources, updateState, userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    const unsubscribe = callSignaling.subscribe({ onSignal: (signal) => void handleSignal(signal), onInvite: handleLifecycle, onLifecycle: handleLifecycle });
+    void callSignaling.connect().catch((error) => updateState({ error: describeMediaError(error) }));
+    return () => {
+      unsubscribe();
+      callSignaling.disconnect();
+      void releaseResources("ended");
+    };
+  }, [handleLifecycle, handleSignal, releaseResources, updateState, userId]);
+
+  useEffect(() => {
+    const tone = state.status === "ringing" ? (state.direction === "incoming" ? "incoming" : "outgoing") : null;
+    if (tone) void callToneManager.start(tone);
+    else void callToneManager.stop();
+    return () => { void callToneManager.stop(); };
+  }, [state.direction, state.status]);
+
+  useEffect(() => {
+    if (state.status !== "connected") return;
+    connectedAtRef.current ??= Date.now();
+    let disposed = false;
+    const refreshMetrics = async () => {
+      const connectedAt = connectedAtRef.current;
+      if (!connectedAt || disposed) return;
+      const durationSeconds = Math.max(0, Math.floor((Date.now() - connectedAt) / 1_000));
+      let pingMs: number | null = null;
+      try {
+        const stats = await peerRef.current?.getStats?.();
+        stats?.forEach((report) => {
+          if (!report || typeof report !== "object") return;
+          const item = report as Record<string, unknown>;
+          const candidatePair = item.type === "candidate-pair" && (item.nominated === true || item.state === "succeeded");
+          const remoteInbound = item.type === "remote-inbound-rtp";
+          const rttSeconds = typeof item.currentRoundTripTime === "number" ? item.currentRoundTripTime : null;
+          if ((candidatePair || remoteInbound) && rttSeconds !== null && rttSeconds >= 0) pingMs = Math.round(rttSeconds * 1_000);
+        });
+      } catch {
+        // Một số native engine không công bố stats; giao diện giữ trạng thái đang đo thay vì số giả.
+      }
+      if (!disposed) updateState({ durationSeconds, pingMs });
+    };
+    void refreshMetrics();
+    const interval = setInterval(() => { void refreshMetrics(); }, 1_000);
+    return () => { disposed = true; clearInterval(interval); };
+  }, [state.status, updateState]);
+
+  const startCall = useCallback(async (conversationId: number, mode: CallMode) => {
+    if (stateRef.current.status !== "idle" && stateRef.current.status !== "ended") return;
+    updateState({ ...INITIAL_STATE, status: "preparing", conversationId, mode, direction: "outgoing", isCameraEnabled: mode === "video" });
+    try {
+      await callSignaling.connect();
+      const session = await startMutation.mutateAsync({ conversationId, mode });
+      updateState({ status: "ringing", callId: session.id, conversationId, mode, direction: "outgoing", isCameraEnabled: mode === "video", error: null });
+    } catch (error) {
+      await releaseResources("failed");
+      updateState({ error: describeMediaError(error) });
+    }
+  }, [releaseResources, startMutation, updateState]);
+
+  const answerIncomingCall = useCallback(async () => {
+    const incoming = stateRef.current;
+    if (!incoming.callId || !incoming.conversationId || !incoming.mode || incoming.direction !== "incoming" || incoming.status !== "ringing") return;
+    updateState({ status: "preparing", error: null });
+    try {
+      await callSignaling.connect();
+      const mediaMode: CallMode = incoming.mode === "video" ? "video" : "voice";
+      const localStream = await prepareLocalMedia(mediaMode);
+      const peer = createPeer(incoming.callId, incoming.conversationId, incoming.mode, localStream);
+      if (incoming.mode === "screen") await addInitialScreenTracks(peer);
+      await acceptMutation.mutateAsync({ callId: incoming.callId });
+      updateState({ status: "connecting", localStream: incoming.mode === "screen" ? displayStreamRef.current : localStream });
+    } catch (error) {
+      await releaseResources("failed");
+      updateState({ error: describeMediaError(error) });
+    }
+  }, [acceptMutation, addInitialScreenTracks, createPeer, prepareLocalMedia, releaseResources, updateState]);
 
   const endCall = useCallback(async () => {
-    const { callId, mode } = stateRef.current;
-    if (callId && mode) {
+    const { callId } = stateRef.current;
+    if (callId) {
       try {
-        await sendSignal({ conversationId, callId, mode, type: "hangup" });
+        await endMutation.mutateAsync({ callId });
       } catch {
         // Cleanup cục bộ vẫn luôn phải hoàn thành dù signaling đã ngắt.
       }
     }
     await releaseResources("ended");
-  }, [conversationId, releaseResources, sendSignal]);
+  }, [endMutation, releaseResources]);
+
+  useEffect(() => {
+    if (state.status !== "ringing" || state.direction !== "outgoing" || !state.callId) return;
+    const timeout = setTimeout(() => { void endCall(); }, 46_000);
+    return () => clearTimeout(timeout);
+  }, [endCall, state.callId, state.direction, state.status]);
 
   const rejectIncomingCall = useCallback(async () => {
-    await endCall();
-  }, [endCall]);
+    const { callId, direction, status } = stateRef.current;
+    if (callId && direction === "incoming" && status === "ringing") {
+      try { await declineMutation.mutateAsync({ callId }); } catch { /* cleanup local vẫn phải chạy */ }
+    }
+    await releaseResources("ended");
+  }, [declineMutation, releaseResources]);
 
   const toggleMute = useCallback(() => {
     const enabled = !stateRef.current.isMuted;
@@ -335,8 +426,8 @@ export function useWebRTC({ conversationId, userId }: { conversationId: number; 
 
   const startScreenShare = useCallback(async () => {
     const peer = peerRef.current;
-    const { callId, mode } = stateRef.current;
-    if (!peer || !callId || !mode || displayStreamRef.current) return;
+    const { callId, mode, conversationId } = stateRef.current;
+    if (!peer || !callId || !conversationId || !mode || displayStreamRef.current) return;
     try {
       const display = await webrtcService.getDisplayMedia();
       const screenTrack = display.getVideoTracks()[0];
@@ -350,7 +441,7 @@ export function useWebRTC({ conversationId, userId }: { conversationId: number; 
       if (systemAudioTrack) systemAudioSenderRef.current = peer.addTrack(systemAudioTrack, display);
       // Thêm audio hệ thống (nếu trình duyệt/thiết bị cấp) cần renegotiate;
       // không tạo lại peer connection nên video đang gọi vẫn liên tục.
-      if (!videoSender || systemAudioTrack) await renegotiate(callId, mode);
+      if (!videoSender || systemAudioTrack) await renegotiate(callId, conversationId, mode);
       displayStreamRef.current = display;
       screenTrack.onended = () => { void stopScreenShare(); };
       updateState({ isScreenSharing: true, hasSystemAudio: display.getAudioTracks().length > 0, localStream: display });

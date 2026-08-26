@@ -13,11 +13,23 @@ export type CallSignal = {
   fromUserId?: number;
 };
 
+export type CallLifecycleEvent = {
+  callId: string;
+  conversationId: number;
+  callerId: number;
+  recipientId: number;
+  mode: CallMode;
+  status: "ringing" | "active" | "declined" | "ended" | "missed";
+  createdAt: string;
+  answeredAt: string | null;
+  endedAt: string | null;
+};
+
 /** Minimal surface common to browser MediaStream and react-native-webrtc MediaStream. */
 export type WebRTCMediaStream = {
-  getTracks: () => Array<{ stop?: () => void; enabled?: boolean; kind?: string; applyConstraints?: (constraints: Record<string, unknown>) => Promise<void> | void; onended?: (() => void) | null }>;
-  getAudioTracks: () => Array<{ stop?: () => void; enabled?: boolean; kind?: string }>;
-  getVideoTracks: () => Array<{ stop?: () => void; enabled?: boolean; kind?: string; applyConstraints?: (constraints: Record<string, unknown>) => Promise<void> | void; onended?: (() => void) | null }>;
+  getTracks: () => { stop?: () => void; enabled?: boolean; kind?: string; applyConstraints?: (constraints: Record<string, unknown>) => Promise<void> | void; onended?: (() => void) | null }[];
+  getAudioTracks: () => { stop?: () => void; enabled?: boolean; kind?: string }[];
+  getVideoTracks: () => { stop?: () => void; enabled?: boolean; kind?: string; applyConstraints?: (constraints: Record<string, unknown>) => Promise<void> | void; onended?: (() => void) | null }[];
   addTrack?: (track: unknown) => void;
   toURL?: () => string;
 };
@@ -27,6 +39,8 @@ export type WebRTCController = {
     status: CallStatus;
     mode: CallMode | null;
     callId: string | null;
+    conversationId: number | null;
+    direction: "incoming" | "outgoing" | null;
     localStream: WebRTCMediaStream | null;
     remoteStream: WebRTCMediaStream | null;
     isMuted: boolean;
@@ -34,9 +48,11 @@ export type WebRTCController = {
     isSpeakerOn: boolean;
     isScreenSharing: boolean;
     hasSystemAudio: boolean;
+    durationSeconds: number;
+    pingMs: number | null;
     error: string | null;
   };
-  startCall: (mode: CallMode) => Promise<void>;
+  startCall: (conversationId: number, mode: CallMode) => Promise<void>;
   answerIncomingCall: () => Promise<void>;
   rejectIncomingCall: () => Promise<void>;
   endCall: () => Promise<void>;
