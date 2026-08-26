@@ -1,18 +1,18 @@
-# ChatPHT 1.0.39
+# ChatPHT 1.0.40 — WebRTC Calling
 
-## Xóa nội dung có kiểm soát
+## Gọi 1:1 tách biệt
 
-- Tin nhắn của chính bạn có thêm lựa chọn **xóa vĩnh viễn**; ảnh hoặc video đính kèm được dọn khỏi lưu trữ theo cơ chế an toàn.
-- Thêm **Xóa toàn bộ lịch sử trên hệ thống** với cảnh báo không thể hoàn tác. Chat riêng cho phép hai thành viên xóa chung; nhóm chỉ chủ nhóm hoặc quản trị viên hệ thống được phép thực hiện.
-- Giữ nguyên lựa chọn **Xóa lịch sử và rời hộp thư**: thao tác này chỉ ẩn lịch sử đối với riêng người dùng, không xóa dữ liệu của thành viên khác.
+- Bổ sung module `webrtc-calling` độc lập với một core WebRTC chung cho **gọi thoại**, **gọi video** và **chia sẻ màn hình** trong chat 1:1.
+- Ba nút ở đầu chat mở ba chế độ riêng: thoại dùng micro; video dùng micro và camera; chia sẻ màn hình mở hộp xác nhận hệ thống Android hoặc bộ chọn toàn màn hình/cửa sổ/tab trên trình duyệt.
+- Trong cuộc gọi video, có thể bật chia sẻ màn hình rồi quay lại camera bằng thay track, không tạo peer connection thứ hai. Điều khiển gồm tắt/mở micro, camera, đổi camera trước/sau trên Android, loa trong/ngoài và kết thúc.
 
-## Hiện diện và giao diện
+## Kết nối và an toàn
 
-- Đầu chat 1:1 hiển thị chấm trạng thái cùng **Đang trực tuyến** hoặc thời gian hoạt động gần nhất. Trạng thái được cập nhật khi ứng dụng đang ở foreground, không tuyên bố online chính xác khi chạy nền.
-- Bỏ các bề mặt xanh còn lại quanh ảnh/video; media chỉ dùng nền trung tính và đường phân tách trắng tối thiểu khi cần tương phản.
-- Các tùy chọn tin nhắn, hội thoại và ảnh nền được đưa về bottom sheet đồng nhất, dễ thao tác và mô tả rõ hậu quả của thao tác xóa.
+- Signaling dùng Socket.IO xác thực sẵn có; chỉ hai thành viên của một chat trực tiếp mới được relay offer, answer, ICE candidate hoặc kết thúc cuộc gọi. Nhóm không có bề mặt gọi.
+- Ưu tiên STUN P2P; TURN OpenRelay chỉ là dự phòng theo cơ chế ICE. SDP và ICE candidate không được lưu vào MySQL.
+- Cần cấp quyền micro/camera và xác nhận MediaProjection của Android khi chia sẻ màn hình. Expo Go không chứa WebRTC native; hãy dùng APK này để thử tính năng.
 
-## Bảo toàn chức năng
+## Giữ nguyên tính năng hiện hữu
 
-- Trình xem media, gửi nhiều ảnh/video, phản hồi, thả cảm xúc, trạng thái đã gửi/đã nhận/đã đọc và quản trị nhóm vẫn được giữ nguyên.
-- Tính năng gọi không được thêm lại trong bản này.
+- Chat riêng/nhóm, gửi media, xóa lịch sử, hiện diện, thông báo, trình cập nhật GitHub và quản trị nhóm vẫn được giữ nguyên.
+- Đã qua kiểm thử nguồn, web export và kiểm tra cấu hình Android; cần nghiệm thu cuộc gọi thật bằng hai thiết bị Android/mạng khác nhau trước khi dùng diện rộng.

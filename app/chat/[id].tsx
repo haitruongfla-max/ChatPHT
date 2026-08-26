@@ -20,6 +20,8 @@ import {
 import { runMediaUploadQueue } from "@/lib/media-upload-queue";
 import { preserveStableMediaUrl } from "@/lib/stable-media-url";
 import { subscribeToConversationBackground } from "@/lib/conversation-background-realtime.native";
+import { CallingOverlay } from "@/src/features/webrtc-calling/components/CallingOverlay";
+import { useWebRTC } from "@/src/features/webrtc-calling/hooks/useWebRTC";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
@@ -147,6 +149,7 @@ export default function ChatScreen() {
   const rawId = routeParams.id;
   const conversationId = Number(rawId);
   const isGroup = routeParams.group === "1";
+  const calling = useWebRTC({ conversationId, userId });
   const listRef = useRef<FlatList<TimelineMessage>>(null);
   const lastTypingHeartbeatAt = useRef(0);
   const [draft, setDraft] = useState("");
@@ -785,6 +788,19 @@ export default function ChatScreen() {
               </Text>
             </View>
           </View>
+          {!isGroup ? (
+            <View style={styles.callActions}>
+              <Pressable onPress={() => void calling.startCall("voice")} style={({ pressed }) => [styles.callButton, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Gọi thoại">
+                <MaterialIcons name="call" size={19} color="#1D4ED8" />
+              </Pressable>
+              <Pressable onPress={() => void calling.startCall("video")} style={({ pressed }) => [styles.callButton, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Gọi video">
+                <MaterialIcons name="videocam" size={20} color="#1D4ED8" />
+              </Pressable>
+              <Pressable onPress={() => void calling.startCall("screen")} style={({ pressed }) => [styles.callButton, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel="Chia sẻ màn hình">
+                <MaterialIcons name="screen-share" size={19} color="#1D4ED8" />
+              </Pressable>
+            </View>
+          ) : null}
           <Pressable
             onPress={openConversationMenu}
             style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
@@ -1205,6 +1221,7 @@ export default function ChatScreen() {
             </View>
           </SafeAreaView>
         </Modal>
+        {!isGroup ? <CallingOverlay controller={calling} peerName={header.title} /> : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1244,6 +1261,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E9EFFD",
   },
   headerText: { flex: 1 },
+  callActions: { alignItems: "center", flexDirection: "row", gap: 2 },
   headerTitle: { color: "#172554", fontSize: 16, fontWeight: "800" },
   headerSubtitleRow: { alignItems: "center", flexDirection: "row", gap: 5, marginTop: 3 },
   headerSubtitle: { color: "#718096", fontSize: 11.5 },

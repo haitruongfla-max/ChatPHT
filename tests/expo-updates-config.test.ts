@@ -17,11 +17,12 @@ describe("Cấu hình APK nền OTA", () => {
     expect(configSource).toContain("fallbackToCacheTimeout: 30_000");
   });
 
-  it("đặt APK cập nhật GitHub mới với versionCode tăng và quyền mở trình cài Android", () => {
-    expect(configSource).toContain('version: "1.0.39"');
-    expect(configSource).toContain("versionCode: 43");
+  it("đặt APK cập nhật GitHub mới với versionCode tăng, trình cài và quyền WebRTC", () => {
+    expect(configSource).toContain('version: "1.0.40"');
+    expect(configSource).toContain("versionCode: 44");
     expect(configSource).toContain("REQUEST_INSTALL_PACKAGES");
-    expect(configSource).not.toContain("FOREGROUND_SERVICE_MEDIA_PROJECTION");
+    expect(configSource).toContain("withAndroidMediaProjection.js");
+    expect(configSource).toContain("RECORD_AUDIO");
   });
 
   it("mở đúng trang cấp quyền nguồn cài đặt của ChatPHT khi Android chặn APK", () => {

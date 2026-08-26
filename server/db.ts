@@ -944,6 +944,17 @@ export async function isConversationMember(conversationId: number, userId: numbe
   return membership.length > 0;
 }
 
+/** Kiểm tra chặt membership trong hội thoại trực tiếp trước khi relay WebRTC signaling. */
+export async function isDirectConversationMember(conversationId: number, userId: number) {
+  const db = requireDb(await getDb());
+  const [conversation] = await db
+    .select({ kind: conversations.kind })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+  return conversation?.kind === "direct" && await isConversationMember(conversationId, userId);
+}
+
 /** Chỉ xác nhận object media còn hiệu lực nếu người yêu cầu là thành viên hội thoại sở hữu nó. */
 export async function findAuthorizedConversationMedia(mediaKey: string, userId: number) {
   const db = requireDb(await getDb());

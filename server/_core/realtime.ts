@@ -10,6 +10,16 @@ type BackgroundUpdatedEvent = {
   updatedAt: string;
 };
 
+type WebRTCCallSignal = {
+  conversationId?: unknown;
+  callId?: unknown;
+  mode?: unknown;
+  type?: unknown;
+  payload?: unknown;
+};
+
+type SignalingAcknowledgement = { ok: boolean; error?: string };
+
 let realtimeServer: Server | null = null;
 
 function conversationRoom(conversationId: number) {
@@ -18,9 +28,13 @@ function conversationRoom(conversationId: number) {
 
 async function authenticateSocket(socket: Socket) {
   const token = typeof socket.handshake.auth?.token === "string" ? socket.handshake.auth.token.trim() : "";
-  if (!token) throw new Error("Thiếu phiên đăng nhập.");
+  const cookie = typeof socket.handshake.headers.cookie === "string" ? socket.handshake.headers.cookie : "";
+  if (!token && !cookie) throw new Error("Thiếu phiên đăng nhập.");
   return sdk.authenticateRequest({
-    headers: { authorization: `Bearer ${token}` },
+    headers: {
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(cookie ? { cookie } : {}),
+    },
   } as unknown as ExpressRequest);
 }
 
@@ -56,6 +70,45 @@ export function registerRealtime(server: HttpServer) {
     socket.on("leave_conversation", (payload: { conversationId?: unknown }) => {
       const conversationId = typeof payload?.conversationId === "number" ? payload.conversationId : Number.NaN;
       if (Number.isInteger(conversationId) && conversationId > 0) socket.leave(conversationRoom(conversationId));
+    });
+
+    // SDP và ICE chỉ relay trong room chat 1:1. Không lưu nội dung vào database,
+    // không cho nhóm dùng signaling này và không broadcast ra các conversation khác.
+    socket.on("webrtc_call_signal", (payload: WebRTCCallSignal, acknowledge?: (result: SignalingAcknowledgement) => void) => {
+      const conversationId = typeof payload?.conversationId === "number" ? payload.conversationId : Number.NaN;
+      const callId = typeof payload?.callId === "string" ? payload.callId.trim() : "";
+      const mode = typeof payload?.mode === "string" ? payload.mode : "";
+      const type = typeof payload?.type === "string" ? payload.type : "";
+      const allowedModes = new Set(["voice", "video", "screen"]);
+      const allowedTypes = new Set(["offer", "answer", "candidate", "hangup"]);
+      if (
+        !Number.isInteger(conversationId) || conversationId <= 0 ||
+        callId.length < 8 || callId.length > 128 ||
+        !allowedModes.has(mode) || !allowedTypes.has(type) ||
+        !socket.rooms.has(conversationRoom(conversationId))
+      ) {
+        acknowledge?.({ ok: false, error: "Tín hiệu gọi không hợp lệ hoặc hội thoại chưa được tham gia." });
+        return;
+      }
+
+      void db.isDirectConversationMember(conversationId, Number(socket.data.userId))
+        .then((isAllowed) => {
+          if (!isAllowed) {
+            acknowledge?.({ ok: false, error: "Chỉ hội thoại 1:1 mới có thể gọi." });
+            return;
+          }
+          const message = {
+            conversationId,
+            callId,
+            mode,
+            type,
+            payload: payload.payload && typeof payload.payload === "object" ? payload.payload : undefined,
+            fromUserId: Number(socket.data.userId),
+          };
+          socket.to(conversationRoom(conversationId)).emit("webrtc_call_signal", message);
+          acknowledge?.({ ok: true });
+        })
+        .catch(() => acknowledge?.({ ok: false, error: "Không thể xác minh quyền signaling." }));
     });
   });
   return realtimeServer;

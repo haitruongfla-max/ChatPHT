@@ -428,3 +428,11 @@
 - [x] Gỡ hoàn toàn viền xanh ngoài ảnh/video, chỉ giữ bề mặt media và đường phân tách trắng tối thiểu khi cần tương phản.
 - [x] Thiết kế lại các hộp tùy chọn tin nhắn và hội thoại theo phong cách nhất quán, rõ hậu quả các thao tác xóa.
 - [x] Cập nhật ghi chú phát hành, kiểm thử toàn bộ và build APK GitHub mới cho phạm vi này.
+- [x] Đánh giá tương thích Expo/Android/WebRTC native, các giới hạn chia sẻ màn hình và hạ tầng Socket.IO realtime trước khi tái tích hợp calling.
+- [x] Thay hợp đồng hồi quy “không-call” đã nghỉ hưu bằng các kiểm thử an toàn cho module WebRTC Calling cô lập, không tái dùng mã P2P cũ.
+- [x] Tạo module `src/features/webrtc-calling` với core `useWebRTC`, dịch vụ signaling, ICE servers, UI thoại/video/chia sẻ màn hình và README tiếng Việt.
+- [x] Mở rộng signaling Socket.IO xác thực hiện hữu cho chat 1:1, giới hạn chính xác offer/answer/ICE theo thành viên hội thoại và phiên gọi.
+- [x] Chỉ nối ba nút gọi riêng biệt vào chat 1:1 cùng modal/route mới; bảo toàn chat nhóm, media, xóa lịch sử, hiện diện và các luồng không liên quan.
+- [x] Chạy hồi quy nguồn 110 kiểm thử, web export, Android export/config và lập checklist nghiệm thu hai Android thật cho WebRTC Calling.
+- [ ] Nghiệm thu media WebRTC thủ công: hai tài khoản ở hai phiên web độc lập, sau đó hai Android qua Wi-Fi và 4G.
+- [ ] Tăng version/releaseId, tạo checkpoint, build APK signed GitHub và xác minh asset/checksum trước bàn giao.
