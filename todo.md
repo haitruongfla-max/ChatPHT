@@ -416,3 +416,9 @@
 - [x] Bảo đảm xóa sạch nội dung chỉ tác động đúng dữ liệu của người yêu cầu trong chat riêng và tuân thủ quyền nhóm, không xóa dữ liệu người dùng khác ngoài phạm vi được phép.
 - [x] Bổ sung huy hiệu đỏ cho tin nhắn chưa đọc, lời mời kết bạn, nhóm mới và các thông báo bị bỏ lỡ được hỗ trợ còn lại trong ứng dụng.
 - [x] Kiểm thử hồi quy xóa nội dung, huy hiệu thông báo, chat/media riêng tư và điều hướng trước khi phát hành APK mới.
+- [x] Đồng bộ checkpoint 1.0.37 lên GitHub, chạy workflow APK với tag riêng, rồi đối chiếu asset và SHA-256 trước khi bàn giao liên kết tải.
+- [x] Tối giản khung ảnh/video trong bong bóng chat, chỉ giữ một viền trắng rất mảnh và không làm thay đổi luồng xem media.
+- [x] Hiển thị tên người liên hệ thay cho tiêu đề chung “Hội thoại riêng tư” ở đầu chat 1:1.
+- [x] Thêm điều khiển chuyển rõ ràng giữa chụp ảnh và quay video trong camera chat, không còn phụ thuộc thao tác chạm/giữ.
+- [x] Hiển thị ghi chú phát hành chi tiết của bản mới trong mục Cập nhật ứng dụng trước khi tải APK.
+- [ ] Tăng định danh phát hành, kiểm thử và build APK GitHub cho các tinh chỉnh giao diện chat này.

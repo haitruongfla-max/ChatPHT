@@ -193,6 +193,10 @@ export default function ChatScreen() {
     { conversationId },
     { enabled: Boolean(user) && isGroup && Number.isInteger(conversationId) },
   );
+  const conversations = trpc.conversations.list.useQuery(undefined, {
+    enabled: Boolean(user) && !isGroup,
+    staleTime: 15_000,
+  });
   const messageCount = messages.data?.length ?? 0;
   const stableMediaUrls = useRef(new Map<string, string>());
   const sendText = trpc.messages.sendText.useMutation();
@@ -214,12 +218,14 @@ export default function ChatScreen() {
   );
   const header = useMemo(
     () => ({
-      title: isGroup ? group?.title ?? "Nhóm chat" : "Hội thoại riêng tư",
+      title: isGroup
+        ? group?.title ?? "Nhóm chat"
+        : conversations.data?.find((conversation) => conversation.id === conversationId)?.peer?.displayName ?? "Đang tải liên hệ",
       subtitle: isGroup
         ? group ? `${group.memberCount} thành viên · Chỉ thành viên có thể xem tin nhắn` : "Đang tải thông tin nhóm"
         : "Chỉ thành viên có thể xem tin nhắn",
     }),
-    [group, isGroup],
+    [conversationId, conversations.data, group, isGroup],
   );
   const timeline = useMemo<TimelineMessage[]>(() => {
     const sourceMessages = ((messages.data ?? []) as ChatMessage[]).map((message) =>
@@ -999,7 +1005,7 @@ export default function ChatScreen() {
                 (pressed || uploading) && styles.pressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Mở camera: chạm để chụp ảnh, giữ để quay video"
+              accessibilityLabel="Mở camera để chọn chụp ảnh hoặc quay video"
             >
               <MaterialIcons name="photo-camera" size={22} color="#2563EB" />
             </Pressable>
@@ -1239,7 +1245,7 @@ const styles = StyleSheet.create({
   messageTime: { color: "#718096", fontSize: 10.5 },
   mineTime: { color: "#D9E5FF" },
   deliveryState: { color: "#D9E5FF", fontSize: 10.5, fontWeight: "700" },
-  image: { width: 220, height: 190, borderRadius: 12, marginBottom: 3 },
+  image: { width: 220, height: 190, borderRadius: 12, marginBottom: 3, borderColor: "rgba(255,255,255,0.92)", borderWidth: StyleSheet.hairlineWidth },
   videoFrame: {
     width: 220,
     height: 150,
@@ -1247,6 +1253,8 @@ const styles = StyleSheet.create({
     marginBottom: 3,
     overflow: "hidden",
     backgroundColor: "#0B1630",
+    borderColor: "rgba(255,255,255,0.92)",
+    borderWidth: StyleSheet.hairlineWidth,
   },
   videoPreview: {
     flex: 1,

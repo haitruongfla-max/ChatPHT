@@ -6,7 +6,7 @@ on:
       release_tag:
         description: "GitHub Release tag cho APK nền OTA"
         required: true
-        default: "v1.0.37-inbox-privacy-badges-vc41"
+        default: "v1.0.38-media-title-camera-vc42"
 
 # GitHub Release cần quyền ghi nội dung; workflow không sử dụng Expo cloud build.
 permissions:
@@ -110,15 +110,17 @@ jobs:
           ASSET_NAME: ${{ steps.release_identity.outputs.asset_name }}
           CHECKSUM_NAME: ${{ steps.release_identity.outputs.checksum_name }}
           CHECKSUM_FILE: ${{ steps.release_identity.outputs.checksum_file }}
+          RELEASE_NOTES_FILE: release-notes.md
         shell: bash
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release delete-asset "$RELEASE_TAG" app-release.apk --yes >/dev/null 2>&1 || true
             gh release upload "$RELEASE_TAG" "$ASSET_FILE" "$CHECKSUM_FILE" --clobber
+            gh release edit "$RELEASE_TAG" --title "ChatPHT $RELEASE_ID" --notes-file "$RELEASE_NOTES_FILE"
           else
             gh release create "$RELEASE_TAG" "$ASSET_FILE" "$CHECKSUM_FILE" \
               --title "ChatPHT $RELEASE_ID" \
-              --generate-notes \
+              --notes-file "$RELEASE_NOTES_FILE" \
               --target "$GITHUB_SHA"
           fi

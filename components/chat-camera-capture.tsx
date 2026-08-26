@@ -51,10 +51,7 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
   const cameraRef = useRef<CameraView>(null);
   const recordingStartedAt = useRef<number | null>(null);
   const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordingRef = useRef(false);
-  const recordingRequested = useRef(false);
-  const stopRequested = useRef(false);
   const closing = useRef(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
@@ -90,7 +87,6 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
 
   useEffect(() => () => {
     if (stopTimer.current) clearTimeout(stopTimer.current);
-    if (holdTimer.current) clearTimeout(holdTimer.current);
     cameraRef.current?.stopRecording();
   }, []);
 
@@ -98,7 +94,6 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
 
   const close = () => {
     closing.current = true;
-    if (holdTimer.current) clearTimeout(holdTimer.current);
     if (recordingRef.current) cameraRef.current?.stopRecording();
     onClose();
   };
@@ -131,7 +126,6 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
   };
 
   const stopRecordingWhenReady = () => {
-    stopRequested.current = true;
     if (!cameraRef.current || !recordingRef.current) return;
     const elapsed = Date.now() - (recordingStartedAt.current ?? Date.now());
     // Xiaomi encoders can expose recordAsync before the first key frame is committed.
@@ -150,7 +144,7 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
   };
 
   const startRecording = async () => {
-    if (!cameraRef.current || preparing || !cameraReady || recordingRef.current || !recordingRequested.current || cameraMode !== "video") return;
+    if (!cameraRef.current || preparing || !cameraReady || recordingRef.current || cameraMode !== "video") return;
 
     try {
       const microphone = microphonePermission?.granted
@@ -165,7 +159,6 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
       setRecordingSeconds(0);
       recordingRef.current = true;
       setRecording(true);
-      if (stopRequested.current) stopRecordingWhenReady();
       // SDK 54 documents `quality`; its local declaration currently omits this Android runtime option.
       const recordingOptions = {
         maxDuration: MAX_RECORDING_SECONDS,
@@ -211,56 +204,35 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
     } finally {
       recordingStartedAt.current = null;
       recordingRef.current = false;
-      recordingRequested.current = false;
-      stopRequested.current = false;
       if (stopTimer.current) clearTimeout(stopTimer.current);
       stopTimer.current = null;
       setRecording(false);
       setRecordingSeconds(0);
-      setCameraMode("picture");
     }
   };
 
-  const beginVideoMode = () => {
-    if (preparing || recordingRef.current || recordingRequested.current) return;
-    recordingRequested.current = true;
-    stopRequested.current = false;
-    // CameraView must complete a mode change before recordAsync is invoked.
-    // Calling it while a picture session is still configuring produces empty files on some Android devices.
+  const selectCameraMode = (nextMode: "picture" | "video") => {
+    if (preparing || recordingRef.current || cameraMode === nextMode) return;
+    // CameraView must complete a mode change before capture begins.
+    // Starting the recorder during a picture-to-video transition can yield an empty file on some Android devices.
     setCameraReady(false);
-    setCameraMode("video");
+    setCameraMode(nextMode);
   };
 
   const handleCameraReady = () => {
     setCameraReady(true);
-    if (cameraMode === "video" && recordingRequested.current) {
-      void startRecording();
-    }
   };
 
-  const handleCapturePressIn = () => {
-    if (preparing || !cameraReady) return;
-    if (holdTimer.current) clearTimeout(holdTimer.current);
-    holdTimer.current = setTimeout(() => {
-      holdTimer.current = null;
-      beginVideoMode();
-    }, 300);
-  };
-
-  const handleCapturePressOut = () => {
-    if (holdTimer.current) {
-      clearTimeout(holdTimer.current);
-      holdTimer.current = null;
+  const capture = () => {
+    if (cameraMode === "picture") {
       void takePhoto();
       return;
     }
-    if (recordingRequested.current && !recordingRef.current) {
-      // The finger was released while CameraView was switching into video mode.
-      // Keep the request: startRecording will honor this deferred stop after its safe window.
-      stopRequested.current = true;
+    if (recording) {
+      stopRecordingWhenReady();
       return;
     }
-    stopRecordingWhenReady();
+    void startRecording();
   };
 
   const requestPermissionsAgain = async () => {
@@ -289,9 +261,27 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
             <Pressable onPress={close} disabled={preparing} style={({ pressed }) => [styles.roundButton, pressed && styles.pressed]} accessibilityLabel="Đóng camera">
               <MaterialIcons name="close" size={25} color="#FFFFFF" />
             </Pressable>
-            <View style={styles.modeBadge}>
-              <MaterialIcons name="photo-camera" size={17} color="#FFFFFF" />
-              <Text style={styles.modeText}>Chạm chụp · Giữ quay HD</Text>
+            <View style={styles.modeSelector} accessibilityLabel="Chọn chế độ camera">
+              <Pressable
+                onPress={() => selectCameraMode("picture")}
+                disabled={preparing || recording}
+                style={({ pressed }) => [styles.modeOption, cameraMode === "picture" && styles.modeOptionActive, (pressed || preparing || recording) && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Chế độ chụp ảnh"
+              >
+                <MaterialIcons name="photo-camera" size={16} color="#FFFFFF" />
+                <Text style={styles.modeText}>Ảnh</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => selectCameraMode("video")}
+                disabled={preparing || recording}
+                style={({ pressed }) => [styles.modeOption, cameraMode === "video" && styles.modeOptionActive, (pressed || preparing || recording) && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Chế độ quay video HD"
+              >
+                <MaterialIcons name="videocam" size={17} color="#FFFFFF" />
+                <Text style={styles.modeText}>Video HD</Text>
+              </Pressable>
             </View>
           </View>
           {recording ? (
@@ -305,7 +295,7 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
               <Pressable onPress={() => setFacing((current) => current === "back" ? "front" : "back")} disabled={preparing || recording} style={({ pressed }) => [styles.roundButton, pressed && styles.pressed]} accessibilityLabel="Đổi camera trước hoặc sau">
                 <MaterialIcons name="flip-camera-android" size={25} color="#FFFFFF" />
               </Pressable>
-              <Pressable onPressIn={handleCapturePressIn} onPressOut={handleCapturePressOut} disabled={preparing || !cameraReady} style={({ pressed }) => [styles.captureButton, recording && styles.captureButtonRecording, (!cameraReady || preparing) && styles.captureButtonDisabled, pressed && styles.pressed]} accessibilityLabel="Chạm để chụp ảnh, giữ để quay video tối đa năm phút">
+              <Pressable onPress={capture} disabled={preparing || !cameraReady} style={({ pressed }) => [styles.captureButton, recording && styles.captureButtonRecording, (!cameraReady || preparing) && styles.captureButtonDisabled, pressed && styles.pressed]} accessibilityLabel={cameraMode === "picture" ? "Chụp ảnh" : recording ? "Dừng quay video" : "Bắt đầu quay video HD tối đa năm phút"}>
                 {preparing ? <ActivityIndicator color="#FFFFFF" /> : (
                   <View style={styles.captureProgressWrap}>
                     {recording ? (
@@ -329,8 +319,9 @@ export function ChatCameraCapture({ visible, onClose, onCaptured }: ChatCameraCa
                   </View>
                 )}
               </Pressable>
-              <View style={styles.roundButton} pointerEvents="none">
-                <MaterialIcons name="hd" size={22} color="#FFFFFF" />
+              <View style={styles.modeStatus} pointerEvents="none">
+                <MaterialIcons name={cameraMode === "picture" ? "photo" : "hd"} size={20} color="#FFFFFF" />
+                <Text style={styles.modeStatusText}>{cameraMode === "picture" ? "Chụp" : recording ? "Dừng" : "Quay"}</Text>
               </View>
             </View>
           ) : null}
@@ -347,7 +338,9 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   bottomBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: Platform.OS === "android" ? 8 : 0 },
   roundButton: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15, 23, 42, 0.62)" },
-  modeBadge: { minHeight: 38, paddingHorizontal: 13, borderRadius: 20, flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "rgba(15, 23, 42, 0.70)" },
+  modeSelector: { minHeight: 40, padding: 3, borderRadius: 20, flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(15, 23, 42, 0.72)" },
+  modeOption: { minHeight: 34, paddingHorizontal: 10, borderRadius: 17, flexDirection: "row", alignItems: "center", gap: 5 },
+  modeOptionActive: { backgroundColor: "rgba(37, 99, 235, 0.92)" },
   modeText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
   recordingTimer: { alignSelf: "center", marginTop: 13, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 13, alignItems: "center", backgroundColor: "rgba(127, 29, 29, 0.88)" },
   recordingTimerPrimary: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
@@ -359,6 +352,8 @@ const styles = StyleSheet.create({
   captureProgress: { position: "absolute" },
   captureCenter: { width: 58, height: 58, borderRadius: 29, backgroundColor: "#FFFFFF", borderWidth: 3, borderColor: "#2563EB" },
   captureCenterRecording: { width: 28, height: 28, borderRadius: 6, backgroundColor: "#DC2626", borderWidth: 0 },
+  modeStatus: { minWidth: 48, height: 48, borderRadius: 24, paddingHorizontal: 6, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15, 23, 42, 0.62)" },
+  modeStatusText: { color: "#FFFFFF", fontSize: 10, fontWeight: "800", marginTop: 1 },
   permissionCard: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 36, backgroundColor: "#0F172A" },
   permissionTitle: { marginTop: 14, color: "#F8FAFC", fontSize: 19, fontWeight: "800", textAlign: "center" },
   permissionText: { marginTop: 9, color: "#CBD5E1", fontSize: 14, lineHeight: 20, textAlign: "center" },

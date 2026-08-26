@@ -52,7 +52,7 @@ export function ChatMediaGrid({
 
 const styles = StyleSheet.create({
   grid: { width: 240, flexDirection: "row", flexWrap: "wrap", gap: 3, overflow: "hidden", borderRadius: 14 },
-  tile: { height: 76, overflow: "hidden", backgroundColor: "#0F172A" },
+  tile: { height: 76, overflow: "hidden", backgroundColor: "#0F172A", borderColor: "rgba(255,255,255,0.92)", borderWidth: StyleSheet.hairlineWidth },
   image: { width: "100%", height: "100%" },
   pressed: { opacity: 0.78 },
   videoBadge: { position: "absolute", left: 7, bottom: 7, width: 27, height: 27, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15,23,42,0.72)" },
