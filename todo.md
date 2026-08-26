@@ -406,3 +406,6 @@
 - [x] Hiển thị tiến trình tải APK theo phần trăm, dung lượng đã tải và trạng thái lỗi/thành công rõ ràng.
 - [x] Thông báo rõ phiên bản đang dùng đã là mới nhất khi không có GitHub Release mới.
 - [x] Bổ sung hồi quy và kiểm tra TypeScript/lint cho trải nghiệm cập nhật mới.
+- [x] Tăng versionName, versionCode và releaseId cho APK phát hành giao diện cập nhật mới.
+- [ ] Kiểm thử Android, lưu checkpoint và đồng bộ commit phát hành lên GitHub.
+- [ ] Tạo GitHub Release APK signed có asset định danh, checksum và đối chiếu commit trước khi bàn giao liên kết cài đặt.
