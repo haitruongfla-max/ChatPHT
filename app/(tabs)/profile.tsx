@@ -7,6 +7,7 @@ import {
   getLatestChatPHTRelease,
   isReleaseNewer,
   openAndroidPackageInstaller,
+  openUnknownAppSourcesSettings,
   type ChatPHTRelease,
 } from "@/lib/github-release-update";
 import { formatByteSize, getDownloadProgressPercent } from "@/lib/github-release-version";
@@ -109,6 +110,16 @@ export default function ProfileScreen() {
       Alert.alert("Không thể cập nhật", error instanceof Error ? error.message : "Vui lòng thử lại.");
     }
   };
+  const openInstallerPermissionSettings = async () => {
+    try {
+      await openUnknownAppSourcesSettings();
+    } catch (error) {
+      Alert.alert(
+        "Không thể mở quyền cài APK",
+        error instanceof Error ? error.message : "Vào Cài đặt Android → Ứng dụng → ChatPHT → Cài ứng dụng không xác định, rồi cho phép ChatPHT.",
+      );
+    }
+  };
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-[#EDF6FF]">
       <ScrollView
@@ -186,6 +197,15 @@ export default function ProfileScreen() {
                 <Text style={styles.releaseMeta}>Bản {release.version}{release.buildCode ? ` · mã ${release.buildCode}` : ""} · {release.assetBytes ? formatByteSize(release.assetBytes) : "không rõ dung lượng"}</Text>
                 <Text style={styles.releaseNotesLabel}>Ghi chú phát hành</Text>
                 <Text style={styles.releaseNotes}>{release.notes}</Text>
+                <View style={styles.installPermissionRow}>
+                  <MaterialIcons name="security" size={16} color="#0F766E" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.installPermissionText}>Nếu Android chặn cài đặt, hãy cho phép ChatPHT cài ứng dụng từ nguồn này.</Text>
+                    <Pressable onPress={() => void openInstallerPermissionSettings()} style={({ pressed }) => [styles.installPermissionAction, pressed && styles.pressed]} accessibilityLabel="Mở quyền cài APK cho ChatPHT">
+                      <Text style={styles.installPermissionActionText}>Mở quyền cài APK</Text>
+                    </Pressable>
+                  </View>
+                </View>
               </View>
             ) : null}
             {updateState === "downloading" ? (
@@ -326,6 +346,10 @@ const styles = StyleSheet.create({
   releaseMeta: { color: "#49745A", fontSize: 11.5, lineHeight: 17, marginTop: 3 },
   releaseNotesLabel: { color: "#14532D", fontSize: 11.5, fontWeight: "800", marginTop: 8 },
   releaseNotes: { color: "#365A43", fontSize: 12, lineHeight: 18, marginTop: 3 },
+  installPermissionRow: { alignItems: "flex-start", backgroundColor: "#F0FDFA", borderRadius: 10, flexDirection: "row", gap: 7, marginTop: 10, padding: 9 },
+  installPermissionText: { color: "#365A43", fontSize: 11.5, lineHeight: 16 },
+  installPermissionAction: { alignSelf: "flex-start", marginTop: 6, paddingVertical: 3 },
+  installPermissionActionText: { color: "#0F766E", fontSize: 11.5, fontWeight: "800" },
   downloadStatus: { marginTop: 10 },
   downloadHeading: { alignItems: "center", flexDirection: "row", gap: 6 },
   downloadLabel: { color: "#0F766E", fontSize: 12, fontWeight: "800" },

@@ -408,4 +408,7 @@
 - [x] Bổ sung hồi quy và kiểm tra TypeScript/lint cho trải nghiệm cập nhật mới.
 - [x] Tăng versionName, versionCode và releaseId cho APK phát hành giao diện cập nhật mới.
 - [x] Kiểm thử Android, lưu checkpoint và đồng bộ commit phát hành lên GitHub.
-- [ ] Tạo GitHub Release APK signed có asset định danh, checksum và đối chiếu commit trước khi bàn giao liên kết cài đặt.
+- [x] Tạo GitHub Release APK signed có asset định danh, checksum và đối chiếu commit trước khi bàn giao liên kết cài đặt.
+- [x] Kiểm tra REQUEST_INSTALL_PACKAGES, URI tệp APK và intent Android trong luồng cập nhật nội bộ.
+- [x] Bổ sung hướng dẫn/cài đặt mở quyền “Cho phép từ nguồn này” và đường dự phòng an toàn khi Android chặn cài APK.
+- [ ] Kiểm thử hồi quy, tạo APK khắc phục có versionCode mới và xác minh cài đè từ bản 1.0.34/1.0.35.

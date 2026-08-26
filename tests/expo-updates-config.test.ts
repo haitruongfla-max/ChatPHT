@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 
 const configPath = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app.config.ts");
 const configSource = readFileSync(configPath, "utf8");
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const updaterSource = readFileSync(resolve(projectRoot, "lib", "github-release-update.native.ts"), "utf8");
+const profileSource = readFileSync(resolve(projectRoot, "app", "(tabs)", "profile.tsx"), "utf8");
 
 describe("Cấu hình APK nền OTA", () => {
   it("dùng runtime fingerprint và EAS Update URL của dự án ChatPHT", () => {
@@ -15,9 +18,16 @@ describe("Cấu hình APK nền OTA", () => {
   });
 
   it("đặt APK cập nhật GitHub mới với versionCode tăng và quyền mở trình cài Android", () => {
-    expect(configSource).toContain('version: "1.0.35"');
-    expect(configSource).toContain("versionCode: 39");
+    expect(configSource).toContain('version: "1.0.36"');
+    expect(configSource).toContain("versionCode: 40");
     expect(configSource).toContain("REQUEST_INSTALL_PACKAGES");
     expect(configSource).not.toContain("FOREGROUND_SERVICE_MEDIA_PROJECTION");
+  });
+
+  it("mở đúng trang cấp quyền nguồn cài đặt của ChatPHT khi Android chặn APK", () => {
+    expect(updaterSource).toContain("MANAGE_UNKNOWN_APP_SOURCES");
+    expect(updaterSource).toContain("package:${packageName}");
+    expect(profileSource).toContain("Mở quyền cài APK");
+    expect(profileSource).toContain("openUnknownAppSourcesSettings");
   });
 });

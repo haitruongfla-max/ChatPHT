@@ -130,3 +130,11 @@ export async function openAndroidPackageInstaller(apkUri: string) {
     flags: 1,
   });
 }
+
+/** Opens Android's per-app unknown-source setting. The user must explicitly enable it there. */
+export async function openUnknownAppSourcesSettings() {
+  const packageName = Constants.expoConfig?.android?.package;
+  await IntentLauncher.startActivityAsync(IntentLauncher.ActivityAction.MANAGE_UNKNOWN_APP_SOURCES, {
+    data: packageName ? `package:${packageName}` : undefined,
+  });
+}
