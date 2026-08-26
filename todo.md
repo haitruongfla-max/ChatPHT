@@ -442,3 +442,4 @@
 - [x] Hiển thị thời lượng sau kết nối thành công và ping ước lượng từ WebRTC stats trong màn hình Voice/Video/Screen Share.
 - [x] Hiển thị lời mời đến đáng tin cậy cho người nhận trong khi ứng dụng đang hoạt động, cùng ghi nhận lịch sử cuộc gọi trong chat/inbox.
 - [ ] Chạy hồi quy, nghiệm thu hai tài khoản thực trên Wi-Fi/4G, tăng định danh và phát hành APK GitHub mới.
+- [x] Chạy hồi quy nguồn, tăng định danh 1.0.41/vc45, phát hành GitHub Release và xác minh APK/checksum cho batch WebRTC lifecycle.
