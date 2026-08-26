@@ -80,8 +80,10 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
   const connectedAtRef = useRef<number | null>(null);
   const startMutation = trpc.calling.start.useMutation();
   const acceptMutation = trpc.calling.accept.useMutation();
+  const connectedMutation = trpc.calling.connected.useMutation();
   const declineMutation = trpc.calling.decline.useMutation();
   const endMutation = trpc.calling.end.useMutation();
+  const heartbeatMutation = trpc.calling.heartbeat.useMutation();
 
   const updateState = useCallback((patch: Partial<ControllerState>) => {
     stateRef.current = { ...stateRef.current, ...patch };
@@ -124,6 +126,15 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
     await callSignaling.send(signal);
   }, []);
 
+  /** Một lỗi peer là lỗi lifecycle: phải đóng session server để không khóa lần gọi kế tiếp. */
+  const failPeerCall = useCallback((callId: string, message: string) => {
+    void endMutation.mutateAsync({ callId })
+      .catch(() => undefined)
+      .finally(() => {
+        void releaseResources("failed").then(() => updateState({ error: message }));
+      });
+  }, [endMutation, releaseResources, updateState]);
+
   const createPeer = useCallback((callId: string, conversationId: number, mode: CallMode, localStream: WebRTCMediaStream) => {
     const peer = webrtcService.createPeerConnection(PEER_CONNECTION_CONFIG as unknown as RTCConfiguration) as unknown as PeerConnectionLike;
     peerRef.current = peer;
@@ -147,6 +158,9 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
       if (peer.connectionState === "connected") {
         connectedAtRef.current ??= Date.now();
         updateState({ status: "connected", error: null, durationSeconds: 0, pingMs: null });
+        void connectedMutation.mutateAsync({ callId }).catch(() => {
+          failPeerCall(callId, "Không thể xác nhận kết nối cuộc gọi. Phiên đã được giải phóng, vui lòng gọi lại.");
+        });
       }
       if (peer.connectionState !== "failed") return;
       const currentCall = stateRef.current;
@@ -158,14 +172,14 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
             await peer.setLocalDescription(offer);
             await sendSignal({ conversationId, callId, mode, type: "offer", payload: { description: offer, iceRestart: true } });
           })
-          .catch(() => updateState({ status: "failed", error: "Kết nối P2P không thành công. Vui lòng kết thúc và gọi lại." }));
+          .catch(() => failPeerCall(callId, "Kết nối P2P không thành công. Phiên đã được giải phóng, vui lòng gọi lại."));
         return;
       }
-      updateState({ status: "failed", error: "Kết nối P2P không thành công. Vui lòng kết thúc và gọi lại." });
+      failPeerCall(callId, "Kết nối P2P không thành công. Phiên đã được giải phóng, vui lòng gọi lại.");
     };
     localStream.getTracks().forEach((track) => peer.addTrack(track, localStream));
     return peer;
-  }, [sendSignal, updateState]);
+  }, [connectedMutation, failPeerCall, sendSignal, updateState]);
 
   const prepareLocalMedia = useCallback(async (mode: CallMode) => {
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, shouldRouteThroughEarpiece: mode === "voice" });
@@ -279,7 +293,7 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
       return;
     }
     if (event.callId !== current.callId) return;
-    if (event.status === "active") {
+    if (event.status === "accepted") {
       if (event.callerId === userId) void beginOutgoingOffer();
       else if (current.status === "ringing") updateState({ status: "connecting", error: null });
       return;
@@ -339,6 +353,22 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
     return () => { disposed = true; clearInterval(interval); };
   }, [state.status, updateState]);
 
+  /** Báo sống khi phiên đang active để server chỉ dọn những cuộc thực sự bị bỏ dở. */
+  useEffect(() => {
+    if (!state.callId || (state.status !== "connecting" && state.status !== "connected")) return;
+    let disposed = false;
+    const heartbeat = async () => {
+      try {
+        await heartbeatMutation.mutateAsync({ callId: state.callId! });
+      } catch {
+        // Mất mạng tạm thời không được tự kết thúc media; server sẽ hoà giải theo timeout.
+      }
+    };
+    void heartbeat();
+    const interval = setInterval(() => { if (!disposed) void heartbeat(); }, 15_000);
+    return () => { disposed = true; clearInterval(interval); };
+  }, [heartbeatMutation, state.callId, state.status]);
+
   const startCall = useCallback(async (conversationId: number, mode: CallMode) => {
     if (stateRef.current.status !== "idle" && stateRef.current.status !== "ended") return;
     updateState({ ...INITIAL_STATE, status: "preparing", conversationId, mode, direction: "outgoing", isCameraEnabled: mode === "video" });
@@ -387,6 +417,15 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
     const timeout = setTimeout(() => { void endCall(); }, 46_000);
     return () => clearTimeout(timeout);
   }, [endCall, state.callId, state.direction, state.status]);
+
+  useEffect(() => {
+    if (state.status !== "connecting" || !state.callId) return;
+    const timeout = setTimeout(() => {
+      void endCall();
+      updateState({ error: "Không thiết lập được kết nối WebRTC. Vui lòng thử lại." });
+    }, 32_000);
+    return () => clearTimeout(timeout);
+  }, [endCall, state.callId, state.status, updateState]);
 
   const rejectIncomingCall = useCallback(async () => {
     const { callId, direction, status } = stateRef.current;

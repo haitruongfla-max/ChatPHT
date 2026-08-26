@@ -19,7 +19,7 @@ export type CallLifecycleEvent = {
   callerId: number;
   recipientId: number;
   mode: CallMode;
-  status: "ringing" | "active" | "declined" | "ended" | "missed";
+  status: "ringing" | "accepted" | "active" | "declined" | "ended" | "missed";
   createdAt: string;
   answeredAt: string | null;
   endedAt: string | null;

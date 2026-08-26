@@ -443,3 +443,7 @@
 - [x] Hiển thị lời mời đến đáng tin cậy cho người nhận trong khi ứng dụng đang hoạt động, cùng ghi nhận lịch sử cuộc gọi trong chat/inbox.
 - [ ] Chạy hồi quy, nghiệm thu hai tài khoản thực trên Wi-Fi/4G, tăng định danh và phát hành APK GitHub mới.
 - [x] Chạy hồi quy nguồn, tăng định danh 1.0.41/vc45, phát hành GitHub Release và xác minh APK/checksum cho batch WebRTC lifecycle.
+- [x] Điều tra và dọn an toàn phiên gọi 1:1 bị kẹt khiến thoại, video và chia sẻ màn hình đều báo hội thoại đang có cuộc gọi khác.
+- [x] Sửa lifecycle gọi để phiên hết hạn/đã kết thúc được phục hồi đúng cho cả caller và callee, không chặn cuộc gọi kế tiếp.
+- [x] Điều tra và sửa lỗi gửi tin nhận phản hồi HTML gây `JSON Parse error: Unexpected character: <`, giữ nguyên gửi text/media/retry đang hoạt động.
+- [ ] Bổ sung hồi quy, tăng phiên bản và phát hành APK GitHub đã xác minh cho batch sửa lỗi gọi/gửi tin.

@@ -26,7 +26,7 @@ type WebRTCCallLifecycle = {
   callerId: number;
   recipientId: number;
   p2pMode: "audio" | "video" | "screen";
-  status: "ringing" | "active" | "declined" | "ended" | "missed";
+  status: "ringing" | "accepted" | "active" | "declined" | "ended" | "missed";
   createdAt: Date;
   answeredAt: Date | null;
   endedAt: Date | null;
@@ -137,7 +137,7 @@ export function registerRealtime(server: HttpServer) {
       void db.getWebRTCCallForParticipant(callId, userId)
         .then((session) => {
           const storedMode = mode === "voice" ? "audio" : mode;
-          if (!session || session.conversationId !== conversationId || session.p2pMode !== storedMode || session.status !== "active") {
+          if (!session || session.conversationId !== conversationId || session.p2pMode !== storedMode || !["accepted", "active"].includes(session.status)) {
             acknowledge?.({ ok: false, error: "Phiên gọi không còn hoạt động hoặc bạn không có quyền gửi tín hiệu." });
             return;
           }

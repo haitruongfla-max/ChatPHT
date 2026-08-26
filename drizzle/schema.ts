@@ -120,6 +120,8 @@ export const messages = mysqlTable(
     mediaName: varchar("mediaName", { length: 255 }),
     mediaSize: int("mediaSize"),
     mediaBatchId: varchar("mediaBatchId", { length: 80 }),
+    /** Khóa client cho mutation gửi text có retry an toàn khi proxy làm mất response. */
+    clientRequestId: varchar("clientRequestId", { length: 64 }),
     replyToMessageId: int("replyToMessageId"),
     mediaCleanedAt: timestamp("mediaCleanedAt"),
     recalledAt: timestamp("recalledAt"),
@@ -129,6 +131,7 @@ export const messages = mysqlTable(
   (table) => [
     index("message_conversation_created_idx").on(table.conversationId, table.createdAt),
     index("message_conversation_batch_idx").on(table.conversationId, table.mediaBatchId, table.createdAt),
+    uniqueIndex("message_sender_client_request_unique_idx").on(table.conversationId, table.senderId, table.clientRequestId),
     index("message_reply_idx").on(table.replyToMessageId),
   ],
 );
@@ -160,15 +163,18 @@ export const callSessions = mysqlTable(
     p2pMode: mysqlEnum("p2pMode", ["audio", "video", "screen"]).default("audio").notNull(),
     provider: mysqlEnum("provider", ["livekit", "p2p"]).default("p2p").notNull(),
     isGroup: boolean("isGroup").default(false).notNull(),
-    status: mysqlEnum("status", ["ringing", "active", "declined", "ended", "missed"]).default("ringing").notNull(),
+    status: mysqlEnum("status", ["ringing", "accepted", "active", "declined", "ended", "missed"]).default("ringing").notNull(),
     expiresAt: timestamp("expiresAt").notNull(),
     answeredAt: timestamp("answeredAt"),
+    /** Heartbeat chỉ cho peer đã kết nối thật; không chứa SDP/ICE hay dữ liệu media. */
+    lastSeenAt: timestamp("lastSeenAt"),
     endedAt: timestamp("endedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => [
     index("call_session_recipient_status_idx").on(table.recipientId, table.status, table.expiresAt),
     index("call_session_conversation_created_idx").on(table.conversationId, table.createdAt),
+    index("call_session_status_last_seen_idx").on(table.status, table.lastSeenAt),
   ],
 );
 

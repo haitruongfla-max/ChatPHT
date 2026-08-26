@@ -70,6 +70,44 @@ describe("WebRTC Calling cô lập", () => {
     expect(signaling).toContain("onInvite");
   });
 
+  it("tự hoà giải phiên active stale và giữ session sống bằng heartbeat xác thực", () => {
+    const schema = source("drizzle/schema.ts");
+    const db = source("server/db.ts");
+    const router = source("server/routers.ts");
+    const core = source("src/features/webrtc-calling/hooks/useWebRTC.ts");
+    expect(schema).toContain('lastSeenAt: timestamp("lastSeenAt")');
+    expect(db).toContain("WEBRTC_ACTIVE_STALE_TIMEOUT_MS");
+    expect(db).toContain("reconcileStaleWebRTCCalls");
+    expect(db).toContain('status: "ended", endedAt: now');
+    expect(db).toContain("touchWebRTCCall");
+    expect(router).toContain("heartbeat: protectedProcedure");
+    expect(core).toContain("heartbeatMutation.mutateAsync");
+    expect(core).toContain("15_000");
+  });
+
+  it("không để peer lỗi hoặc caller gọi lại khóa vĩnh viễn cuộc gọi kế tiếp", () => {
+    const db = source("server/db.ts");
+    const core = source("src/features/webrtc-calling/hooks/useWebRTC.ts");
+    expect(db).toContain('activeSessions[0].callerId === input.callerId && (activeSessions[0].status === "accepted" || activeSessions[0].status === "active")');
+    expect(db).toContain('set({ status: "ended", endedAt: now })');
+    expect(db).toContain('set({ leftAt: now })');
+    expect(core).toContain("failPeerCall");
+    expect(core).toContain("endMutation.mutateAsync({ callId })");
+    expect(core).toContain("Phiên đã được giải phóng");
+  });
+
+  it("chỉ chấp nhận JSON từ tRPC để không hiển thị lỗi JSON Parse mơ hồ khi proxy trả HTML", () => {
+    const client = source("lib/trpc.ts");
+    const router = source("server/routers.ts");
+    const chat = source("app/chat/[id].tsx");
+    expect(client).toContain('Accept: "application/json"');
+    expect(client).toContain('contentType.includes("application/json")');
+    expect(client).toContain("Máy chủ ChatPHT trả về dữ liệu không hợp lệ");
+    expect(router).toContain("clientRequestId");
+    expect(chat).toContain("sendTextResiliently");
+    expect(chat).toContain("clientRequestId");
+  });
+
   it("chỉ mở điều khiển gọi từ header chat 1:1, nhưng overlay/controller được mount toàn cục", () => {
     const chat = source("app/chat/[id].tsx");
     const callingManager = source("components/calling-manager.tsx");

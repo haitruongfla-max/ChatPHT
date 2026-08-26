@@ -635,17 +635,24 @@ export const appRouter = router({
         }
       }),
     sendText: protectedProcedure
-      .input(z.object({ conversationId: z.number().int().positive(), body: z.string().trim().min(1).max(2000), replyToMessageId: z.number().int().positive().nullable().optional() }))
+      .input(z.object({
+        conversationId: z.number().int().positive(),
+        body: z.string().trim().min(1).max(2000),
+        clientRequestId: z.string().trim().min(12).max(64).regex(/^[A-Za-z0-9_-]+$/).optional(),
+        replyToMessageId: z.number().int().positive().nullable().optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         try {
-          const message = await db.createMessage({
+          const { message, created } = await db.createTextMessageIdempotent({
             conversationId: input.conversationId,
             senderId: ctx.user.id,
             body: input.body,
-            contentType: "text",
+            clientRequestId: input.clientRequestId ?? `legacy-${ctx.user.id}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
             replyToMessageId: input.replyToMessageId ?? null,
           });
-          void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
+          if (created) {
+            void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
+          }
           return publicMessage(message, null);
         } catch (error) {
           return appError(error, "Không thể gửi tin nhắn.");
@@ -875,6 +882,17 @@ export const appRouter = router({
           return appError(error, "Không thể nhận cuộc gọi.");
         }
       }),
+    connected: protectedProcedure
+      .input(z.object({ callId: z.string().trim().min(8).max(40) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const session = await db.markWebRTCCallConnected(input.callId, ctx.user.id);
+          emitWebRTCCallLifecycle(session);
+          return session;
+        } catch (error) {
+          return appError(error, "Không thể xác nhận kết nối cuộc gọi.");
+        }
+      }),
     decline: protectedProcedure
       .input(z.object({ callId: z.string().trim().min(8).max(40) }))
       .mutation(async ({ ctx, input }) => {
@@ -895,6 +913,15 @@ export const appRouter = router({
           return session;
         } catch (error) {
           return appError(error, "Không thể kết thúc cuộc gọi.");
+        }
+      }),
+    heartbeat: protectedProcedure
+      .input(z.object({ callId: z.string().trim().min(8).max(40) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await db.touchWebRTCCall(input.callId, ctx.user.id);
+        } catch (error) {
+          return appError(error, "Không thể duy trì phiên cuộc gọi.");
         }
       }),
     history: protectedProcedure

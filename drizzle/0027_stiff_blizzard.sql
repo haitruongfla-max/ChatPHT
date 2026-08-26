@@ -1,0 +1,2 @@
+ALTER TABLE `messages` ADD `clientRequestId` varchar(64);--> statement-breakpoint
+ALTER TABLE `messages` ADD CONSTRAINT `message_sender_client_request_unique_idx` UNIQUE(`conversationId`,`senderId`,`clientRequestId`);

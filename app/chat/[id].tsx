@@ -356,13 +356,28 @@ export default function ChatScreen() {
     if (mine) actions.push({ key: "delete", label: "Xóa vĩnh viễn", detail: "Xóa hẳn tin nhắn và media kèm theo", tone: "danger", onPress: () => confirmDeleteSelected(item) });
     openOptionSheet("Tùy chọn tin nhắn", isGroup && isGroupAdmin ? "Bạn có quyền ghim thông tin quan trọng cho cả nhóm." : "Chọn thao tác phù hợp với tin nhắn này.", actions);
   };
+  const isRetriableSendFailure = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    return /json parse|dữ liệu không hợp lệ|network request failed|failed to fetch/i.test(message);
+  };
+  const sendTextResiliently = async (body: string, replyToMessageId: number | null) => {
+    const clientRequestId = `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+    const input = { conversationId, body, clientRequestId, replyToMessageId };
+    try {
+      return await sendText.mutateAsync(input);
+    } catch (error) {
+      if (!isRetriableSendFailure(error)) throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, 450));
+      return sendText.mutateAsync(input);
+    }
+  };
   const send = async () => {
     const body = draft.trim();
     if (!body || sendText.isPending || uploading) return;
     setDraft("");
     void setTyping({ conversationId, isTyping: false }).catch(() => undefined);
     try {
-      await sendText.mutateAsync({ conversationId, body, replyToMessageId: replyTarget?.id ?? null });
+      await sendTextResiliently(body, replyTarget?.id ?? null);
       setReplyTarget(null);
       refresh();
     } catch (error) {
@@ -612,7 +627,7 @@ export default function ChatScreen() {
       const mediaSent = await uploadCapturedMedia(capturedMedia);
       if (!mediaSent) return;
       if (caption) {
-        await sendText.mutateAsync({ conversationId, body: caption, replyToMessageId: null });
+        await sendTextResiliently(caption, null);
         await utils.messages.list.invalidate({ conversationId });
       }
       setCapturedMedia(null);

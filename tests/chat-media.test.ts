@@ -4,6 +4,7 @@ vi.mock("../server/db", () => ({
   isUserAccessExpired: vi.fn(() => false),
   isConversationMember: vi.fn(),
   createMessage: vi.fn(),
+  createTextMessageIdempotent: vi.fn(),
   listMessages: vi.fn(),
   hideConversationForUser: vi.fn(),
   clearConversationForUserAndExitInbox: vi.fn(),
@@ -102,30 +103,33 @@ describe("chat media access controls", () => {
   });
 
   it("chuyển tham chiếu reply hợp lệ cho tầng dữ liệu khi gửi tin nhắn chữ", async () => {
-    vi.mocked(db.createMessage).mockResolvedValue({
-      id: 56,
-      conversationId: 18,
-      senderId: 7,
-      body: "Tôi đồng ý",
-      contentType: "text",
-      mediaKey: null,
-      mediaMime: null,
-      mediaName: null,
-      mediaSize: null,
-      mediaBatchId: null,
-      replyToMessageId: 41,
-      createdAt: new Date("2026-08-22T00:00:00.000Z"),
+    vi.mocked(db.createTextMessageIdempotent).mockResolvedValue({
+      created: true,
+      message: {
+        id: 56,
+        conversationId: 18,
+        senderId: 7,
+        body: "Tôi đồng ý",
+        contentType: "text",
+        mediaKey: null,
+        mediaMime: null,
+        mediaName: null,
+        mediaSize: null,
+        mediaBatchId: null,
+        replyToMessageId: 41,
+        createdAt: new Date("2026-08-22T00:00:00.000Z"),
+      },
     } as any);
 
     await expect(callerFor(7).messages.sendText({ conversationId: 18, body: "Tôi đồng ý", replyToMessageId: 41 }))
       .resolves.toMatchObject({ id: 56, replyToMessageId: 41, replyTo: null });
-    expect(db.createMessage).toHaveBeenCalledWith({
+    expect(db.createTextMessageIdempotent).toHaveBeenCalledWith(expect.objectContaining({
       conversationId: 18,
       senderId: 7,
       body: "Tôi đồng ý",
-      contentType: "text",
       replyToMessageId: 41,
-    });
+      clientRequestId: expect.stringMatching(/^legacy-7-/),
+    }));
   });
 
   it("hides a conversation only for the requesting account", async () => {

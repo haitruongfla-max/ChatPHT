@@ -1,0 +1,1 @@
+ALTER TABLE `call_sessions` MODIFY COLUMN `status` enum('ringing','accepted','active','declined','ended','missed') NOT NULL DEFAULT 'ringing';

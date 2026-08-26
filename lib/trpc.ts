@@ -30,17 +30,25 @@ export function createTRPCClient() {
           // Trạng thái call và hàng signaling là dữ liệu tức thời; không cho proxy/thiết bị
           // tái sử dụng response `ringing` sau khi phía còn lại đã answer.
           return {
+            Accept: "application/json",
             "Cache-Control": "no-store, no-cache, max-age=0",
             Pragma: "no-cache",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           };
         },
         // Custom fetch to include credentials for cookie-based auth
-        fetch(url, options) {
-          return fetch(url, {
+        async fetch(url, options) {
+          const response = await fetch(url, {
             ...options,
             credentials: "include",
           });
+          const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+          const preview = (await response.clone().text()).replace(/\s+/g, " ").trim().slice(0, 80);
+          const looksLikeHtml = /^<(?:!doctype|html|head|body|div|title)\b/i.test(preview);
+          if (!contentType.includes("application/json") || looksLikeHtml) {
+            throw new Error(`Máy chủ ChatPHT trả về dữ liệu không hợp lệ (HTTP ${response.status}; ${contentType || "không có Content-Type"}). ${preview ? "Vui lòng thử lại khi mạng ổn định." : ""}`);
+          }
+          return response;
         },
       }),
     ],
