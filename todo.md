@@ -435,4 +435,4 @@
 - [x] Chỉ nối ba nút gọi riêng biệt vào chat 1:1 cùng modal/route mới; bảo toàn chat nhóm, media, xóa lịch sử, hiện diện và các luồng không liên quan.
 - [x] Chạy hồi quy nguồn 110 kiểm thử, web export, Android export/config và lập checklist nghiệm thu hai Android thật cho WebRTC Calling.
 - [ ] Nghiệm thu media WebRTC thủ công: hai tài khoản ở hai phiên web độc lập, sau đó hai Android qua Wi-Fi và 4G.
-- [ ] Tăng version/releaseId, tạo checkpoint, build APK signed GitHub và xác minh asset/checksum trước bàn giao.
+- [x] Tăng version/releaseId, tạo checkpoint, build APK signed GitHub và xác minh asset/checksum trước bàn giao.
