@@ -427,4 +427,4 @@
 - [x] Bổ sung trạng thái trực tuyến và thời điểm offline theo thời gian thực cạnh tên liên hệ trong chat 1:1.
 - [x] Gỡ hoàn toàn viền xanh ngoài ảnh/video, chỉ giữ bề mặt media và đường phân tách trắng tối thiểu khi cần tương phản.
 - [x] Thiết kế lại các hộp tùy chọn tin nhắn và hội thoại theo phong cách nhất quán, rõ hậu quả các thao tác xóa.
-- [ ] Cập nhật ghi chú phát hành, kiểm thử toàn bộ và build APK GitHub mới cho phạm vi này.
+- [x] Cập nhật ghi chú phát hành, kiểm thử toàn bộ và build APK GitHub mới cho phạm vi này.
