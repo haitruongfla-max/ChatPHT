@@ -401,4 +401,8 @@
 - [x] Sửa bộ kiểm tra GitHub Release để nhận asset APK có định danh phát hành duy nhất, thay vì chỉ chấp nhận tên app-release.apk cũ.
 - [x] Hoàn thiện luồng tải APK, xác thực bản mới và chuyển sang trình cài đặt Android có xác nhận người dùng.
 - [x] Tăng versionName/versionCode/releaseId, kiểm thử hồi quy và lưu checkpoint cho APK thử nghiệm mới.
-- [ ] Đồng bộ GitHub, tạo release APK signed có asset, checksum và commit đúng định danh; đối chiếu trước khi gửi liên kết tải.
+- [x] Đồng bộ GitHub, tạo release APK signed có asset, checksum và commit đúng định danh; đối chiếu trước khi gửi liên kết tải.
+- [x] Hiển thị release notes đáng tin cậy của GitHub Release trước khi người dùng tải APK.
+- [x] Hiển thị tiến trình tải APK theo phần trăm, dung lượng đã tải và trạng thái lỗi/thành công rõ ràng.
+- [x] Thông báo rõ phiên bản đang dùng đã là mới nhất khi không có GitHub Release mới.
+- [x] Bổ sung hồi quy và kiểm tra TypeScript/lint cho trải nghiệm cập nhật mới.

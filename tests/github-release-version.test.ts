@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getBuildCodeFromAssetName, isReleaseNewerThanInstalled, isTrustedChatPhtReleaseApk } from "../lib/github-release-version";
+import { formatByteSize, getBuildCodeFromAssetName, getDownloadProgressPercent, isReleaseNewerThanInstalled, isTrustedChatPhtReleaseApk } from "../lib/github-release-version";
 
 describe("GitHub APK release version", () => {
   it("extracts the explicit Android versionCode from the trusted APK filename", () => {
@@ -22,5 +22,13 @@ describe("GitHub APK release version", () => {
   it("falls back to semantic version ordering only when build codes are not available", () => {
     expect(isReleaseNewerThanInstalled({ releaseVersion: "1.0.17", installedVersion: "1.0.16" })).toBe(true);
     expect(isReleaseNewerThanInstalled({ releaseVersion: "1.0.15", installedVersion: "1.0.16" })).toBe(false);
+  });
+
+  it("formats a visible APK download progress without inventing an unknown total", () => {
+    expect(getDownloadProgressPercent(25, 100)).toBe(25);
+    expect(getDownloadProgressPercent(150, 100)).toBe(100);
+    expect(getDownloadProgressPercent(25, null)).toBeNull();
+    expect(formatByteSize(1.5 * 1024 * 1024)).toBe("1.5 MB");
+    expect(formatByteSize(null)).toBe("không rõ dung lượng");
   });
 });

@@ -9,6 +9,19 @@ export function getBuildCodeFromAssetName(assetName: string) {
   return match ? Number(match[1]) : null;
 }
 
+export function formatByteSize(byteCount: number | null | undefined) {
+  if (typeof byteCount !== "number" || !Number.isFinite(byteCount) || byteCount < 0) return "không rõ dung lượng";
+  if (byteCount < 1024) return `${byteCount} B`;
+  if (byteCount < 1024 * 1024) return `${(byteCount / 1024).toFixed(1)} KB`;
+  return `${(byteCount / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function getDownloadProgressPercent(receivedBytes: number, totalBytes: number | null | undefined) {
+  if (typeof totalBytes !== "number" || !Number.isFinite(totalBytes) || totalBytes <= 0) return null;
+  if (!Number.isFinite(receivedBytes) || receivedBytes < 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((receivedBytes / totalBytes) * 100)));
+}
+
 /**
  * Accept only the immutable APK naming convention emitted by the release workflow.
  * Historical generic assets such as `app-release.apk` are deliberately excluded.

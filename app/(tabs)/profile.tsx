@@ -9,6 +9,7 @@ import {
   openAndroidPackageInstaller,
   type ChatPHTRelease,
 } from "@/lib/github-release-update";
+import { formatByteSize, getDownloadProgressPercent } from "@/lib/github-release-version";
 import { trpc } from "@/lib/trpc";
 import {
   clearStoredPushToken,
@@ -34,10 +35,11 @@ export default function ProfileScreen() {
   const serverLogout = trpc.auth.logout.useMutation();
   const unregisterDevice = trpc.notifications.unregisterDevice.useMutation();
   const [release, setRelease] = useState<ChatPHTRelease | null>(null);
-  const [updateState, setUpdateState] = useState<"idle" | "checking" | "ready" | "downloading" | "installing">("idle");
+  const [updateState, setUpdateState] = useState<"idle" | "checking" | "ready" | "latest" | "downloading" | "installing">("idle");
   const installedReleaseId = getInstalledReleaseId();
   const [updateNote, setUpdateNote] = useState(`Bản đang cài: ${getInstalledAppVersion()}${getInstalledBuildCode() ? ` (mã ${getInstalledBuildCode()})` : ""} · ${installedReleaseId}`);
-  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{ receivedBytes: number; totalBytes: number | null } | null>(null);
+  const downloadPercent = getDownloadProgressPercent(downloadProgress?.receivedBytes ?? 0, downloadProgress?.totalBytes);
   useFocusEffect(
     useCallback(() => {
       void refresh();
@@ -72,15 +74,17 @@ export default function ProfileScreen() {
   const checkForUpdate = async () => {
     setUpdateState("checking");
     setDownloadProgress(null);
+    setRelease(null);
     try {
       const latest = await getLatestChatPHTRelease();
       setRelease(latest);
       if (isReleaseNewer(latest.version, latest.buildCode)) {
         setUpdateState("ready");
-        setUpdateNote(`Có bản ${latest.version}${latest.buildCode ? ` (mã ${latest.buildCode})` : ""} — ${latest.assetName}`);
+        setUpdateNote(`Đã tìm thấy bản ${latest.version}${latest.buildCode ? ` (mã ${latest.buildCode})` : ""}. Xem ghi chú phát hành trước khi tải.`);
       } else {
-        setUpdateState("idle");
+        setUpdateState("latest");
         setUpdateNote(`Bạn đang dùng bản mới nhất (${getInstalledAppVersion()}${getInstalledBuildCode() ? ` · mã ${getInstalledBuildCode()}` : ""} · ${installedReleaseId}).`);
+        Alert.alert("Đã là phiên bản mới nhất", `ChatPHT ${getInstalledAppVersion()} hiện không cần cập nhật.`);
       }
     } catch (error) {
       setUpdateState("idle");
@@ -91,10 +95,10 @@ export default function ProfileScreen() {
   const installUpdate = async () => {
     if (!release || updateState === "downloading" || updateState === "installing") return;
     setUpdateState("downloading");
-    setDownloadProgress(0);
+    setDownloadProgress({ receivedBytes: 0, totalBytes: release.assetBytes });
     try {
       const apkUri = await downloadReleaseApk(release, ({ receivedBytes, totalBytes }) => {
-        setDownloadProgress(totalBytes ? Math.min(1, receivedBytes / totalBytes) : null);
+        setDownloadProgress({ receivedBytes, totalBytes });
       });
       setUpdateState("installing");
       setUpdateNote("Đã tải xong. Android sẽ yêu cầu bạn xác nhận cài đặt.");
@@ -176,9 +180,24 @@ export default function ProfileScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.infoTitle}>Cập nhật ứng dụng</Text>
             <Text style={styles.infoText}>{updateNote}</Text>
+            {updateState === "ready" && release ? (
+              <View style={styles.releaseDetails} accessibilityLabel={`Thông tin bản cập nhật ${release.version}`}>
+                <Text style={styles.releaseTitle}>{release.title}</Text>
+                <Text style={styles.releaseMeta}>Bản {release.version}{release.buildCode ? ` · mã ${release.buildCode}` : ""} · {release.assetBytes ? formatByteSize(release.assetBytes) : "không rõ dung lượng"}</Text>
+                <Text style={styles.releaseNotesLabel}>Ghi chú phát hành</Text>
+                <Text style={styles.releaseNotes}>{release.notes}</Text>
+              </View>
+            ) : null}
             {updateState === "downloading" ? (
-              <View style={styles.progressTrack} accessibilityLabel="Tiến trình tải APK">
-                <View style={[styles.progressFill, { width: `${Math.round((downloadProgress ?? 0) * 100)}%` }]} />
+              <View style={styles.downloadStatus} accessibilityLabel="Tiến trình tải APK" accessibilityLiveRegion="polite">
+                <View style={styles.downloadHeading}>
+                  <ActivityIndicator size="small" color="#0F766E" />
+                  <Text style={styles.downloadLabel}>Đang tải APK{downloadPercent === null ? "…" : ` · ${downloadPercent}%`}</Text>
+                </View>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${downloadPercent ?? 0}%` }]} />
+                </View>
+                <Text style={styles.downloadBytes}>{formatByteSize(downloadProgress?.receivedBytes)}{downloadProgress?.totalBytes ? ` / ${formatByteSize(downloadProgress.totalBytes)}` : " · Đang xác định dung lượng"}</Text>
               </View>
             ) : null}
           </View>
@@ -302,8 +321,17 @@ const styles = StyleSheet.create({
   updateCheck: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#D1FAE5" },
   updateAction: { minHeight: 34, borderRadius: 11, paddingHorizontal: 10, alignItems: "center", justifyContent: "center", backgroundColor: "#0F766E" },
   updateActionText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
-  progressTrack: { height: 5, marginTop: 8, borderRadius: 3, overflow: "hidden", backgroundColor: "#BBF7D0" },
+  releaseDetails: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: "#C8F0DD" },
+  releaseTitle: { color: "#14532D", fontSize: 12.5, fontWeight: "800" },
+  releaseMeta: { color: "#49745A", fontSize: 11.5, lineHeight: 17, marginTop: 3 },
+  releaseNotesLabel: { color: "#14532D", fontSize: 11.5, fontWeight: "800", marginTop: 8 },
+  releaseNotes: { color: "#365A43", fontSize: 12, lineHeight: 18, marginTop: 3 },
+  downloadStatus: { marginTop: 10 },
+  downloadHeading: { alignItems: "center", flexDirection: "row", gap: 6 },
+  downloadLabel: { color: "#0F766E", fontSize: 12, fontWeight: "800" },
+  progressTrack: { height: 5, marginTop: 7, borderRadius: 3, overflow: "hidden", backgroundColor: "#BBF7D0" },
   progressFill: { height: "100%", borderRadius: 3, backgroundColor: "#0F766E" },
+  downloadBytes: { color: "#49745A", fontSize: 11, marginTop: 5 },
   settings: {
     marginHorizontal: 18,
     marginTop: 13,

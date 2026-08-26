@@ -15,6 +15,7 @@ const APK_MIME_TYPE = "application/vnd.android.package-archive";
 type GithubReleaseApiResponse = {
   tag_name?: unknown;
   name?: unknown;
+  body?: unknown;
   html_url?: unknown;
   prerelease?: unknown;
   draft?: unknown;
@@ -35,6 +36,7 @@ export type ChatPHTRelease = {
   assetBytes: number | null;
   buildCode: number | null;
   pageUrl: string;
+  notes: string;
 };
 
 export type ApkDownloadProgress = {
@@ -95,6 +97,9 @@ export async function getLatestChatPHTRelease(): Promise<ChatPHTRelease> {
     assetBytes: typeof asset.size === "number" && asset.size >= 0 ? asset.size : null,
     buildCode: getBuildCodeFromAssetName(asset.name),
     pageUrl: typeof payload.html_url === "string" ? payload.html_url : RELEASES_URL,
+    notes: typeof payload.body === "string" && payload.body.trim()
+      ? payload.body.trim()
+      : "Bản phát hành này chưa có ghi chú chi tiết từ GitHub.",
   };
 }
 
