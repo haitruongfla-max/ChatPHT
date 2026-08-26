@@ -446,4 +446,5 @@
 - [x] Điều tra và dọn an toàn phiên gọi 1:1 bị kẹt khiến thoại, video và chia sẻ màn hình đều báo hội thoại đang có cuộc gọi khác.
 - [x] Sửa lifecycle gọi để phiên hết hạn/đã kết thúc được phục hồi đúng cho cả caller và callee, không chặn cuộc gọi kế tiếp.
 - [x] Điều tra và sửa lỗi gửi tin nhận phản hồi HTML gây `JSON Parse error: Unexpected character: <`, giữ nguyên gửi text/media/retry đang hoạt động.
-- [ ] Bổ sung hồi quy, tăng phiên bản và phát hành APK GitHub đã xác minh cho batch sửa lỗi gọi/gửi tin.
+- [x] Bổ sung hồi quy, tăng phiên bản và phát hành APK GitHub đã xác minh cho batch sửa lỗi gọi/gửi tin.
+- [x] GitHub Release 1.0.42/vc46 đã được tải lại, xác minh định dạng APK và SHA-256 khớp asset phát hành.
