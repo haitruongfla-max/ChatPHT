@@ -26,8 +26,12 @@ export class VoiceP2pPeer {
   private stream: MediaStream | null = null;
   private pendingCandidates: RTCIceCandidate[] = [];
   private startPromise: Promise<void> | null = null;
+  private inboundSignalChain: Promise<void> = Promise.resolve();
+  private outboundSignalChain: Promise<void> = Promise.resolve();
   private stopped = false;
   private restartInFlight = false;
+  private initialOfferSent = false;
+  private remoteDescriptionSet = false;
 
   constructor(
     private readonly isCaller: boolean,
@@ -48,7 +52,7 @@ export class VoiceP2pPeer {
     this.peer = peer;
     peer.onicecandidate = (event: { candidate: RTCIceCandidate | null }) => {
       if (!event.candidate || this.stopped) return;
-      void this.sendSignal({ type: "ice", payload: JSON.stringify(event.candidate) }).catch(() => this.onState("failed"));
+      void this.enqueueOutboundSignal({ type: "ice", payload: JSON.stringify(event.candidate) }).catch(() => this.onState("failed"));
     };
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState;
@@ -82,21 +86,29 @@ export class VoiceP2pPeer {
   }
 
   async handleSignal(signal: VoiceSignal) {
+    const next = this.inboundSignalChain.then(() => this.handleSignalInternal(signal));
+    this.inboundSignalChain = next.catch(() => undefined);
+    return next;
+  }
+
+  private async handleSignalInternal(signal: VoiceSignal) {
     await this.startPromise;
     const peer = this.peer;
     if (!peer || this.stopped) return;
     if (signal.type === "offer") {
       const offer = JSON.parse(signal.payload);
       await peer.setRemoteDescription(new RTCSessionDescription(offer));
+      this.remoteDescriptionSet = true;
       await this.flushCandidates();
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
-      await this.sendSignal({ type: "answer", payload: JSON.stringify(answer) });
+      await this.enqueueOutboundSignal({ type: "answer", payload: JSON.stringify(answer) });
       return;
     }
     if (signal.type === "answer") {
       const answer = JSON.parse(signal.payload);
       await peer.setRemoteDescription(new RTCSessionDescription(answer));
+      this.remoteDescriptionSet = true;
       await this.flushCandidates();
       return;
     }
@@ -117,6 +129,8 @@ export class VoiceP2pPeer {
   async stop() {
     this.stopped = true;
     this.pendingCandidates = [];
+    this.initialOfferSent = false;
+    this.remoteDescriptionSet = false;
     this.stream?.getTracks().forEach((track) => track.stop());
     this.stream = null;
     this.peer?.close();
@@ -134,13 +148,15 @@ export class VoiceP2pPeer {
   private async createAndSendOffer(iceRestart: boolean) {
     const peer = this.peer;
     if (!peer || this.stopped || !this.isCaller) return;
+    if (!iceRestart && this.initialOfferSent) return;
+    if (!iceRestart) this.initialOfferSent = true;
     const offer = await peer.createOffer(iceRestart ? { iceRestart: true } : undefined);
     await peer.setLocalDescription(offer);
-    await this.sendSignal({ type: "offer", payload: JSON.stringify(offer) });
+    await this.enqueueOutboundSignal({ type: "offer", payload: JSON.stringify(offer) });
   }
 
   private async restartIce() {
-    if (!this.isCaller || this.restartInFlight || this.stopped) return;
+    if (!this.isCaller || this.restartInFlight || this.stopped || !this.remoteDescriptionSet) return;
     this.restartInFlight = true;
     try {
       await this.createAndSendOffer(true);
@@ -149,5 +165,11 @@ export class VoiceP2pPeer {
     } finally {
       this.restartInFlight = false;
     }
+  }
+
+  private async enqueueOutboundSignal(signal: VoiceSignal) {
+    const next = this.outboundSignalChain.then(() => this.sendSignal(signal));
+    this.outboundSignalChain = next.catch(() => undefined);
+    return next;
   }
 }

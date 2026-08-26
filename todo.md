@@ -382,5 +382,12 @@
 - [x] Giữ bản voice đầu tiên không có video call, camera call, MediaProjection, screen share hoặc Socket.IO call; các lớp đó chỉ được xét sau nghiệm thu Android ở lớp trước.
 - [x] Hoàn tất source gate voice clean-slate: diff sạch, TypeScript, lint, backend build, Android export/config và 96 kiểm thử qua (2 credential test skip chủ đích).
 - [x] Lưu checkpoint voice-only clean-slate versionCode 35 sau source gate, gồm fallback web an toàn và route Android native độc lập.
-- [ ] Đồng bộ GitHub và build APK thử nghiệm voice-only versionCode 35; không dùng hoặc quảng bá APK vc34 bị lỗi.
+- [x] Đồng bộ GitHub và build APK thử nghiệm voice-only versionCode 35 từ commit `347bd673`; release `v1.0.31-voice-clean-slate-vc35` có asset `app-release.apk` và SHA-256 đã đối chiếu.
+- [x] Nghiệm thu APK vc35 trên hai Android cho thấy voice không có audio hai chiều và nút kết thúc kẹt màn; không chuyển sang video hoặc screen.
+- [x] Phân tích dữ liệu MySQL an toàn của phiên vc35: phiên được tạo/kết thúc nhưng người nhận không trả answer, còn bên gọi ghi offer lặp; không đọc, lưu hoặc hiển thị SDP, ICE candidate hay credential TURN.
+- [x] Sửa nút kết thúc để cleanup peer, tắt stream và điều hướng cục bộ diễn ra tức thời, còn mutation backend chạy không chặn UI.
+- [x] Bổ sung hồi quy cho kết thúc cục bộ idempotent, tuần tự hóa signal và guard ICE restart trước remote description.
+- [x] Cố định callback gửi signal và lifecycle peer theo callId để query/mutation re-render không teardown rồi tạo offer mới; giới hạn ICE restart chỉ sau khi đã có remote description.
+- [x] Chuẩn bị voice lifecycle fix version 1.0.32 / versionCode 36, cập nhật tag release và đạt diff sạch, TypeScript, lint, backend build, Android export/config cùng 98 test qua (2 skip chủ đích).
+- [ ] Lưu checkpoint, đồng bộ GitHub và build APK voice lifecycle fix versionCode 36 để nghiệm thu hai Android lần hai.
 - [x] Cô lập module WebRTC native khỏi route web: preview web dùng fallback an toàn, route Android tải màn voice native khi chạy trên thiết bị; TypeScript, export web và preview không còn crash.

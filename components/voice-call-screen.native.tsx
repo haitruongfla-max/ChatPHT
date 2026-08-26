@@ -35,21 +35,34 @@ export default function VoiceCallScreen() {
   const peerRef = useRef<VoiceP2pPeer | null>(null);
   const handledSignals = useRef(new Set<number>());
   const pendingSignals = useRef<VoiceSignal[]>([]);
+  const sendSignalRef = useRef(sendSignal.mutateAsync);
+  const leaveStartedRef = useRef(false);
   const [connectionState, setConnectionState] = useState<VoiceConnectionState>("new");
   const [microphoneEnabled, setMicrophoneEnabled] = useState(true);
+
+  useEffect(() => {
+    sendSignalRef.current = sendSignal.mutateAsync;
+  }, [sendSignal.mutateAsync]);
+
+  const cleanupPeer = useCallback(() => {
+    const peer = peerRef.current;
+    peerRef.current = null;
+    pendingSignals.current = [];
+    if (peer) void peer.stop();
+  }, []);
 
   const voiceCall = call.data;
   const voiceCallId = voiceCall?.id;
   const isVoiceCaller = voiceCall?.isCaller ?? false;
+  const voiceIceServers = iceConfig.data?.iceServers;
   const shouldStart = Boolean(voiceCall && iceConfig.data && (voiceCall.status === "active" || (isVoiceCaller && voiceCall.status === "ringing")));
 
   const emitSignal = useCallback(async (signal: VoiceSignal) => {
     if (!callId) return;
-    await sendSignal.mutateAsync({ callId, ...signal });
-  }, [callId, sendSignal]);
+    await sendSignalRef.current({ callId, ...signal });
+  }, [callId]);
 
   useEffect(() => {
-    const voiceIceServers = iceConfig.data?.iceServers;
     if (!voiceCallId || !shouldStart || !voiceIceServers || peerRef.current) return;
     const peer = new VoiceP2pPeer(isVoiceCaller, emitSignal, setConnectionState, voiceIceServers);
     peerRef.current = peer;
@@ -62,11 +75,7 @@ export default function VoiceCallScreen() {
         console.warn("[voice] peer start failed", error instanceof Error ? error.message : "unknown");
         setConnectionState("failed");
       });
-    return () => {
-      if (peerRef.current === peer) peerRef.current = null;
-      void peer.stop();
-    };
-  }, [emitSignal, iceConfig.data, isVoiceCaller, shouldStart, voiceCallId]);
+  }, [emitSignal, isVoiceCaller, shouldStart, voiceCallId, voiceIceServers]);
 
   useEffect(() => {
     if (!drain.data) return;
@@ -84,25 +93,23 @@ export default function VoiceCallScreen() {
     }
   }, [drain.data]);
 
-  useEffect(() => () => {
-    void peerRef.current?.stop();
-    peerRef.current = null;
-    pendingSignals.current = [];
-  }, []);
+  useEffect(() => () => cleanupPeer(), [callId, cleanupPeer]);
 
-  const leave = async (kind: "decline" | "end") => {
+  useEffect(() => {
+    if (!voiceCall || voiceCall.status === "ringing" || voiceCall.status === "active" || leaveStartedRef.current) return;
+    leaveStartedRef.current = true;
+    cleanupPeer();
+    router.back();
+  }, [cleanupPeer, voiceCall]);
+
+  const leave = (kind: "decline" | "end") => {
     if (!callId) return router.back();
-    try {
-      if (kind === "decline") await decline.mutateAsync({ callId });
-      else await end.mutateAsync({ callId });
-    } catch {
-      // The other participant may have ended first; local cleanup still matters.
-    } finally {
-      await peerRef.current?.stop();
-      peerRef.current = null;
-      pendingSignals.current = [];
-      router.back();
-    }
+    if (leaveStartedRef.current) return;
+    leaveStartedRef.current = true;
+    const request = kind === "decline" ? decline.mutateAsync({ callId }) : end.mutateAsync({ callId });
+    cleanupPeer();
+    router.back();
+    void request.catch(() => undefined);
   };
 
   const accept = async () => {
@@ -139,13 +146,13 @@ export default function VoiceCallScreen() {
       </View>
       {isIncomingRinging ? (
         <View style={styles.incomingActions}>
-          <Pressable onPress={() => void leave("decline")} style={({ pressed }) => [styles.roundAction, styles.decline, pressed && styles.pressed]} accessibilityLabel="Từ chối gọi thoại"><MaterialIcons name="call-end" size={30} color="#FFFFFF" /></Pressable>
+          <Pressable onPress={() => leave("decline")} style={({ pressed }) => [styles.roundAction, styles.decline, pressed && styles.pressed]} accessibilityLabel="Từ chối gọi thoại"><MaterialIcons name="call-end" size={30} color="#FFFFFF" /></Pressable>
           <Pressable onPress={() => void accept()} style={({ pressed }) => [styles.roundAction, styles.accept, pressed && styles.pressed]} accessibilityLabel="Nhận gọi thoại"><MaterialIcons name="call" size={30} color="#FFFFFF" /></Pressable>
         </View>
       ) : (
         <View style={styles.activeActions}>
           <Pressable onPress={toggleMicrophone} style={({ pressed }) => [styles.control, !microphoneEnabled && styles.controlMuted, pressed && styles.pressed]} accessibilityLabel={microphoneEnabled ? "Tắt micro" : "Bật micro"}><MaterialIcons name={microphoneEnabled ? "mic" : "mic-off"} size={27} color="#FFFFFF" /><Text style={styles.controlText}>{microphoneEnabled ? "Micro" : "Đã tắt"}</Text></Pressable>
-          <Pressable onPress={() => void leave("end")} style={({ pressed }) => [styles.roundAction, styles.decline, pressed && styles.pressed]} accessibilityLabel="Kết thúc gọi thoại"><MaterialIcons name="call-end" size={30} color="#FFFFFF" /></Pressable>
+          <Pressable onPress={() => leave("end")} style={({ pressed }) => [styles.roundAction, styles.decline, pressed && styles.pressed]} accessibilityLabel="Kết thúc gọi thoại"><MaterialIcons name="call-end" size={30} color="#FFFFFF" /></Pressable>
         </View>
       )}
     </SafeAreaView>
