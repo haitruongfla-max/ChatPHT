@@ -1,15 +1,17 @@
 import { and, desc, eq, inArray, isNotNull, isNull, like, lt, ne, or, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
+  callParticipants,
   callSessions,
   conversationMembers,
   conversations,
   friendRequests,
   messageReactions,
   messages,
+  p2pCallTelemetry,
   p2pSignals,
   pushDevices,
+  screenShareSessions,
   storageSettings,
   type InsertUser,
   type User,
@@ -610,6 +612,135 @@ export async function updateGroupMemberRole(input: { conversationId: number; req
   return listGroupMembers(input.conversationId, input.requesterId);
 }
 
+/**
+ * Transfers group ownership to an existing member. The former owner becomes a
+ * regular member so that ownership is never inferred only from createdBy.
+ */
+export async function transferGroupOwnership(input: { conversationId: number; requesterId: number; successorId: number }) {
+  const db = requireDb(await getDb());
+  const [conversation] = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.id, input.conversationId), eq(conversations.kind, "group")))
+    .limit(1);
+  if (!conversation) throw new Error("Không tìm thấy nhóm trò chuyện.");
+
+  const memberships = await db
+    .select({ userId: conversationMembers.userId, role: conversationMembers.role })
+    .from(conversationMembers)
+    .where(and(
+      eq(conversationMembers.conversationId, input.conversationId),
+      inArray(conversationMembers.userId, [input.requesterId, input.successorId]),
+    ));
+  const requester = memberships.find((membership) => membership.userId === input.requesterId);
+  const successor = memberships.find((membership) => membership.userId === input.successorId);
+  if (!requester || requester.role !== "owner") throw new Error("Chỉ chủ nhóm mới có thể chuyển quyền chủ nhóm.");
+  if (!successor || input.successorId === input.requesterId) throw new Error("Người nhận quyền phải là một thành viên khác trong nhóm.");
+
+  await db.transaction(async (tx) => {
+    // Promote first so a successful transfer never leaves the group without an owner.
+    await tx
+      .update(conversationMembers)
+      .set({ role: "owner" })
+      .where(and(eq(conversationMembers.conversationId, input.conversationId), eq(conversationMembers.userId, input.successorId)));
+    await tx
+      .update(conversationMembers)
+      .set({ role: "member" })
+      .where(and(eq(conversationMembers.conversationId, input.conversationId), eq(conversationMembers.userId, input.requesterId)));
+    await tx.update(conversations).set({ createdBy: input.successorId }).where(eq(conversations.id, input.conversationId));
+  });
+  return listGroupMembers(input.conversationId, input.requesterId);
+}
+
+/** A non-owner can leave a group without changing other members' permissions. */
+export async function leaveGroup(input: { conversationId: number; userId: number }) {
+  const db = requireDb(await getDb());
+  const [conversation] = await db
+    .select({ kind: conversations.kind })
+    .from(conversations)
+    .where(eq(conversations.id, input.conversationId))
+    .limit(1);
+  if (!conversation || conversation.kind !== "group") throw new Error("Không tìm thấy nhóm trò chuyện.");
+  const [membership] = await db
+    .select({ role: conversationMembers.role })
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, input.conversationId), eq(conversationMembers.userId, input.userId)))
+    .limit(1);
+  if (!membership) throw new Error("Bạn không còn là thành viên nhóm này.");
+  if (membership.role === "owner") throw new Error("Chủ nhóm cần chuyển quyền chủ nhóm trước khi rời nhóm.");
+  const members = await db
+    .select({ id: conversationMembers.id })
+    .from(conversationMembers)
+    .where(eq(conversationMembers.conversationId, input.conversationId));
+  if (members.length <= 1) throw new Error("Không thể rời nhóm vì nhóm phải còn ít nhất một thành viên.");
+  await db.delete(conversationMembers).where(and(
+    eq(conversationMembers.conversationId, input.conversationId),
+    eq(conversationMembers.userId, input.userId),
+  ));
+  return { success: true as const };
+}
+
+export type DeletedGroupConversation = {
+  mediaKeys: string[];
+  messagesDeleted: number;
+};
+
+/**
+ * Permanently removes one group and its content. Database rows are removed
+ * before best-effort object storage cleanup performed by the authenticated router.
+ */
+export async function deleteGroupConversation(input: {
+  conversationId: number;
+  requesterId: number;
+  authorizedBySystemAdmin?: boolean;
+}): Promise<DeletedGroupConversation> {
+  const db = requireDb(await getDb());
+  const [conversation] = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.id, input.conversationId), eq(conversations.kind, "group")))
+    .limit(1);
+  if (!conversation) throw new Error("Không tìm thấy nhóm trò chuyện.");
+
+  if (!input.authorizedBySystemAdmin) {
+    const [membership] = await db
+      .select({ role: conversationMembers.role })
+      .from(conversationMembers)
+      .where(and(eq(conversationMembers.conversationId, input.conversationId), eq(conversationMembers.userId, input.requesterId)))
+      .limit(1);
+    if (!membership || membership.role !== "owner") throw new Error("Chỉ chủ nhóm mới có thể xóa vĩnh viễn nhóm.");
+  }
+
+  const [messageRows, memberRows, callRows] = await Promise.all([
+    db.select({ id: messages.id, mediaKey: messages.mediaKey }).from(messages).where(eq(messages.conversationId, input.conversationId)),
+    db.select({ wallpaperKey: conversationMembers.wallpaperKey }).from(conversationMembers).where(eq(conversationMembers.conversationId, input.conversationId)),
+    db.select({ id: callSessions.id }).from(callSessions).where(eq(callSessions.conversationId, input.conversationId)),
+  ]);
+  const messageIds = messageRows.map((message) => message.id);
+  const callIds = callRows.map((call) => call.id);
+  const mediaKeys = Array.from(new Set([
+    ...messageRows.map((message) => message.mediaKey),
+    ...memberRows.map((member) => member.wallpaperKey),
+    conversation.avatarKey,
+    conversation.backgroundKey,
+  ].filter((key): key is string => Boolean(key))));
+
+  await db.transaction(async (tx) => {
+    if (callIds.length) {
+      await tx.delete(p2pSignals).where(inArray(p2pSignals.callId, callIds));
+      await tx.delete(p2pCallTelemetry).where(inArray(p2pCallTelemetry.callId, callIds));
+      await tx.delete(callParticipants).where(inArray(callParticipants.callId, callIds));
+      await tx.delete(callSessions).where(inArray(callSessions.id, callIds));
+    }
+    await tx.delete(screenShareSessions).where(eq(screenShareSessions.conversationId, input.conversationId));
+    if (messageIds.length) await tx.delete(messageReactions).where(inArray(messageReactions.messageId, messageIds));
+    await tx.delete(messages).where(eq(messages.conversationId, input.conversationId));
+    await tx.delete(conversationMembers).where(eq(conversationMembers.conversationId, input.conversationId));
+    await tx.delete(conversations).where(eq(conversations.id, input.conversationId));
+  });
+  return { mediaKeys, messagesDeleted: messageRows.length };
+}
+
 export async function pinGroupMessage(input: { conversationId: number; requesterId: number; messageId: number | null }) {
   const db = requireDb(await getDb());
   await requireGroupRole(input.conversationId, input.requesterId, ["owner", "admin"]);
@@ -834,164 +965,6 @@ export async function getConversationPeer(conversationId: number, userId: number
   if (!peerMembership[0]) return undefined;
   const peer = await getUserById(peerMembership[0].userId);
   return peer ? toPublicProfile(peer) : undefined;
-}
-
-export type VoiceCallSummary = {
-  id: string;
-  conversationId: number;
-  status: "ringing" | "active" | "declined" | "ended" | "missed";
-  direction: "outgoing" | "incoming";
-  isCaller: boolean;
-  expiresAt: Date;
-  answeredAt: Date | null;
-  endedAt: Date | null;
-  createdAt: Date;
-  peer: PublicProfile;
-};
-
-const VOICE_RING_TIMEOUT_MS = 45_000;
-
-function asVoiceCallSummary(
-  call: typeof callSessions.$inferSelect,
-  userId: number,
-  peer: PublicProfile,
-): VoiceCallSummary {
-  return {
-    id: call.id,
-    conversationId: call.conversationId,
-    status: call.status,
-    direction: call.callerId === userId ? "outgoing" : "incoming",
-    isCaller: call.callerId === userId,
-    expiresAt: call.expiresAt,
-    answeredAt: call.answeredAt,
-    endedAt: call.endedAt,
-    createdAt: call.createdAt,
-    peer,
-  };
-}
-
-async function getAuthorizedVoiceCall(callId: string, userId: number) {
-  const db = requireDb(await getDb());
-  const call = (await db.select().from(callSessions).where(eq(callSessions.id, callId)).limit(1))[0];
-  if (!call || call.isGroup || call.kind !== "audio" || call.p2pMode !== "audio" || call.provider !== "p2p") {
-    throw new Error("Phiên gọi thoại không tồn tại.");
-  }
-  if (call.callerId !== userId && call.recipientId !== userId) throw new Error("Bạn không có quyền với phiên gọi thoại này.");
-  if (call.status === "ringing" && call.expiresAt.getTime() <= Date.now()) {
-    await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, callId));
-    throw new Error("Cuộc gọi đã hết thời gian chờ.");
-  }
-  return call;
-}
-
-async function voicePeerFor(call: typeof callSessions.$inferSelect, userId: number) {
-  const peerId = call.callerId === userId ? call.recipientId : call.callerId;
-  const peer = await getUserById(peerId);
-  if (!peer) throw new Error("Không tìm thấy người nhận cuộc gọi.");
-  return toPublicProfile(peer);
-}
-
-/** Creates a direct, microphone-only P2P call. No video or screen mode is accepted here. */
-export async function createVoiceCallSession(conversationId: number, callerId: number) {
-  const db = requireDb(await getDb());
-  const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
-  if (!conversation || conversation.kind !== "direct") throw new Error("Gọi thoại chỉ hỗ trợ hội thoại 1:1.");
-  const peer = await getConversationPeer(conversationId, callerId);
-  if (!peer) throw new Error("Bạn không có quyền gọi trong hội thoại này.");
-
-  const now = new Date();
-  await db
-    .update(callSessions)
-    .set({ status: "missed", endedAt: now })
-    .where(and(eq(callSessions.recipientId, peer.id), eq(callSessions.status, "ringing")));
-
-  const id = randomUUID();
-  await db.insert(callSessions).values({
-    id,
-    conversationId,
-    callerId,
-    recipientId: peer.id,
-    room: `voice-${id}`,
-    kind: "audio",
-    p2pMode: "audio",
-    provider: "p2p",
-    isGroup: false,
-    status: "ringing",
-    expiresAt: new Date(now.getTime() + VOICE_RING_TIMEOUT_MS),
-  });
-  const created = (await db.select().from(callSessions).where(eq(callSessions.id, id)).limit(1))[0];
-  if (!created) throw new Error("Không thể tạo phiên gọi thoại.");
-  return asVoiceCallSummary(created, callerId, peer);
-}
-
-export async function getVoiceCallSession(callId: string, userId: number) {
-  const call = await getAuthorizedVoiceCall(callId, userId);
-  return asVoiceCallSummary(call, userId, await voicePeerFor(call, userId));
-}
-
-export async function getIncomingVoiceCallSession(userId: number) {
-  const db = requireDb(await getDb());
-  const call = (
-    await db
-      .select()
-      .from(callSessions)
-      .where(and(eq(callSessions.recipientId, userId), eq(callSessions.status, "ringing"), eq(callSessions.kind, "audio"), eq(callSessions.p2pMode, "audio"), eq(callSessions.provider, "p2p")))
-      .orderBy(desc(callSessions.createdAt))
-      .limit(1)
-  )[0];
-  if (!call) return undefined;
-  if (call.expiresAt.getTime() <= Date.now()) {
-    await db.update(callSessions).set({ status: "missed", endedAt: new Date() }).where(eq(callSessions.id, call.id));
-    return undefined;
-  }
-  return asVoiceCallSummary(call, userId, await voicePeerFor(call, userId));
-}
-
-export async function answerVoiceCallSession(callId: string, userId: number) {
-  const db = requireDb(await getDb());
-  const call = await getAuthorizedVoiceCall(callId, userId);
-  if (call.recipientId !== userId) throw new Error("Chỉ người nhận mới có thể nhận cuộc gọi.");
-  if (call.status === "active") return asVoiceCallSummary(call, userId, await voicePeerFor(call, userId));
-  if (call.status !== "ringing") throw new Error("Cuộc gọi này không còn chờ phản hồi.");
-  const answeredAt = new Date();
-  await db.update(callSessions).set({ status: "active", answeredAt }).where(eq(callSessions.id, callId));
-  const updated = (await db.select().from(callSessions).where(eq(callSessions.id, callId)).limit(1))[0];
-  if (!updated) throw new Error("Không thể nhận cuộc gọi.");
-  return asVoiceCallSummary(updated, userId, await voicePeerFor(updated, userId));
-}
-
-export async function finishVoiceCallSession(callId: string, userId: number, status: "declined" | "ended") {
-  const db = requireDb(await getDb());
-  const call = await getAuthorizedVoiceCall(callId, userId);
-  const finalStatus = status === "ended" && call.status === "ringing" ? "missed" : status;
-  await db.update(callSessions).set({ status: finalStatus, endedAt: new Date() }).where(eq(callSessions.id, callId));
-  return { success: true };
-}
-
-export async function createVoiceSignal(input: { callId: string; senderId: number; type: "offer" | "answer" | "ice"; payload: string }) {
-  const db = requireDb(await getDb());
-  const call = await getAuthorizedVoiceCall(input.callId, input.senderId);
-  if (call.status !== "ringing" && call.status !== "active") throw new Error("Cuộc gọi đã kết thúc.");
-  if ((input.type === "offer" && call.callerId !== input.senderId) || (input.type === "answer" && call.recipientId !== input.senderId)) {
-    throw new Error("Tín hiệu không hợp lệ cho vai trò cuộc gọi.");
-  }
-  const recipientId = call.callerId === input.senderId ? call.recipientId : call.callerId;
-  await db.delete(p2pSignals).where(lt(p2pSignals.createdAt, new Date(Date.now() - 15 * 60_000)));
-  const [created] = await db.insert(p2pSignals).values({ ...input, recipientId }).$returningId();
-  return { id: created?.id ?? null };
-}
-
-export async function drainVoiceSignals(callId: string, userId: number) {
-  const db = requireDb(await getDb());
-  await getAuthorizedVoiceCall(callId, userId);
-  const pending = await db
-    .select()
-    .from(p2pSignals)
-    .where(and(eq(p2pSignals.callId, callId), eq(p2pSignals.recipientId, userId)))
-    .orderBy(p2pSignals.id)
-    .limit(100);
-  if (pending.length) await db.delete(p2pSignals).where(inArray(p2pSignals.id, pending.map((signal) => signal.id)));
-  return pending.map((signal) => ({ id: signal.id, type: signal.type, payload: signal.payload, createdAt: signal.createdAt }));
 }
 
 export async function getAdminOperationalStats() {

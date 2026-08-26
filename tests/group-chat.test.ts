@@ -9,6 +9,9 @@ vi.mock("../server/db", () => ({
   addGroupMembers: vi.fn(),
   removeGroupMember: vi.fn(),
   updateGroupMemberRole: vi.fn(),
+  transferGroupOwnership: vi.fn(),
+  leaveGroup: vi.fn(),
+  deleteGroupConversation: vi.fn(),
   updateGroupConversation: vi.fn(),
   pinGroupMessage: vi.fn(),
 }));
@@ -28,9 +31,9 @@ vi.mock("../server/media-access", () => ({
 import * as db from "../server/db";
 import { appRouter } from "../server/routers";
 
-function callerFor(userId = 7) {
+function callerFor(userId = 7, role: "user" | "admin" = "user") {
   return appRouter.createCaller({
-    user: { id: userId, role: "user", accessExpiresAt: null },
+    user: { id: userId, role, accessExpiresAt: null },
     req: { headers: { host: "api.example" }, protocol: "https" },
     res: { cookie: vi.fn(), clearCookie: vi.fn() },
   } as any);
@@ -114,6 +117,39 @@ describe("group chat router", () => {
       userId: 12,
       role: "owner" as never,
     })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("chuyển quyền chủ qua endpoint nhóm với thành viên kế nhiệm hợp lệ", async () => {
+    vi.mocked(db.transferGroupOwnership).mockResolvedValue([] as any);
+
+    await expect(callerFor(7).conversations.transferGroupOwnership({ conversationId: 18, successorId: 12 }))
+      .resolves.toEqual([]);
+    expect(db.transferGroupOwnership).toHaveBeenCalledWith({ conversationId: 18, successorId: 12, requesterId: 7 });
+
+    await expect(callerFor(7).conversations.transferGroupOwnership({ conversationId: 18, successorId: 0 }))
+      .rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("cho thành viên rời nhóm nhưng chuyển tiếp lỗi khi chủ nhóm chưa bàn giao", async () => {
+    vi.mocked(db.leaveGroup).mockRejectedValueOnce(new Error("Chủ nhóm cần chuyển quyền chủ nhóm trước khi rời nhóm."));
+    await expect(callerFor(7).conversations.leaveGroup({ conversationId: 18 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(db.leaveGroup).toHaveBeenCalledWith({ conversationId: 18, userId: 7 });
+
+    vi.mocked(db.leaveGroup).mockResolvedValueOnce({ success: true } as any);
+    await expect(callerFor(12).conversations.leaveGroup({ conversationId: 18 })).resolves.toEqual({ success: true });
+    expect(db.leaveGroup).toHaveBeenLastCalledWith({ conversationId: 18, userId: 12 });
+  });
+
+  it("tách xóa nhóm của chủ nhóm với xóa nhóm của quản trị hệ thống", async () => {
+    vi.mocked(db.deleteGroupConversation).mockResolvedValue({ mediaKeys: ["chatpht/group/18/avatar.jpg"], messagesDeleted: 3 } as any);
+
+    await expect(callerFor(7).conversations.deleteGroup({ conversationId: 18 }))
+      .resolves.toMatchObject({ success: true, deletedMessages: 3, deletedMedia: 1 });
+    expect(db.deleteGroupConversation).toHaveBeenLastCalledWith({ conversationId: 18, requesterId: 7 });
+
+    await expect(callerFor(1, "admin").admin.deleteGroup({ conversationId: 18 }))
+      .resolves.toMatchObject({ success: true, deletedMessages: 3, deletedMedia: 1 });
+    expect(db.deleteGroupConversation).toHaveBeenLastCalledWith({ conversationId: 18, requesterId: 1, authorizedBySystemAdmin: true });
   });
 
   it("giữ hình dạng inbox nhóm không lộ storage key avatar thô", async () => {

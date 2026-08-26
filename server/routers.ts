@@ -11,7 +11,6 @@ import { runMediaCleanup } from "./media-cleanup";
 import { dispatchNewMessagePushNotifications } from "./push";
 import { createMediaAccessUrl } from "./media-access";
 import { emitConversationBackgroundUpdated } from "./_core/realtime";
-import { getVoiceIceServers } from "./voice-ice";
 import { createOpaqueStorageKey, storageCreateUploadUrl, storageDelete, storagePut } from "./storage";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
@@ -230,6 +229,21 @@ export const appRouter = router({
         await Promise.allSettled(removed.mediaKeys.map((key) => storageDelete(key)));
         return { success: true as const, username: removed.username };
       }),
+    deleteGroup: adminProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const removed = await db.deleteGroupConversation({
+            conversationId: input.conversationId,
+            requesterId: ctx.user.id,
+            authorizedBySystemAdmin: true,
+          });
+          await Promise.allSettled(removed.mediaKeys.map((key) => storageDelete(key)));
+          return { success: true as const, deletedMessages: removed.messagesDeleted, deletedMedia: removed.mediaKeys.length };
+        } catch (error) {
+          return appError(error, "Không thể xóa nhóm.");
+        }
+      }),
   }),
   assistant: router({
     ask: protectedProcedure
@@ -386,6 +400,35 @@ export const appRouter = router({
           return appError(error, "Không thể cập nhật quyền quản trị viên.");
         }
       }),
+    transferGroupOwnership: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive(), successorId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return withSecureAvatarUrls(ctx, await db.transferGroupOwnership({ ...input, requesterId: ctx.user.id }));
+        } catch (error) {
+          return appError(error, "Không thể chuyển quyền chủ nhóm.");
+        }
+      }),
+    leaveGroup: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await db.leaveGroup({ conversationId: input.conversationId, userId: ctx.user.id });
+        } catch (error) {
+          return appError(error, "Không thể rời nhóm.");
+        }
+      }),
+    deleteGroup: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const removed = await db.deleteGroupConversation({ conversationId: input.conversationId, requesterId: ctx.user.id });
+          await Promise.allSettled(removed.mediaKeys.map((key) => storageDelete(key)));
+          return { success: true as const, deletedMessages: removed.messagesDeleted, deletedMedia: removed.mediaKeys.length };
+        } catch (error) {
+          return appError(error, "Không thể xóa nhóm.");
+        }
+      }),
     requestGroupAvatarUpload: protectedProcedure
       .input(z.object({ conversationId: z.number().int().positive(), mimeType: avatarMimeSchema, size: z.number().int().positive().max(MAX_AVATAR_BYTES) }))
       .mutation(async ({ ctx, input }) => {
@@ -516,94 +559,6 @@ export const appRouter = router({
           return appError(error, "Không thể xóa sạch nội dung hội thoại.");
         }
       }),
-  }),
-  voice: router({
-    start: protectedProcedure
-      .input(z.object({ conversationId: z.number().int().positive() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          return await db.createVoiceCallSession(input.conversationId, ctx.user.id);
-        } catch (error) {
-          return appError(error, "Không thể bắt đầu gọi thoại.");
-        }
-      }),
-    get: protectedProcedure
-      .input(z.object({ callId: z.string().uuid() }))
-      .query(async ({ ctx, input }) => {
-        try {
-          return await db.getVoiceCallSession(input.callId, ctx.user.id);
-        } catch (error) {
-          return appError(error, "Không thể tải phiên gọi thoại.");
-        }
-      }),
-    iceConfig: protectedProcedure
-      .input(z.object({ callId: z.string().uuid() }))
-      .query(async ({ ctx, input }) => {
-        try {
-          await db.getVoiceCallSession(input.callId, ctx.user.id);
-          return { iceServers: getVoiceIceServers() };
-        } catch (error) {
-          return appError(error, "Không thể cấp cấu hình kết nối gọi thoại.");
-        }
-      }),
-    incoming: protectedProcedure.query(async ({ ctx }) => {
-      try {
-        return await db.getIncomingVoiceCallSession(ctx.user.id);
-      } catch (error) {
-        return appError(error, "Không thể kiểm tra cuộc gọi đến.");
-      }
-    }),
-    answer: protectedProcedure
-      .input(z.object({ callId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          return await db.answerVoiceCallSession(input.callId, ctx.user.id);
-        } catch (error) {
-          return appError(error, "Không thể nhận cuộc gọi.");
-        }
-      }),
-    decline: protectedProcedure
-      .input(z.object({ callId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          return await db.finishVoiceCallSession(input.callId, ctx.user.id, "declined");
-        } catch (error) {
-          return appError(error, "Không thể từ chối cuộc gọi.");
-        }
-      }),
-    end: protectedProcedure
-      .input(z.object({ callId: z.string().uuid() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          return await db.finishVoiceCallSession(input.callId, ctx.user.id, "ended");
-        } catch (error) {
-          return appError(error, "Không thể kết thúc cuộc gọi.");
-        }
-      }),
-    signal: router({
-      send: protectedProcedure
-        .input(z.object({
-          callId: z.string().uuid(),
-          type: z.enum(["offer", "answer", "ice"]),
-          payload: z.string().min(2).max(120_000),
-        }))
-        .mutation(async ({ ctx, input }) => {
-          try {
-            return await db.createVoiceSignal({ ...input, senderId: ctx.user.id });
-          } catch (error) {
-            return appError(error, "Không thể gửi tín hiệu gọi thoại.");
-          }
-        }),
-      drain: protectedProcedure
-        .input(z.object({ callId: z.string().uuid() }))
-        .query(async ({ ctx, input }) => {
-          try {
-            return await db.drainVoiceSignals(input.callId, ctx.user.id);
-          } catch (error) {
-            return appError(error, "Không thể nhận tín hiệu gọi thoại.");
-          }
-        }),
-    }),
   }),
   messages: router({
     list: protectedProcedure

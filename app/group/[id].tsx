@@ -28,6 +28,10 @@ export default function GroupSettingsScreen() {
   const addMembers = trpc.conversations.addGroupMembers.useMutation();
   const removeMember = trpc.conversations.removeGroupMember.useMutation();
   const updateMemberRole = trpc.conversations.updateGroupMemberRole.useMutation();
+  const transferOwnership = trpc.conversations.transferGroupOwnership.useMutation();
+  const leaveGroup = trpc.conversations.leaveGroup.useMutation();
+  const deleteGroup = trpc.conversations.deleteGroup.useMutation();
+  const deleteGroupAsSystemAdmin = trpc.admin.deleteGroup.useMutation();
   const [mode, setMode] = useState<ScreenMode>("members");
   const [title, setTitle] = useState("");
   const [avatar, setAvatar] = useState<SelectedAvatar | null>(null);
@@ -43,7 +47,9 @@ export default function GroupSettingsScreen() {
   const memberIds = useMemo(() => new Set(members.map((member) => member.id)), [members]);
   const availableContacts = useMemo(() => (contacts.data ?? []).filter((contact) => !memberIds.has(contact.id)), [contacts.data, memberIds]);
   const savingGroup = requestAvatarUpload.isPending || updateGroup.isPending;
-  const changingMembers = addMembers.isPending || removeMember.isPending || updateMemberRole.isPending;
+  const changingMembers = addMembers.isPending || removeMember.isPending || updateMemberRole.isPending || transferOwnership.isPending;
+  const lifecyclePending = leaveGroup.isPending || deleteGroup.isPending || deleteGroupAsSystemAdmin.isPending;
+  const canDeleteGroup = isOwner || user?.role === "admin";
 
   useEffect(() => {
     if (group?.title) setTitle(group.title);
@@ -165,6 +171,69 @@ export default function GroupSettingsScreen() {
     ]);
   };
 
+  const confirmTransferOwnership = (member: (typeof members)[number]) => {
+    Alert.alert(
+      "Chuyển quyền chủ nhóm?",
+      `${member.displayName} sẽ là chủ nhóm mới. Bạn trở thành thành viên thường và có thể rời nhóm sau đó.`,
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Chuyển quyền",
+          style: "destructive",
+          onPress: () => {
+            void transferOwnership.mutateAsync({ conversationId, successorId: member.id })
+              .then(() => {
+                Alert.alert("Đã chuyển quyền", `${member.displayName} hiện là chủ nhóm.`);
+                refreshGroup();
+              })
+              .catch((error: unknown) => Alert.alert("Không thể chuyển quyền", error instanceof Error ? error.message : "Vui lòng thử lại."));
+          },
+        },
+      ],
+    );
+  };
+
+  const returnToConversations = () => {
+    void utils.conversations.list.invalidate();
+    router.replace("/(tabs)" as never);
+  };
+
+  const confirmLeaveGroup = () => {
+    Alert.alert("Rời nhóm?", "Bạn sẽ không còn xem hoặc gửi tin nhắn trong nhóm này.", [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Rời nhóm",
+        style: "destructive",
+        onPress: () => {
+          void leaveGroup.mutateAsync({ conversationId })
+            .then(returnToConversations)
+            .catch((error: unknown) => Alert.alert("Không thể rời nhóm", error instanceof Error ? error.message : "Vui lòng thử lại."));
+        },
+      },
+    ]);
+  };
+
+  const confirmDeleteGroup = () => {
+    const systemAdminDelete = !isOwner && user.role === "admin";
+    Alert.alert(
+      systemAdminDelete ? "Xóa nhóm bằng quyền quản trị hệ thống?" : "Xóa vĩnh viễn nhóm?",
+      "Toàn bộ thành viên, tin nhắn, phản hồi, ảnh, video, avatar và nền của nhóm sẽ bị xóa. Thao tác này không thể hoàn tác.",
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Xóa vĩnh viễn",
+          style: "destructive",
+          onPress: () => {
+            const mutation = systemAdminDelete ? deleteGroupAsSystemAdmin : deleteGroup;
+            void mutation.mutateAsync({ conversationId })
+              .then(returnToConversations)
+              .catch((error: unknown) => Alert.alert("Không thể xóa nhóm", error instanceof Error ? error.message : "Vui lòng thử lại."));
+          },
+        },
+      ],
+    );
+  };
+
   const data = mode === "members" ? members : availableContacts;
 
   return (
@@ -187,7 +256,7 @@ export default function GroupSettingsScreen() {
                 <ProfileAvatar name={group.title} avatarUrl={avatar?.uri ?? group.avatarUrl} size={78} />
                 {canManage ? <View style={styles.avatarEdit}><MaterialIcons name="photo-camera" size={16} color="#FFFFFF" /></View> : null}
               </Pressable>
-              <View style={styles.identityText}><Text numberOfLines={2} style={styles.groupTitle}>{group.title}</Text><Text style={styles.memberMeta}>{members.length}/{MAX_GROUP_MEMBERS} thành viên</Text><Text style={styles.roleMeta}>{isOwner ? "Bạn là người tạo nhóm" : canManage ? "Bạn là quản trị viên" : "Thành viên nhóm"}</Text></View>
+              <View style={styles.identityText}><Text numberOfLines={2} style={styles.groupTitle}>{group.title}</Text><Text style={styles.memberMeta}>{members.length}/{MAX_GROUP_MEMBERS} thành viên</Text><Text style={styles.roleMeta}>{isOwner ? "Bạn là chủ nhóm" : user.role === "admin" ? "Quản trị hệ thống" : canManage ? "Quản trị viên nhóm" : "Thành viên nhóm"}</Text></View>
             </View>
             {canManage ? (
               <View style={styles.editCard}>
@@ -212,9 +281,10 @@ export default function GroupSettingsScreen() {
             return (
               <View style={styles.memberRow}>
                 <ProfileAvatar name={member.displayName} avatarUrl={member.avatarUrl} size={46} />
-                <View style={styles.memberInfo}><Text numberOfLines={1} style={styles.memberName}>{member.displayName}{member.id === user.id ? " (Bạn)" : ""}</Text><Text numberOfLines={1} style={styles.memberRole}>{member.groupRole === "owner" ? "Người tạo nhóm" : member.groupRole === "admin" ? "Quản trị viên" : `@${member.username}`}</Text></View>
+                <View style={styles.memberInfo}><Text numberOfLines={1} style={styles.memberName}>{member.displayName}{member.id === user.id ? " (Bạn)" : ""}</Text><Text numberOfLines={1} style={styles.memberRole}>{member.groupRole === "owner" ? "Chủ nhóm" : member.groupRole === "admin" ? "Quản trị viên nhóm" : `@${member.username}`}</Text></View>
                 {canManage && member.groupRole !== "owner" ? <Pressable onPress={() => confirmRemove(member)} disabled={changingMembers} style={({ pressed }) => [styles.memberAction, pressed && styles.pressed]} accessibilityLabel={`Xóa ${member.displayName} khỏi nhóm`}><MaterialIcons name="person-remove" size={19} color="#C2410C" /></Pressable> : null}
                 {isOwner && member.groupRole !== "owner" ? <Pressable onPress={() => confirmRole(member)} disabled={changingMembers} style={({ pressed }) => [styles.memberAction, pressed && styles.pressed]} accessibilityLabel={member.groupRole === "admin" ? `Thu quyền quản trị của ${member.displayName}` : `Cấp quyền quản trị cho ${member.displayName}`}><MaterialIcons name="admin-panel-settings" size={19} color="#1769D4" /></Pressable> : null}
+                {isOwner && member.groupRole !== "owner" ? <Pressable onPress={() => confirmTransferOwnership(member)} disabled={changingMembers} style={({ pressed }) => [styles.memberAction, pressed && styles.pressed]} accessibilityLabel={`Chuyển quyền chủ nhóm cho ${member.displayName}`}><MaterialIcons name="swap-horiz" size={20} color="#7C3AED" /></Pressable> : null}
               </View>
             );
           }
@@ -228,7 +298,11 @@ export default function GroupSettingsScreen() {
           );
         }}
         ListEmptyComponent={<View style={styles.empty}><MaterialIcons name={mode === "members" ? "group-off" : "person-add-disabled"} size={34} color="#6483A9" /><Text style={styles.emptyText}>{mode === "members" ? "Nhóm chưa có thành viên." : "Không còn bạn bè nào để thêm vào nhóm."}</Text></View>}
-        ListFooterComponent={mode === "add" ? <Pressable onPress={() => void submitAddMembers()} disabled={!selectedIds.length || changingMembers} style={({ pressed }) => [styles.addButton, (!selectedIds.length || changingMembers || pressed) && styles.pressed]}><Text style={styles.addButtonText}>{changingMembers ? "Đang thêm…" : `Thêm ${selectedIds.length} thành viên`}</Text>{changingMembers ? <ActivityIndicator color="#FFFFFF" /> : <MaterialIcons name="person-add" size={20} color="#FFFFFF" />}</Pressable> : <View style={styles.bottomSpace} />}
+        ListFooterComponent={mode === "add" ? <Pressable onPress={() => void submitAddMembers()} disabled={!selectedIds.length || changingMembers} style={({ pressed }) => [styles.addButton, (!selectedIds.length || changingMembers || pressed) && styles.pressed]}><Text style={styles.addButtonText}>{changingMembers ? "Đang thêm…" : `Thêm ${selectedIds.length} thành viên`}</Text>{changingMembers ? <ActivityIndicator color="#FFFFFF" /> : <MaterialIcons name="person-add" size={20} color="#FFFFFF" />}</Pressable> : <View style={styles.lifecycleCard}>
+          <Text style={styles.lifecycleLabel}>QUẢN LÝ VÒNG ĐỜI NHÓM</Text>
+          {isOwner ? <Text style={styles.lifecycleHelp}>Bạn là chủ nhóm. Hãy chuyển quyền cho một thành viên trước khi rời nhóm.</Text> : <Pressable onPress={confirmLeaveGroup} disabled={lifecyclePending} style={({ pressed }) => [styles.leaveButton, (pressed || lifecyclePending) && styles.pressed]}><MaterialIcons name="exit-to-app" size={19} color="#B42318" /><Text style={styles.leaveButtonText}>{lifecyclePending ? "Đang xử lý…" : "Rời nhóm"}</Text></Pressable>}
+          {canDeleteGroup ? <Pressable onPress={confirmDeleteGroup} disabled={lifecyclePending} style={({ pressed }) => [styles.deleteButton, (pressed || lifecyclePending) && styles.pressed]}><MaterialIcons name="delete-forever" size={20} color="#FFFFFF" /><Text style={styles.deleteButtonText}>{user.role === "admin" && !isOwner ? "Xóa nhóm (Quản trị hệ thống)" : "Xóa vĩnh viễn nhóm"}</Text></Pressable> : null}
+        </View>}
       />
     </ScreenContainer>
   );
@@ -270,6 +344,13 @@ const styles = StyleSheet.create({
   emptyText: { color: "#6B86A5", fontSize: 14, fontWeight: "600", textAlign: "center" },
   addButton: { alignItems: "center", backgroundColor: "#1769D4", borderRadius: 14, flexDirection: "row", gap: 8, justifyContent: "center", marginHorizontal: 16, marginTop: 18, minHeight: 50 },
   addButtonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
+  lifecycleCard: { backgroundColor: "#FFFFFF", borderColor: "#F4C7C3", borderRadius: 18, borderWidth: 1, gap: 11, marginHorizontal: 16, marginTop: 20, padding: 15 },
+  lifecycleLabel: { color: "#9D241C", fontSize: 11, fontWeight: "900", letterSpacing: 0.8 },
+  lifecycleHelp: { color: "#795548", fontSize: 13, lineHeight: 19 },
+  leaveButton: { alignItems: "center", backgroundColor: "#FFF4F2", borderColor: "#F5C7C1", borderRadius: 12, borderWidth: 1, flexDirection: "row", gap: 7, justifyContent: "center", minHeight: 45 },
+  leaveButtonText: { color: "#B42318", fontSize: 14, fontWeight: "800" },
+  deleteButton: { alignItems: "center", backgroundColor: "#B42318", borderRadius: 12, flexDirection: "row", gap: 7, justifyContent: "center", minHeight: 46 },
+  deleteButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
   bottomSpace: { height: 16 },
   errorTitle: { color: "#173F6C", fontSize: 18, fontWeight: "800", marginTop: 12 },
   errorText: { color: "#6684A8", fontSize: 14, lineHeight: 20, marginTop: 6, textAlign: "center" },

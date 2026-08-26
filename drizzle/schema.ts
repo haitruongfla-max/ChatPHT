@@ -139,6 +139,10 @@ export const storageSettings = mysqlTable("storage_settings", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+/**
+ * Historical call records retained only to preserve existing MySQL data.
+ * The application has no active call feature and must not re-enable the retired P2P architecture.
+ */
 export const callSessions = mysqlTable(
   "call_sessions",
   {
@@ -148,11 +152,7 @@ export const callSessions = mysqlTable(
     recipientId: int("recipientId").notNull(),
     room: varchar("room", { length: 96 }).notNull().unique(),
     kind: mysqlEnum("kind", ["audio", "video"]).notNull(),
-    // Do not infer screen share from kind: both screen and audio use an audio
-    // base stream, but are separate actions and media lifecycles.
     p2pMode: mysqlEnum("p2pMode", ["audio", "video", "screen"]).default("audio").notNull(),
-    // Keep the legacy value in the database enum so existing call history remains readable.
-    // Every newly created call is P2P and no service-room token is issued at runtime.
     provider: mysqlEnum("provider", ["livekit", "p2p"]).default("p2p").notNull(),
     isGroup: boolean("isGroup").default(false).notNull(),
     status: mysqlEnum("status", ["ringing", "active", "declined", "ended", "missed"]).default("ringing").notNull(),
@@ -183,10 +183,7 @@ export const callParticipants = mysqlTable(
   ],
 );
 
-/**
- * Historical record of the retired multi-viewer screen-share feature.
- * New Android shares are 1:1 P2P tracks in the video call and do not create rows here.
- */
+/** Historical record retained for data compatibility; no screen-share flow creates rows here. */
 export const screenShareSessions = mysqlTable(
   "screen_share_sessions",
   {
@@ -221,7 +218,7 @@ export const messageReactions = mysqlTable(
   ],
 );
 
-/** Ephemeral WebRTC signaling for an authorized direct-call pair. Payloads are drained after delivery. */
+/** Historical signaling retained for data compatibility; no active endpoint reads or writes it. */
 export const p2pSignals = mysqlTable(
   "p2p_signals",
   {
@@ -239,11 +236,7 @@ export const p2pSignals = mysqlTable(
   ],
 );
 
-/**
- * Short-lived diagnostic markers for a direct P2P call. This table deliberately
- * never stores SDP, ICE candidate strings, relay URLs, usernames, or credentials.
- * It exists because p2p_signals are correctly removed once delivered.
- */
+/** Historical call diagnostics retained only for existing data compatibility. */
 export const p2pCallTelemetry = mysqlTable(
   "p2p_call_telemetry",
   {

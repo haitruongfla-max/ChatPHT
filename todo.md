@@ -393,3 +393,8 @@
 - [ ] Cài APK vc36 trên hai Android, xác nhận nút đỏ thoát ngay và thử voice hai chiều 20–30 giây trước khi thay đổi bất kỳ mode nào khác.
 - [x] Chuẩn hóa mỗi phát hành bằng mã duy nhất gồm versionName, versionCode, releaseId, tag GitHub, SHA-256 và commit ngắn; hiển thị releaseId trong mục thông tin ứng dụng. Hồi quy chuyên biệt đạt 3/3.
 - [x] Cô lập module WebRTC native khỏi route web: preview web dùng fallback an toàn, route Android tải màn voice native khi chạy trên thiết bị; TypeScript, export web và preview không còn crash.
+
+- [x] Kiểm kê role/chủ nhóm, luồng tạo nhóm và dữ liệu thành viên hiện có; xác định phương án giữ dữ liệu an toàn khi chủ nhóm rời hoặc xóa nhóm.
+- [x] Thêm thao tác chỉ dành cho chủ nhóm: xóa nhóm, chuyển quyền chủ nhóm và rời nhóm sau khi chuyển quyền; không cho xóa/rời sai quyền.
+- [x] Gỡ hoàn toàn route, UI, native dependency, signaling, watcher, quyền Android và metadata của voice/video/screen hiện tại; thêm hồi quy cấm tái sử dụng kiến trúc call cũ.
+- [x] Kiểm tra hồi quy chat riêng/nhóm, media private, quota/FIFO, Admin, auth và thông báo sau thay đổi.

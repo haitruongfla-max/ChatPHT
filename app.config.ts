@@ -87,7 +87,7 @@ const config: ExpoConfig = {
     googleServicesFile: "./google-services.json",
     // versionCode phải tăng để Android có thể cài đè phiên bản đã cài.
     versionCode: 36,
-    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT", "VIBRATE"],
+    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "VIBRATE"],
     intentFilters: [
       {
         action: "VIEW",
@@ -117,12 +117,6 @@ const config: ExpoConfig = {
     "expo-asset",
     "expo-font",
     "expo-web-browser",
-    [
-      "@config-plugins/react-native-webrtc",
-      {
-        microphonePermission: "ChatPHT cần micro để gọi thoại 1:1.",
-      },
-    ],
     [
       "expo-camera",
       {
