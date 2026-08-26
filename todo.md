@@ -389,5 +389,7 @@
 - [x] Bổ sung hồi quy cho kết thúc cục bộ idempotent, tuần tự hóa signal và guard ICE restart trước remote description.
 - [x] Cố định callback gửi signal và lifecycle peer theo callId để query/mutation re-render không teardown rồi tạo offer mới; giới hạn ICE restart chỉ sau khi đã có remote description.
 - [x] Chuẩn bị voice lifecycle fix version 1.0.32 / versionCode 36, cập nhật tag release và đạt diff sạch, TypeScript, lint, backend build, Android export/config cùng 98 test qua (2 skip chủ đích).
-- [ ] Lưu checkpoint, đồng bộ GitHub và build APK voice lifecycle fix versionCode 36 để nghiệm thu hai Android lần hai.
+- [x] Lưu checkpoint, đồng bộ GitHub và build APK voice lifecycle fix versionCode 36 từ commit `c6ff3285`; release `v1.0.32-voice-lifecycle-fix-vc36` có asset và SHA-256 đã đối chiếu.
+- [ ] Cài APK vc36 trên hai Android, xác nhận nút đỏ thoát ngay và thử voice hai chiều 20–30 giây trước khi thay đổi bất kỳ mode nào khác.
+- [x] Chuẩn hóa mỗi phát hành bằng mã duy nhất gồm versionName, versionCode, releaseId, tag GitHub, SHA-256 và commit ngắn; hiển thị releaseId trong mục thông tin ứng dụng. Hồi quy chuyên biệt đạt 3/3.
 - [x] Cô lập module WebRTC native khỏi route web: preview web dùng fallback an toàn, route Android tải màn voice native khi chạy trên thiết bị; TypeScript, export web và preview không còn crash.

@@ -19,6 +19,10 @@ export function getInstalledBuildCode() {
   return null;
 }
 
+export function getInstalledReleaseId() {
+  return "CPHT-web-preview";
+}
+
 export function isReleaseNewer(_releaseVersion?: string, _releaseBuildCode?: number | null) {
   return false;
 }

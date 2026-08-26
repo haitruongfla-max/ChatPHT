@@ -55,6 +55,14 @@ export function getInstalledBuildCode() {
   return Constants.nativeBuildVersion ?? null;
 }
 
+/** Human-readable immutable identity embedded in each signed APK. */
+export function getInstalledReleaseId() {
+  const configured = Constants.expoConfig?.extra?.releaseId;
+  if (typeof configured === "string" && configured.trim()) return configured.trim();
+  const buildCode = getInstalledBuildCode();
+  return `CPHT-${getInstalledAppVersion()}-vc${buildCode ?? "unknown"}`;
+}
+
 export async function getLatestChatPHTRelease(): Promise<ChatPHTRelease> {
   const response = await fetch(RELEASES_URL, {
     headers: { Accept: "application/vnd.github+json" },

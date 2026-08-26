@@ -28,6 +28,9 @@ const schemeFromBundleId = `manus${timestamp}`;
 const expoProjectId =
   process.env.EXPO_PUBLIC_EAS_PROJECT_ID ??
   "313af748-4c54-4949-8389-71ee2772b17a";
+// Mỗi APK phát hành phải thay giá trị này cùng version/versionCode/tag GitHub.
+// Format: CPHT-<version>-vc<versionCode>-<commit ngắn>.
+const releaseId = "CPHT-1.0.32-vc36-c6ff3285";
 
 const env = {
   // App branding - update these values directly (do not use env vars)
@@ -105,7 +108,10 @@ const config: ExpoConfig = {
     output: "single",
     favicon: "./assets/images/favicon.png",
   },
-  extra: { eas: { projectId: expoProjectId } },
+  extra: {
+    eas: { projectId: expoProjectId },
+    releaseId,
+  },
   plugins: [
     "expo-router",
     "expo-asset",

@@ -71,10 +71,22 @@ jobs:
           npx eas-cli@latest build --local --non-interactive --platform android
           --profile ota-base-apk --output "$APK_OUTPUT"
 
+      - name: Derive immutable release identity
+        id: release_identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.release_tag }}"
+          short_sha="${GITHUB_SHA:0:8}"
+          release_id="CPHT-${tag#v}-${short_sha}"
+          asset_name="ChatPHT-${release_id}.apk"
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+          echo "asset_name=$asset_name" >> "$GITHUB_OUTPUT"
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ChatPHT-APK
+          name: ChatPHT-${{ steps.release_identity.outputs.release_id }}
           path: ./app-release.apk
           if-no-files-found: error
           retention-days: 30
@@ -84,14 +96,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           APK_OUTPUT: ./app-release.apk
+          RELEASE_ID: ${{ steps.release_identity.outputs.release_id }}
+          ASSET_NAME: ${{ steps.release_identity.outputs.asset_name }}
         shell: bash
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$APK_OUTPUT#app-release.apk" --clobber
+            gh release upload "$RELEASE_TAG" "$APK_OUTPUT#$ASSET_NAME" --clobber
           else
-            gh release create "$RELEASE_TAG" "$APK_OUTPUT#app-release.apk" \
-              --title "ChatPHT 1.0.32 — Voice P2P lifecycle fix test (versionCode 36)" \
+            gh release create "$RELEASE_TAG" "$APK_OUTPUT#$ASSET_NAME" \
+              --title "ChatPHT $RELEASE_ID" \
               --generate-notes \
               --target "$GITHUB_SHA"
           fi

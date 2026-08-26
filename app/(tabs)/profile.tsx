@@ -3,6 +3,7 @@ import {
   downloadReleaseApk,
   getInstalledBuildCode,
   getInstalledAppVersion,
+  getInstalledReleaseId,
   getLatestChatPHTRelease,
   isReleaseNewer,
   openAndroidPackageInstaller,
@@ -34,7 +35,8 @@ export default function ProfileScreen() {
   const unregisterDevice = trpc.notifications.unregisterDevice.useMutation();
   const [release, setRelease] = useState<ChatPHTRelease | null>(null);
   const [updateState, setUpdateState] = useState<"idle" | "checking" | "ready" | "downloading" | "installing">("idle");
-  const [updateNote, setUpdateNote] = useState(`Bản đang cài: ${getInstalledAppVersion()}${getInstalledBuildCode() ? ` (mã ${getInstalledBuildCode()})` : ""}`);
+  const installedReleaseId = getInstalledReleaseId();
+  const [updateNote, setUpdateNote] = useState(`Bản đang cài: ${getInstalledAppVersion()}${getInstalledBuildCode() ? ` (mã ${getInstalledBuildCode()})` : ""} · ${installedReleaseId}`);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   useFocusEffect(
     useCallback(() => {
@@ -78,7 +80,7 @@ export default function ProfileScreen() {
         setUpdateNote(`Có bản ${latest.version}${latest.buildCode ? ` (mã ${latest.buildCode})` : ""} — ${latest.assetName}`);
       } else {
         setUpdateState("idle");
-        setUpdateNote(`Bạn đang dùng bản mới nhất (${getInstalledAppVersion()}${getInstalledBuildCode() ? ` · mã ${getInstalledBuildCode()}` : ""}).`);
+        setUpdateNote(`Bạn đang dùng bản mới nhất (${getInstalledAppVersion()}${getInstalledBuildCode() ? ` · mã ${getInstalledBuildCode()}` : ""} · ${installedReleaseId}).`);
       }
     } catch (error) {
       setUpdateState("idle");
@@ -201,6 +203,7 @@ export default function ProfileScreen() {
               video.
             </Text>
             <Text style={styles.creator}>Tạo bởi Phùng Hải Trường</Text>
+            <Text style={styles.creator} accessibilityLabel={`Mã phát hành ${installedReleaseId}`}>Mã phát hành: {installedReleaseId}</Text>
           </View>
         </View>
         <Pressable
