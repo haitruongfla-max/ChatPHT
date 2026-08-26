@@ -15,8 +15,8 @@ describe("Cấu hình APK nền OTA", () => {
   });
 
   it("đặt APK cập nhật GitHub mới với versionCode tăng và quyền mở trình cài Android", () => {
-    expect(configSource).toContain('version: "1.0.33"');
-    expect(configSource).toContain("versionCode: 37");
+    expect(configSource).toContain('version: "1.0.34"');
+    expect(configSource).toContain("versionCode: 38");
     expect(configSource).toContain("REQUEST_INSTALL_PACKAGES");
     expect(configSource).not.toContain("FOREGROUND_SERVICE_MEDIA_PROJECTION");
   });

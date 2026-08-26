@@ -6,7 +6,7 @@ on:
       release_tag:
         description: "GitHub Release tag cho APK nền OTA"
         required: true
-        default: "v1.0.33-github-auto-update-vc37"
+        default: "v1.0.34-github-auto-update-fix-vc38"
 
 # GitHub Release cần quyền ghi nội dung; workflow không sử dụng Expo cloud build.
 permissions:
