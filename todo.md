@@ -398,3 +398,7 @@
 - [x] Thêm thao tác chỉ dành cho chủ nhóm: xóa nhóm, chuyển quyền chủ nhóm và rời nhóm sau khi chuyển quyền; không cho xóa/rời sai quyền.
 - [x] Gỡ hoàn toàn route, UI, native dependency, signaling, watcher, quyền Android và metadata của voice/video/screen hiện tại; thêm hồi quy cấm tái sử dụng kiến trúc call cũ.
 - [x] Kiểm tra hồi quy chat riêng/nhóm, media private, quota/FIFO, Admin, auth và thông báo sau thay đổi.
+- [x] Sửa bộ kiểm tra GitHub Release để nhận asset APK có định danh phát hành duy nhất, thay vì chỉ chấp nhận tên app-release.apk cũ.
+- [x] Hoàn thiện luồng tải APK, xác thực bản mới và chuyển sang trình cài đặt Android có xác nhận người dùng.
+- [ ] Tăng versionName/versionCode/releaseId, kiểm thử hồi quy và lưu checkpoint cho APK thử nghiệm mới.
+- [ ] Đồng bộ GitHub, tạo release APK signed có asset, checksum và commit đúng định danh; đối chiếu trước khi gửi liên kết tải.

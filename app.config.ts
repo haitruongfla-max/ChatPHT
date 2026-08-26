@@ -29,8 +29,8 @@ const expoProjectId =
   process.env.EXPO_PUBLIC_EAS_PROJECT_ID ??
   "313af748-4c54-4949-8389-71ee2772b17a";
 // Mỗi APK phát hành phải thay giá trị này cùng version/versionCode/tag GitHub.
-// Format: CPHT-<version>-vc<versionCode>-<commit ngắn>.
-const releaseId = "CPHT-1.0.32-vc36-c6ff3285";
+// Commit chính xác và checksum được công bố cùng asset GitHub Release.
+const releaseId = "CPHT-1.0.33-vc37-github-auto-update";
 
 const env = {
   // App branding - update these values directly (do not use env vars)
@@ -48,7 +48,7 @@ const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
   owner: "truongbbbs-team",
-  version: "1.0.32",
+  version: "1.0.33",
   runtimeVersion: {
     // Bất kỳ thay đổi native nào sẽ có runtime mới, chặn OTA không tương thích.
     policy: "fingerprint",
@@ -86,8 +86,9 @@ const config: ExpoConfig = {
     package: env.androidPackage,
     googleServicesFile: "./google-services.json",
     // versionCode phải tăng để Android có thể cài đè phiên bản đã cài.
-    versionCode: 36,
-    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "VIBRATE"],
+    versionCode: 37,
+    // Android vẫn buộc người dùng xác nhận cài APK và cho phép nguồn cài đặt nếu cần.
+    permissions: ["POST_NOTIFICATIONS", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA", "RECORD_AUDIO", "VIBRATE", "REQUEST_INSTALL_PACKAGES"],
     intentFilters: [
       {
         action: "VIEW",

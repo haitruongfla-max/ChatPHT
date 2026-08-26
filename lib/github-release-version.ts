@@ -9,6 +9,22 @@ export function getBuildCodeFromAssetName(assetName: string) {
   return match ? Number(match[1]) : null;
 }
 
+/**
+ * Accept only the immutable APK naming convention emitted by the release workflow.
+ * Historical generic assets such as `app-release.apk` are deliberately excluded.
+ */
+export function isTrustedChatPhtReleaseApk(assetName: string, releaseTag: string) {
+  const version = parseSemanticVersion(releaseTag)?.join(".");
+  const normalizedName = assetName.trim().toLowerCase();
+  return Boolean(
+    version
+      && normalizedName.startsWith("chatpht-cpht-")
+      && normalizedName.endsWith(".apk")
+      && normalizedName.includes(`-${version}-`)
+      && getBuildCodeFromAssetName(normalizedName),
+  );
+}
+
 export function isReleaseNewerThanInstalled({
   releaseVersion,
   releaseBuildCode,

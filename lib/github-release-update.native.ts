@@ -2,7 +2,12 @@ import Constants from "expo-constants";
 import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 
-import { getBuildCodeFromAssetName, isReleaseNewerThanInstalled, parseSemanticVersion } from "@/lib/github-release-version";
+import {
+  getBuildCodeFromAssetName,
+  isReleaseNewerThanInstalled,
+  isTrustedChatPhtReleaseApk,
+  parseSemanticVersion,
+} from "@/lib/github-release-version";
 
 const RELEASES_URL = "https://api.github.com/repos/haitruongfla-max/ChatPHT/releases/latest";
 const APK_MIME_TYPE = "application/vnd.android.package-archive";
@@ -75,12 +80,11 @@ export async function getLatestChatPHTRelease(): Promise<ChatPHTRelease> {
   const asset = payload.assets?.find((candidate) => {
     const name = typeof candidate.name === "string" ? candidate.name.toLowerCase() : "";
     const url = typeof candidate.browser_download_url === "string" ? candidate.browser_download_url : "";
-    return name.startsWith("chatpht-")
-      && name.endsWith(".apk")
+    return isTrustedChatPhtReleaseApk(name, tagName)
       && /^https:\/\/github\.com\/haitruongfla-max\/ChatPHT\/releases\/download\//i.test(url);
   });
   if (!version || !asset || typeof asset.name !== "string" || typeof asset.browser_download_url !== "string") {
-    throw new Error("GitHub Release chưa có tệp APK ChatPHT hợp lệ.");
+    throw new Error("GitHub Release chưa có APK định danh hợp lệ. Bản mới phải kèm tệp ChatPHT-CPHT-…-vc…-<commit>.apk.");
   }
   return {
     version,

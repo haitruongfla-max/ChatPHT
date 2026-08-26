@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, "..");
 describe("mã phát hành ChatPHT", () => {
   it("nhúng releaseId bất biến vào cấu hình APK hiện tại", () => {
     const config = readFileSync(resolve(root, "app.config.ts"), "utf8");
-    expect(config).toContain('const releaseId = "CPHT-1.0.32-vc36-c6ff3285"');
+    expect(config).toContain('const releaseId = "CPHT-1.0.33-vc37-github-auto-update"');
     expect(config).toContain("releaseId,");
   });
 
@@ -21,6 +21,7 @@ describe("mã phát hành ChatPHT", () => {
     const workflow = readFileSync(resolve(root, ".github/workflows/build-ota-base-apk.yml"), "utf8");
     expect(workflow).toContain('release_id="CPHT-${tag#v}-${short_sha}"');
     expect(workflow).toContain('asset_name="ChatPHT-${release_id}.apk"');
+    expect(workflow).toContain('checksum_name="${asset_name}.sha256"');
     expect(workflow).toContain("--title \"ChatPHT $RELEASE_ID\"");
   });
 });

@@ -14,9 +14,10 @@ describe("Cấu hình APK nền OTA", () => {
     expect(configSource).toContain("fallbackToCacheTimeout: 30_000");
   });
 
-  it("tăng versionCode cho APK voice sửa lifecycle sau artifact vc35 lỗi", () => {
-    expect(configSource).toContain('version: "1.0.32"');
-    expect(configSource).toContain("versionCode: 36");
+  it("đặt APK cập nhật GitHub mới với versionCode tăng và quyền mở trình cài Android", () => {
+    expect(configSource).toContain('version: "1.0.33"');
+    expect(configSource).toContain("versionCode: 37");
+    expect(configSource).toContain("REQUEST_INSTALL_PACKAGES");
     expect(configSource).not.toContain("FOREGROUND_SERVICE_MEDIA_PROJECTION");
   });
 });
