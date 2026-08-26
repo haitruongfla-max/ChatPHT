@@ -412,3 +412,7 @@
 - [x] Kiểm tra REQUEST_INSTALL_PACKAGES, URI tệp APK và intent Android trong luồng cập nhật nội bộ.
 - [x] Bổ sung hướng dẫn/cài đặt mở quyền “Cho phép từ nguồn này” và đường dự phòng an toàn khi Android chặn cài APK.
 - [ ] Kiểm thử hồi quy, tạo APK khắc phục có versionCode mới và xác minh cài đè từ bản 1.0.34/1.0.35.
+- [x] Thay thao tác “Xóa hội thoại khỏi hộp thư” bằng luồng xác nhận xóa sạch tin nhắn, ảnh, video và rời hoặc ẩn cuộc trò chuyện phù hợp theo loại hội thoại.
+- [x] Bảo đảm xóa sạch nội dung chỉ tác động đúng dữ liệu của người yêu cầu trong chat riêng và tuân thủ quyền nhóm, không xóa dữ liệu người dùng khác ngoài phạm vi được phép.
+- [x] Bổ sung huy hiệu đỏ cho tin nhắn chưa đọc, lời mời kết bạn, nhóm mới và các thông báo bị bỏ lỡ được hỗ trợ còn lại trong ứng dụng.
+- [x] Kiểm thử hồi quy xóa nội dung, huy hiệu thông báo, chat/media riêng tư và điều hướng trước khi phát hành APK mới.

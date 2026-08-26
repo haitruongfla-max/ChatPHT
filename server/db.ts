@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, like, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, like, lt, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   callParticipants,
@@ -906,12 +906,18 @@ export async function findAuthorizedConversationMedia(mediaKey: string, userId: 
   const db = requireDb(await getDb());
   const message = (
     await db
-      .select({ conversationId: messages.conversationId, mediaMime: messages.mediaMime })
+      .select({ id: messages.id, conversationId: messages.conversationId, mediaMime: messages.mediaMime })
       .from(messages)
       .where(and(eq(messages.mediaKey, mediaKey), isNull(messages.recalledAt), isNull(messages.mediaCleanedAt)))
       .limit(1)
   )[0];
-  if (!message || !(await isConversationMember(message.conversationId, userId))) return undefined;
+  if (!message) return undefined;
+  const [membership] = await db
+    .select({ clearedThroughMessageId: conversationMembers.clearedThroughMessageId })
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, message.conversationId), eq(conversationMembers.userId, userId)))
+    .limit(1);
+  if (!membership || (membership.clearedThroughMessageId !== null && message.id <= membership.clearedThroughMessageId)) return undefined;
   return { mediaMime: message.mediaMime ?? "application/octet-stream" };
 }
 
@@ -986,14 +992,24 @@ export async function listConversations(userId: number) {
       const [conversation] = await db.select().from(conversations).where(eq(conversations.id, membership.conversationId)).limit(1);
       if (!conversation) return null;
       const peer = await getConversationPeer(membership.conversationId, userId);
-      const latestMessage = (
-        await db
-          .select()
+      const visibleMessages = membership.clearedThroughMessageId === null
+        ? eq(messages.conversationId, membership.conversationId)
+        : and(eq(messages.conversationId, membership.conversationId), gt(messages.id, membership.clearedThroughMessageId));
+      const [latestRows, unreadRows] = await Promise.all([
+        db.select().from(messages).where(visibleMessages).orderBy(desc(messages.createdAt), desc(messages.id)).limit(1),
+        db
+          .select({ count: sql<number>`count(*)` })
           .from(messages)
-          .where(eq(messages.conversationId, membership.conversationId))
-          .orderBy(desc(messages.createdAt))
-          .limit(1)
-      )[0];
+          .where(and(
+            visibleMessages,
+            ne(messages.senderId, userId),
+            membership.lastReadAt ? gt(messages.createdAt, membership.lastReadAt) : undefined,
+          )),
+      ]);
+      const latestMessage = latestRows[0];
+      const unreadCount = Number(unreadRows[0]?.count ?? 0);
+      const hasUnread = unreadCount > 0;
+      const isNewGroup = conversation.kind === "group" && conversation.createdBy !== userId && membership.lastReadAt === null;
       if (conversation.kind === "group") {
         const memberCount = await db
           .select({ id: conversationMembers.id })
@@ -1007,10 +1023,13 @@ export async function listConversations(userId: number) {
             memberCount: memberCount.length,
           },
           latestMessage: latestMessage ?? null,
+          unreadCount,
+          hasUnread,
+          isNewGroup,
         };
       }
       return peer
-        ? { id: membership.conversationId, peer, latestMessage: latestMessage ?? null }
+        ? { id: membership.conversationId, peer, latestMessage: latestMessage ?? null, unreadCount, hasUnread, isNewGroup: false }
         : null;
     }),
   );
@@ -1024,12 +1043,20 @@ export async function listConversations(userId: number) {
 
 export async function listMessages(conversationId: number, userId: number) {
   const db = requireDb(await getDb());
-  if (!(await isConversationMember(conversationId, userId))) throw new Error("Bạn không có quyền xem hội thoại này.");
+  const [membership] = await db
+    .select({ clearedThroughMessageId: conversationMembers.clearedThroughMessageId })
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)))
+    .limit(1);
+  if (!membership) throw new Error("Bạn không có quyền xem hội thoại này.");
+  const visibleMessages = membership.clearedThroughMessageId === null
+    ? eq(messages.conversationId, conversationId)
+    : and(eq(messages.conversationId, conversationId), gt(messages.id, membership.clearedThroughMessageId));
   const result = await db
     .select()
     .from(messages)
-    .where(eq(messages.conversationId, conversationId))
-    .orderBy(desc(messages.createdAt))
+    .where(visibleMessages)
+    .orderBy(desc(messages.createdAt), desc(messages.id))
     .limit(60);
   const messageIds = result.map((message) => message.id);
   const replyIds = Array.from(new Set(result.map((message) => message.replyToMessageId).filter((id): id is number => typeof id === "number")));
@@ -1044,7 +1071,7 @@ export async function listMessages(conversationId: number, userId: number) {
       contentType: messages.contentType,
       mediaName: messages.mediaName,
       recalledAt: messages.recalledAt,
-    }).from(messages).where(and(eq(messages.conversationId, conversationId), inArray(messages.id, replyIds)))
+    }).from(messages).where(and(visibleMessages, inArray(messages.id, replyIds)))
     : [];
   const members = await db
     .select({
@@ -1069,6 +1096,26 @@ export async function listMessages(conversationId: number, userId: number) {
     recipientDeliveredAt: message.senderId === userId ? recipient?.lastDeliveredAt ?? null : null,
     recipientReadAt: message.senderId === userId ? recipient?.lastReadAt ?? null : null,
   }));
+}
+
+/** Returns the in-app attention summary without reading or mutating any state. */
+export async function getInAppNotificationSummary(userId: number) {
+  const [conversationItems, incomingFriendRequests] = await Promise.all([
+    listConversations(userId),
+    listIncomingFriendRequests(userId),
+  ]);
+  const unreadConversationCount = conversationItems.filter((item) => item.hasUnread).length;
+  const unreadMessageCount = conversationItems.reduce((total, item) => total + item.unreadCount, 0);
+  const newGroupCount = conversationItems.filter((item) => item.group && item.isNewGroup).length;
+  const pendingFriendRequestCount = incomingFriendRequests.length;
+  const totalBadgeCount = conversationItems.filter((item) => item.hasUnread || item.isNewGroup).length + pendingFriendRequestCount;
+  return {
+    unreadConversationCount,
+    unreadMessageCount,
+    pendingFriendRequestCount,
+    newGroupCount,
+    totalBadgeCount,
+  };
 }
 
 /**
@@ -1104,6 +1151,47 @@ export async function clearConversationContent(conversationId: number, requester
     .where(eq(conversationMembers.conversationId, conversationId));
 
   return { mediaKeys, messagesDeleted: messageRows.length };
+}
+
+/**
+ * Clears only the requester's visible history and hides the direct thread from
+ * their inbox. Shared messages, reactions and media remain available to other
+ * members and a later message can reveal the thread again without old history.
+ */
+export async function clearConversationForUserAndExitInbox(conversationId: number, requesterId: number) {
+  const db = requireDb(await getDb());
+  return db.transaction(async (tx) => {
+    const [membership] = await tx
+      .select({ id: conversationMembers.id, clearedThroughMessageId: conversationMembers.clearedThroughMessageId })
+      .from(conversationMembers)
+      .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, requesterId)))
+      .limit(1);
+    if (!membership) throw new Error("Bạn không có quyền xóa sạch hội thoại này.");
+
+    const [conversation] = await tx
+      .select({ kind: conversations.kind })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .limit(1);
+    if (!conversation) throw new Error("Hội thoại không còn tồn tại.");
+    if (conversation.kind !== "direct") {
+      throw new Error("Với nhóm, hãy dùng chức năng rời nhóm để bảo vệ lịch sử của các thành viên.");
+    }
+
+    const [latestMessage] = await tx
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(desc(messages.id))
+      .limit(1);
+    const now = new Date();
+    const clearedThroughMessageId = latestMessage?.id ?? membership.clearedThroughMessageId;
+    await tx
+      .update(conversationMembers)
+      .set({ clearedThroughMessageId, hiddenAt: now, lastDeliveredAt: now, lastReadAt: now })
+      .where(eq(conversationMembers.id, membership.id));
+    return { clearedThroughMessageId, hiddenAt: now };
+  });
 }
 
 export async function createMessage(input: {

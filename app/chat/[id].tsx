@@ -203,7 +203,7 @@ export default function ChatScreen() {
   const { mutateAsync: markRead } = trpc.messages.markRead.useMutation();
   const { mutateAsync: setTyping } = trpc.messages.setTyping.useMutation();
   const recall = trpc.messages.recall.useMutation();
-  const removeConversation = trpc.conversations.remove.useMutation();
+  const removeConversation = trpc.conversations.clearForSelfAndExitInbox.useMutation();
   const clearConversation = trpc.conversations.clearContent.useMutation();
   const requestWallpaperUpload = trpc.conversations.requestWallpaperUpload.useMutation();
   const setWallpaper = trpc.conversations.setWallpaper.useMutation();
@@ -593,11 +593,11 @@ export default function ChatScreen() {
 
   const confirmRemove = () =>
     Alert.alert(
-      "Xóa hội thoại?",
-      "Hội thoại chỉ biến khỏi hộp thư của bạn. Người kia vẫn giữ nguyên tin nhắn.",
+      "Xóa lịch sử và rời hộp thư?",
+      "Tin nhắn, ảnh và video hiện có sẽ chỉ bị xóa khỏi hộp thư của bạn. Người kia vẫn giữ dữ liệu của họ. Khi có tin nhắn mới, cuộc trò chuyện sẽ hiện lại nhưng không hiển thị nội dung cũ.",
       [
         { text: "Hủy", style: "cancel" },
-        { text: "Xóa", style: "destructive", onPress: () => void remove() },
+        { text: "Xóa và rời", style: "destructive", onPress: () => void remove() },
       ],
     );
 
@@ -636,7 +636,7 @@ export default function ChatScreen() {
       actions.push({ text: "Thông tin và quản trị nhóm", onPress: () => router.push(`/group/${conversationId}` as never) });
     } else {
       actions.push(
-        { text: "Xóa hội thoại khỏi hộp thư", style: "destructive", onPress: () => void confirmRemove() },
+        { text: "Xóa lịch sử và rời hộp thư", style: "destructive", onPress: () => void confirmRemove() },
         { text: "Xóa sạch toàn bộ nội dung", style: "destructive", onPress: () => void confirmClearContent() },
       );
     }

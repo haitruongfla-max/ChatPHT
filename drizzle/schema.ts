@@ -72,6 +72,8 @@ export const conversationMembers = mysqlTable(
     conversationId: int("conversationId").notNull(),
     userId: int("userId").notNull(),
     hiddenAt: timestamp("hiddenAt"),
+    /** Highest message ID hidden only from this member after a self-only clear. */
+    clearedThroughMessageId: int("clearedThroughMessageId"),
     lastDeliveredAt: timestamp("lastDeliveredAt"),
     lastReadAt: timestamp("lastReadAt"),
     typingUntil: timestamp("typingUntil"),
@@ -83,6 +85,7 @@ export const conversationMembers = mysqlTable(
   (table) => [
     uniqueIndex("conversation_member_unique_idx").on(table.conversationId, table.userId),
     index("conversation_member_user_idx").on(table.userId),
+    index("conversation_member_user_hidden_idx").on(table.userId, table.hiddenAt),
   ],
 );
 

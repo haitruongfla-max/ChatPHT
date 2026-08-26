@@ -13,8 +13,13 @@ export default function TabLayout() {
   const userId = user?.id;
   const insets = useSafeAreaInsets();
   const { mutateAsync: markAllDelivered } = trpc.conversations.markAllDelivered.useMutation();
+  const notificationSummary = trpc.notifications.summary.useQuery(undefined, {
+    enabled: Boolean(userId),
+    refetchInterval: 5000,
+  });
   const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 8);
   const tabBarHeight = 56 + bottomPadding;
+  const inboxBadge = notificationSummary.data?.totalBadgeCount ?? 0;
 
   useEffect(() => {
     if (!userId) return;
@@ -49,6 +54,8 @@ export default function TabLayout() {
           options={{
             title: "Tin nhắn",
             tabBarIcon: ({ color }) => <IconSymbol size={25} name="bubble.left.and.bubble.right.fill" color={color} />,
+            tabBarBadge: inboxBadge > 0 ? (inboxBadge > 99 ? "99+" : inboxBadge) : undefined,
+            tabBarBadgeStyle: { backgroundColor: "#FF5B62", color: "#FFFFFF", fontSize: 10, fontWeight: "800" },
           }}
         />
         <Tabs.Screen

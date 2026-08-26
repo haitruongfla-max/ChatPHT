@@ -288,6 +288,7 @@ export const appRouter = router({
       }),
   }),
   notifications: router({
+    summary: protectedProcedure.query(async ({ ctx }) => db.getInAppNotificationSummary(ctx.user.id)),
     registerDevice: protectedProcedure
       .input(
         z.object({
@@ -533,6 +534,16 @@ export const appRouter = router({
         await db.restoreConversationForUser(conversation.id, ctx.user.id);
         const peer = await db.getConversationPeer(conversation.id, ctx.user.id);
         return withSecureAvatarUrls(ctx, { id: conversation.id, peer });
+      }),
+    clearForSelfAndExitInbox: protectedProcedure
+      .input(z.object({ conversationId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const cleared = await db.clearConversationForUserAndExitInbox(input.conversationId, ctx.user.id);
+          return { success: true as const, clearedThroughMessageId: cleared.clearedThroughMessageId };
+        } catch (error) {
+          return appError(error, "Không thể xóa lịch sử và rời hộp thư.");
+        }
       }),
     remove: protectedProcedure
       .input(z.object({ conversationId: z.number().int().positive() }))

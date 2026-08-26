@@ -19,17 +19,19 @@ export default function InboxScreen() {
   const { user, loading } = useAuth();
   const conversations = trpc.conversations.list.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 2500 });
   const requests = trpc.friends.incoming.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 5000 });
-  const clearConversation = trpc.conversations.clearContent.useMutation();
+  const notificationSummary = trpc.notifications.summary.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 5000 });
+  const clearConversation = trpc.conversations.clearForSelfAndExitInbox.useMutation();
   const [refreshing, setRefreshing] = useState(false);
   const refreshInbox = useCallback(async () => {
     setRefreshing(true);
-    try { await conversations.refetch(); } finally { setRefreshing(false); }
-  }, [conversations]);
+    try { await Promise.all([conversations.refetch(), requests.refetch(), notificationSummary.refetch()]); } finally { setRefreshing(false); }
+  }, [conversations, notificationSummary, requests]);
 
   const clearContent = async (conversationId: number) => {
     try {
       await clearConversation.mutateAsync({ conversationId });
       await conversations.refetch();
+      await notificationSummary.refetch();
     } catch (error) {
       Alert.alert("Không thể xóa sạch", error instanceof Error ? error.message : "Vui lòng thử lại.");
     }
@@ -37,11 +39,11 @@ export default function InboxScreen() {
 
   const confirmClearContent = (conversationId: number, displayName: string) =>
     Alert.alert(
-      "Xóa sạch toàn bộ nội dung?",
-      `Tin nhắn, ảnh và video trong cuộc trò chuyện với ${displayName} sẽ bị xóa vĩnh viễn cho cả hai người. Thao tác này không thể hoàn tác.`,
+      "Xóa lịch sử và rời hộp thư?",
+      `Tin nhắn, ảnh và video hiện có với ${displayName} sẽ chỉ bị xóa khỏi hộp thư của bạn. Dữ liệu của người kia vẫn giữ nguyên. Khi có tin nhắn mới, cuộc trò chuyện sẽ hiện lại nhưng không có nội dung cũ.`,
       [
         { text: "Hủy", style: "cancel" },
-        { text: "Xóa sạch", style: "destructive", onPress: () => void clearContent(conversationId) },
+        { text: "Xóa và rời", style: "destructive", onPress: () => void clearContent(conversationId) },
       ],
     );
 
@@ -71,6 +73,16 @@ export default function InboxScreen() {
           <Text style={styles.searchText}>Tìm theo tên người dùng</Text>
           <MaterialIcons name="qr-code-scanner" size={20} color="#82A9D7" />
         </Pressable>
+        {(notificationSummary.data?.unreadConversationCount ?? 0) > 0 && <View style={styles.noticeCard} accessibilityLabel={`${notificationSummary.data?.unreadConversationCount} cuộc trò chuyện có tin nhắn chưa đọc`}>
+          <View style={styles.noticeIcon}><MaterialIcons name="mark-unread-chat-alt" size={18} color="#1769D4" /></View>
+          <Text style={styles.noticeText}>Bạn có {notificationSummary.data?.unreadConversationCount} cuộc trò chuyện chưa đọc</Text>
+          <View style={styles.noticeBadge}><Text style={styles.badgeText}>{notificationSummary.data?.unreadMessageCount}</Text></View>
+        </View>}
+        {(notificationSummary.data?.newGroupCount ?? 0) > 0 && <View style={styles.noticeCard} accessibilityLabel={`${notificationSummary.data?.newGroupCount} nhóm mới`}>
+          <View style={styles.noticeIcon}><MaterialIcons name="groups" size={18} color="#1769D4" /></View>
+          <Text style={styles.noticeText}>Bạn vừa được thêm vào {notificationSummary.data?.newGroupCount} nhóm mới</Text>
+          <View style={styles.noticeBadge}><Text style={styles.badgeText}>Mới</Text></View>
+        </View>}
         {(requests.data?.length ?? 0) > 0 && <Pressable onPress={() => router.push("/requests" as never)} style={styles.noticeCard}>
           <View style={styles.noticeIcon}><MaterialIcons name="group-add" size={18} color="#1769D4" /></View>
           <Text style={styles.noticeText}>Bạn có {requests.data?.length} lời mời kết bạn mới</Text>
@@ -91,18 +103,23 @@ export default function InboxScreen() {
           return (
           <Pressable
             onPress={() => router.push({ pathname: "/chat/[id]", params: { id: String(item.id), group: target.isGroup ? "1" : "0" } })}
-            onLongPress={target.isGroup ? undefined : () => confirmClearContent(item.id, target.displayName)}
-            delayLongPress={450}
-            disabled={clearConversation.isPending}
+              onLongPress={target.isGroup ? undefined : () => confirmClearContent(item.id, target.displayName)}
+              delayLongPress={450}
+              disabled={clearConversation.isPending}
             style={({ pressed }) => [styles.thread, (pressed || clearConversation.isPending) && styles.threadPressed]}
             accessibilityLabel={`Mở cuộc trò chuyện với ${target.displayName}`}
-            accessibilityHint={target.isGroup ? "Mở nhóm trò chuyện" : "Nhấn giữ để xóa sạch toàn bộ nội dung cuộc trò chuyện"}
+              accessibilityHint={target.isGroup ? "Mở nhóm trò chuyện" : "Nhấn giữ để xóa lịch sử của bạn và rời hộp thư"}
           >
             <ProfileAvatar name={target.displayName} avatarUrl={target.avatarUrl} size={50} style={styles.avatar} />
-            <View style={styles.threadBody}>
-              <View style={styles.threadTop}><Text numberOfLines={1} style={styles.threadName}>{target.displayName}</Text><Text style={styles.time}>{item.latestMessage ? new Date(item.latestMessage.createdAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }) : ""}</Text></View>
-              <Text numberOfLines={1} style={styles.preview}>{target.isGroup ? `${target.memberCount} thành viên · ${preview(item.latestMessage)}` : preview(item.latestMessage)}</Text>
-            </View>
+              <View style={styles.threadBody}>
+                <View style={styles.threadTop}>
+                  <Text numberOfLines={1} style={[styles.threadName, item.hasUnread && styles.unreadThreadName]}>{target.displayName}</Text>
+                  {item.isNewGroup && <View style={styles.newGroupPill}><Text style={styles.newGroupPillText}>Nhóm mới</Text></View>}
+                  <Text style={styles.time}>{item.latestMessage ? new Date(item.latestMessage.createdAt).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }) : ""}</Text>
+                </View>
+                <Text numberOfLines={1} style={[styles.preview, item.hasUnread && styles.unreadPreview]}>{target.isGroup ? `${target.memberCount} thành viên · ${preview(item.latestMessage)}` : preview(item.latestMessage)}</Text>
+              </View>
+              {item.hasUnread && <View style={styles.threadUnreadBadge}><Text style={styles.badgeText}>{item.unreadCount > 99 ? "99+" : item.unreadCount}</Text></View>}
             <MaterialIcons name="chevron-right" size={21} color="#9AB2CE" />
           </Pressable>
           );
@@ -123,10 +140,10 @@ const styles = StyleSheet.create({
   searchBar: { alignItems: "center", backgroundColor: "#FFFFFF", borderRadius: 16, flexDirection: "row", gap: 10, marginTop: 16, minHeight: 48, paddingHorizontal: 14 },
   searchText: { color: "#6C89AA", flex: 1, fontSize: 14, fontWeight: "600" },
   noticeCard: { alignItems: "center", backgroundColor: "#E8F2FF", borderRadius: 14, flexDirection: "row", gap: 10, marginTop: 12, minHeight: 50, paddingHorizontal: 11 },
-  noticeIcon: { alignItems: "center", backgroundColor: "#FFFFFF", borderRadius: 10, height: 30, justifyContent: "center", width: 30 }, noticeText: { color: "#1A548F", flex: 1, fontSize: 13, fontWeight: "700" },
+  noticeIcon: { alignItems: "center", backgroundColor: "#FFFFFF", borderRadius: 10, height: 30, justifyContent: "center", width: 30 }, noticeText: { color: "#1A548F", flex: 1, fontSize: 13, fontWeight: "700" }, noticeBadge: { alignItems: "center", backgroundColor: "#FF5B62", borderRadius: 10, justifyContent: "center", minHeight: 20, minWidth: 20, paddingHorizontal: 5 },
   pressed: { opacity: 0.78, transform: [{ scale: 0.97 }] },
   list: { flex: 1 }, listContent: { paddingHorizontal: 12, paddingBottom: 98 }, emptyList: { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 90 },
   thread: { alignItems: "center", backgroundColor: "#FFFFFFDC", borderColor: "#DCEAF8", borderRadius: 19, borderWidth: 1, flexDirection: "row", gap: 12, marginBottom: 8, marginHorizontal: 9, padding: 13 }, threadPressed: { opacity: 0.74 },
-  avatar: { backgroundColor: "#DDE7FB" }, threadBody: { flex: 1, minWidth: 0 }, threadTop: { alignItems: "center", flexDirection: "row", gap: 10 }, threadName: { color: "#143E70", flex: 1, fontSize: 16, fontWeight: "800" }, time: { color: "#7891AD", fontSize: 11 }, preview: { color: "#6B829D", fontSize: 13.5, marginTop: 4 },
+  avatar: { backgroundColor: "#DDE7FB" }, threadBody: { flex: 1, minWidth: 0 }, threadTop: { alignItems: "center", flexDirection: "row", gap: 7 }, threadName: { color: "#143E70", flex: 1, fontSize: 16, fontWeight: "800" }, unreadThreadName: { color: "#0A4C9A" }, time: { color: "#7891AD", fontSize: 11 }, preview: { color: "#6B829D", fontSize: 13.5, marginTop: 4 }, unreadPreview: { color: "#214E80", fontWeight: "700" }, threadUnreadBadge: { alignItems: "center", backgroundColor: "#FF5B62", borderRadius: 11, justifyContent: "center", minHeight: 22, minWidth: 22, paddingHorizontal: 6 }, newGroupPill: { backgroundColor: "#E3F0FF", borderColor: "#84B9F4", borderRadius: 8, borderWidth: 1, paddingHorizontal: 5, paddingVertical: 2 }, newGroupPillText: { color: "#1769D4", fontSize: 9, fontWeight: "800" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 80 }, emptyIcon: { width: 68, height: 68, borderRadius: 24, backgroundColor: "#E9EFFD", justifyContent: "center", alignItems: "center" }, emptyTitle: { marginTop: 18, color: "#172554", fontSize: 19, fontWeight: "800" }, emptyBody: { maxWidth: 260, marginTop: 8, textAlign: "center", color: "#718096", lineHeight: 20, fontSize: 14 }, emptyButton: { marginTop: 21, backgroundColor: "#2563EB", paddingHorizontal: 20, minHeight: 44, justifyContent: "center", borderRadius: 13 }, emptyButtonText: { color: "#FFF", fontWeight: "800" },
 });

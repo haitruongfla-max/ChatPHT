@@ -6,7 +6,9 @@ vi.mock("../server/db", () => ({
   createMessage: vi.fn(),
   listMessages: vi.fn(),
   hideConversationForUser: vi.fn(),
+  clearConversationForUserAndExitInbox: vi.fn(),
   clearConversationContent: vi.fn(),
+  getInAppNotificationSummary: vi.fn(),
   recallMessage: vi.fn(),
   toggleMessageReaction: vi.fn(),
   markAllConversationsDelivered: vi.fn(),
@@ -128,6 +130,39 @@ describe("chat media access controls", () => {
 
     await expect(callerFor(7).conversations.remove({ conversationId: 18 })).resolves.toEqual({ success: true });
     expect(db.hideConversationForUser).toHaveBeenCalledWith(18, 7);
+  });
+
+  it("clears history only for the requesting account and never deletes shared media", async () => {
+    vi.mocked(db.clearConversationForUserAndExitInbox).mockResolvedValue({
+      clearedThroughMessageId: 82,
+      hiddenAt: new Date("2026-08-26T00:00:00.000Z"),
+    });
+
+    await expect(callerFor(7).conversations.clearForSelfAndExitInbox({ conversationId: 18 })).resolves.toEqual({
+      success: true,
+      clearedThroughMessageId: 82,
+    });
+    expect(db.clearConversationForUserAndExitInbox).toHaveBeenCalledWith(18, 7);
+    expect(storage.storageDelete).not.toHaveBeenCalled();
+  });
+
+  it("returns only supported in-app attention counts", async () => {
+    vi.mocked(db.getInAppNotificationSummary).mockResolvedValue({
+      unreadConversationCount: 2,
+      unreadMessageCount: 4,
+      pendingFriendRequestCount: 1,
+      newGroupCount: 1,
+      totalBadgeCount: 3,
+    });
+
+    await expect(callerFor(7).notifications.summary()).resolves.toEqual({
+      unreadConversationCount: 2,
+      unreadMessageCount: 4,
+      pendingFriendRequestCount: 1,
+      newGroupCount: 1,
+      totalBadgeCount: 3,
+    });
+    expect(db.getInAppNotificationSummary).toHaveBeenCalledWith(7);
   });
 
   it("issues a shared-background upload URL only after validating the requesting member", async () => {

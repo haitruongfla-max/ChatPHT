@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, "..");
 describe("mã phát hành ChatPHT", () => {
   it("nhúng releaseId bất biến vào cấu hình APK hiện tại", () => {
     const config = readFileSync(resolve(root, "app.config.ts"), "utf8");
-    expect(config).toContain('const releaseId = "CPHT-1.0.36-vc40-installer-permission"');
+    expect(config).toContain('const releaseId = "CPHT-1.0.37-vc41-inbox-privacy-badges"');
     expect(config).toContain("releaseId,");
   });
 
