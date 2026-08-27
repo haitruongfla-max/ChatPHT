@@ -465,3 +465,4 @@
 - [x] Tích hợp FCM data/high priority cho incoming call Android khi app nền hoặc bị tắt, không lộ SDP/ICE/token trong payload.
 - [x] Thêm luồng Android native full-screen incoming call với quyền cần thiết, Notification/ConnectionService và thao tác Nghe/Từ chối an toàn.
 - [ ] Kiểm thử hồi quy thông báo, tăng version/releaseId và phát hành APK signed mới; nghiệm thu thực tế khi app tắt trên Android.
+- [x] Phát hành GitHub Release signed ChatPHT 1.0.45/vc49; tải lại asset, đối chiếu SHA-256, định dạng APK và APK Signing Block v2/v3.
