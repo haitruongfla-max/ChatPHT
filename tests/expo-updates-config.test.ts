@@ -18,8 +18,8 @@ describe("Cấu hình APK nền OTA", () => {
   });
 
   it("đặt APK cập nhật GitHub mới với versionCode tăng, trình cài và quyền WebRTC", () => {
-    expect(configSource).toContain('version: "1.0.44"');
-    expect(configSource).toContain("versionCode: 48");
+    expect(configSource).toContain('version: "1.0.45"');
+    expect(configSource).toContain("versionCode: 49");
     expect(configSource).toContain("REQUEST_INSTALL_PACKAGES");
     expect(configSource).toContain("withAndroidMediaProjection.js");
     expect(configSource).toContain("RECORD_AUDIO");

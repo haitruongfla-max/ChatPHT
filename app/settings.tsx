@@ -1,7 +1,7 @@
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { clearAppLockPin, hasAppLockPin, saveAppLockPin, verifyAppLockPin } from "@/lib/app-lock";
-import { areChatPushNotificationsEnabled, clearStoredPushToken, ensureChatNotificationChannels, getStoredPushToken, registerForChatPushNotifications, setChatPushNotificationsEnabled, storePushToken } from "@/lib/push-notifications";
+import { areChatPushNotificationsEnabled, clearStoredPushToken, ensureChatNotificationChannels, getStoredPushTokens, registerForChatPushNotifications, setChatPushNotificationsEnabled, storePushToken } from "@/lib/push-notifications";
 import { trpc } from "@/lib/trpc";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { router } from "expo-router";
@@ -60,23 +60,28 @@ export default function SettingsScreen() {
     setSavingPush(true);
     try {
       if (!enabled) {
-        const token = await getStoredPushToken();
-        if (token) await unregisterDevice.mutateAsync({ token });
+        const tokens = await getStoredPushTokens();
+        await Promise.all([tokens.expoToken, tokens.fcmToken].filter((token): token is string => Boolean(token)).map((token) => unregisterDevice.mutateAsync({ token })));
         await clearStoredPushToken();
         await setChatPushNotificationsEnabled(false);
         setPushEnabled(false);
         return;
       }
       await setChatPushNotificationsEnabled(true);
-      const token = await registerForChatPushNotifications();
-      if (!token) {
+      const tokens = await registerForChatPushNotifications();
+      if (!tokens) {
         await setChatPushNotificationsEnabled(false);
         setPushEnabled(false);
         Alert.alert("Chưa thể bật thông báo", "Hãy cho phép thông báo trong cài đặt hệ thống của điện thoại rồi thử lại.");
         return;
       }
-      await registerDevice.mutateAsync({ token, platform: Platform.OS === "ios" ? "ios" : "android" });
-      await storePushToken(token);
+      const platform = Platform.OS === "ios" ? "ios" : "android";
+      await registerDevice.mutateAsync({ token: tokens.expoToken, platform, transport: "expo" });
+      await storePushToken(tokens.expoToken, "expo");
+      if (tokens.fcmToken) {
+        await registerDevice.mutateAsync({ token: tokens.fcmToken, platform, transport: "fcm" });
+        await storePushToken(tokens.fcmToken, "fcm");
+      }
       setPushEnabled(true);
     } catch {
       await setChatPushNotificationsEnabled(false);
@@ -121,7 +126,7 @@ export default function SettingsScreen() {
             {hasPin && <Pressable onPress={() => void disablePin()} style={({ pressed }) => [styles.disable, pressed && styles.pressed]}><Text style={styles.disableText}>Tắt khóa ứng dụng</Text></Pressable>}</View>}
         </View></View>
 
-        <View style={styles.section}><Text style={styles.sectionTitle}>Thông báo</Text><View style={styles.card}><View style={styles.row}><View style={styles.icon}><MaterialIcons name="notifications-none" size={21} color="#1D4ED8" /></View><View style={styles.rowBody}><Text style={styles.rowTitle}>Hiển thị thông báo</Text><Text style={styles.rowText}>Báo tin nhắn mới mà không hiển thị nội dung riêng tư.</Text></View><Switch value={pushEnabled} disabled={loading || savingPush} onValueChange={(value) => void changePushEnabled(value)} trackColor={{ false: "#CBD5E1", true: "#93C5FD" }} thumbColor={pushEnabled ? "#2563EB" : "#F8FAFC"} /></View><Pressable onPress={() => void sendLocalNotificationTest()} disabled={testingNotification} style={({ pressed }) => [styles.notificationTest, testingNotification && styles.disabled, pressed && styles.pressed]}><MaterialIcons name="notifications-active" size={18} color="#1D4ED8" />{testingNotification ? <ActivityIndicator color="#1D4ED8" /> : <Text style={styles.notificationTestText}>Gửi thông báo kiểm tra</Text>}</Pressable></View></View>
+        <View style={styles.section}><Text style={styles.sectionTitle}>Thông báo</Text><View style={styles.card}><View style={styles.row}><View style={styles.icon}><MaterialIcons name="notifications-none" size={21} color="#1D4ED8" /></View><View style={styles.rowBody}><Text style={styles.rowTitle}>Hiển thị thông báo</Text><Text style={styles.rowText}>Hiện tên người gửi và nội dung tin nhắn; cuộc gọi đến có nút Nghe hoặc Từ chối.</Text></View><Switch value={pushEnabled} disabled={loading || savingPush} onValueChange={(value) => void changePushEnabled(value)} trackColor={{ false: "#CBD5E1", true: "#93C5FD" }} thumbColor={pushEnabled ? "#2563EB" : "#F8FAFC"} /></View><Pressable onPress={() => void sendLocalNotificationTest()} disabled={testingNotification} style={({ pressed }) => [styles.notificationTest, testingNotification && styles.disabled, pressed && styles.pressed]}><MaterialIcons name="notifications-active" size={18} color="#1D4ED8" />{testingNotification ? <ActivityIndicator color="#1D4ED8" /> : <Text style={styles.notificationTestText}>Gửi thông báo kiểm tra</Text>}</Pressable></View></View>
 
         <View style={styles.section}><Text style={styles.sectionTitle}>Gửi video</Text><View style={styles.card}><View style={styles.row}><View style={styles.icon}><MaterialIcons name="movie" size={21} color="#1D4ED8" /></View><View style={styles.rowBody}><Text style={styles.rowTitle}>Video tối đa 1 GiB</Text><Text style={styles.rowText}>Video lớn được tải trực tiếp vào kho riêng tư để ứng dụng vẫn ổn định.</Text></View></View></View></View>
       </ScrollView>

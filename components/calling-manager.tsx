@@ -8,11 +8,15 @@ import type { CallMode } from "@/src/features/webrtc-calling/types";
 
 type CallingContextValue = {
   startCall: (input: { conversationId: number; mode: CallMode; peerName: string }) => Promise<void>;
+  handleExternalCallAction: (input: { callId: string; action: "answer" | "decline" }) => Promise<void>;
 };
 
 const CallingContext = createContext<CallingContextValue | null>(null);
 const signedOutCallingValue: CallingContextValue = {
   startCall: async () => {
+    throw new Error("Vui lòng đăng nhập trước khi thực hiện cuộc gọi.");
+  },
+  handleExternalCallAction: async () => {
     throw new Error("Vui lòng đăng nhập trước khi thực hiện cuộc gọi.");
   },
 };
@@ -69,7 +73,27 @@ function AuthenticatedCallingProvider({ children, userId }: { children: ReactNod
     await controller.startCall(conversationId, mode);
   }, [controller]);
 
-  const value = useMemo(() => ({ startCall }), [startCall]);
+  const handleExternalCallAction = useCallback(async ({ callId, action }: { callId: string; action: "answer" | "decline" }) => {
+    const result = await incoming.refetch();
+    const session = result.data?.find((candidate) => candidate.id === callId);
+    if (!session) return;
+    setPeerName(session.caller?.displayName || "Người dùng ChatPHT");
+    controller.receiveIncomingCall({
+      callId: session.id,
+      conversationId: session.conversationId,
+      callerId: session.callerId,
+      recipientId: session.recipientId,
+      mode: session.p2pMode === "audio" ? "voice" : session.p2pMode,
+      status: "ringing",
+      createdAt: new Date(session.createdAt).toISOString(),
+      answeredAt: null,
+      endedAt: null,
+    });
+    if (action === "answer") await controller.answerIncomingCall();
+    else await controller.rejectIncomingCall();
+  }, [controller, incoming]);
+
+  const value = useMemo(() => ({ startCall, handleExternalCallAction }), [handleExternalCallAction, startCall]);
   return (
     <CallingContext.Provider value={value}>
       {children}

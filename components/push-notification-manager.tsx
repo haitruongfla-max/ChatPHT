@@ -1,10 +1,13 @@
 import { useAuth } from "@/hooks/use-auth";
 import {
   conversationIdFromPushData,
+  incomingCallActionFromUrl,
   registerForChatPushNotifications,
   storePushToken,
 } from "@/lib/push-notifications";
 import { trpc } from "@/lib/trpc";
+import { useCalling } from "@/components/calling-manager";
+import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useRef } from "react";
@@ -28,22 +31,24 @@ function openNotification(data: unknown) {
 
 export function PushNotificationManager() {
   const { user } = useAuth();
+  const { handleExternalCallAction } = useCalling();
   const { mutateAsync: registerDevice } = trpc.notifications.registerDevice.useMutation();
-  const registeredToken = useRef<string | null>(null);
+  const registeredTokens = useRef(new Set<string>());
 
   // A device token belongs to the authenticated account. Clear the in-memory
   // guard when the account changes so a subsequent login registers the token
   // for the new account instead of silently reusing the previous registration.
   useEffect(() => {
-    registeredToken.current = null;
+    registeredTokens.current.clear();
   }, [user?.id]);
 
-  const saveToken = useCallback(async (token: string) => {
-    if (registeredToken.current === token) return;
+  const saveToken = useCallback(async (token: string, transport: "expo" | "fcm") => {
+    const tokenKey = `${transport}:${token}`;
+    if (registeredTokens.current.has(tokenKey)) return;
     const platform = Platform.OS === "ios" ? "ios" : "android";
-    await registerDevice({ token, platform });
-    registeredToken.current = token;
-    await storePushToken(token);
+    await registerDevice({ token, platform, transport });
+    registeredTokens.current.add(tokenKey);
+    await storePushToken(token, transport);
   }, [registerDevice]);
 
   useEffect(() => {
@@ -61,11 +66,25 @@ export function PushNotificationManager() {
   useEffect(() => {
     if (!user || Platform.OS === "web") return;
     let active = true;
+    const handleUrl = (url: string | null) => {
+      if (!url || !active) return;
+      const action = incomingCallActionFromUrl(url);
+      if (action) void handleExternalCallAction(action).catch((error) => console.warn("[Call] Không thể xử lý thao tác cuộc gọi.", error));
+    };
+    void Linking.getInitialURL().then(handleUrl);
+    const urlSubscription = Linking.addEventListener("url", ({ url }) => handleUrl(url));
+    return () => { active = false; urlSubscription.remove(); };
+  }, [handleExternalCallAction, user]);
+
+  useEffect(() => {
+    if (!user || Platform.OS === "web") return;
+    let active = true;
     const registerDeviceForPush = async () => {
       try {
-        const token = await registerForChatPushNotifications();
-        if (!token || !active) return;
-        await saveToken(token);
+        const tokens = await registerForChatPushNotifications();
+        if (!tokens || !active) return;
+        await saveToken(tokens.expoToken, "expo");
+        if (tokens.fcmToken) await saveToken(tokens.fcmToken, "fcm");
       } catch (error) {
         console.warn("[Push] Không thể đăng ký thông báo trên thiết bị này.", error);
       }
@@ -83,7 +102,7 @@ export function PushNotificationManager() {
   useEffect(() => {
     if (!user || Platform.OS === "web") return;
     const subscription = Notifications.addPushTokenListener((token) => {
-      void saveToken(token.data).catch((error) => console.warn("[Push] Không thể cập nhật token thông báo.", error));
+      void saveToken(token.data, "expo").catch((error) => console.warn("[Push] Không thể cập nhật token thông báo.", error));
     });
     return () => subscription.remove();
   }, [saveToken, user]);

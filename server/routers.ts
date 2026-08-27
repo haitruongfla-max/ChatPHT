@@ -8,7 +8,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
 import { runMediaCleanup } from "./media-cleanup";
-import { dispatchNewMessagePushNotifications } from "./push";
+import { dispatchIncomingCallPush, dispatchNewMessagePushNotifications } from "./push";
 import { createMediaAccessUrl } from "./media-access";
 import { emitConversationBackgroundUpdated, emitWebRTCCallInvite, emitWebRTCCallLifecycle } from "./_core/realtime";
 import { createOpaqueStorageKey, storageCreateUploadUrl, storageDelete, storagePut } from "./storage";
@@ -292,8 +292,9 @@ export const appRouter = router({
     registerDevice: protectedProcedure
       .input(
         z.object({
-          token: z.string().trim().min(16).max(255).regex(/^(?:Expo|Exponent)PushToken\[[^\]]+\]$/),
+          token: z.string().trim().min(16).max(255).regex(/^(?:(?:Expo|Exponent)PushToken\[[^\]]+\]|[A-Za-z0-9:_-]+)$/),
           platform: z.enum(["ios", "android"]),
+          transport: z.enum(["expo", "fcm"]).default("expo"),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -651,7 +652,11 @@ export const appRouter = router({
             replyToMessageId: input.replyToMessageId ?? null,
           });
           if (created) {
-            void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
+            void dispatchNewMessagePushNotifications({
+              conversationId: message.conversationId,
+              senderId: ctx.user.id,
+              preview: message.body ?? input.body,
+            });
           }
           return publicMessage(message, null);
         } catch (error) {
@@ -706,7 +711,11 @@ export const appRouter = router({
           mediaName: safeFilename,
             mediaSize: data.length,
           });
-          void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
+          void dispatchNewMessagePushNotifications({
+            conversationId: message.conversationId,
+            senderId: ctx.user.id,
+            preview: message.contentType === "image" ? "Đã gửi ảnh" : "Đã gửi video",
+          });
           return publicMessage(message, await createMediaAccessUrl(ctx.req, ctx.user, stored.key));
       }),
     requestVideoUpload: protectedProcedure
@@ -794,7 +803,11 @@ export const appRouter = router({
           mediaSize: input.size,
           mediaBatchId: input.mediaBatchId ?? null,
         });
-        void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
+        void dispatchNewMessagePushNotifications({
+          conversationId: message.conversationId,
+          senderId: ctx.user.id,
+          preview: "Đã gửi video",
+        });
         return publicMessage(message, await createMediaAccessUrl(ctx.req, ctx.user, input.key));
       }),
     completeMediaUpload: protectedProcedure
@@ -831,7 +844,11 @@ export const appRouter = router({
           mediaSize: input.size,
           mediaBatchId: input.mediaBatchId ?? null,
         });
-        void dispatchNewMessagePushNotifications({ conversationId: message.conversationId, senderId: ctx.user.id });
+        void dispatchNewMessagePushNotifications({
+          conversationId: message.conversationId,
+          senderId: ctx.user.id,
+          preview: message.contentType === "image" ? "Đã gửi ảnh" : "Đã gửi video",
+        });
         return publicMessage(message, await createMediaAccessUrl(ctx.req, ctx.user, input.key));
       }),
     recall: protectedProcedure
@@ -863,6 +880,15 @@ export const appRouter = router({
         try {
           const session = await db.startWebRTCCall({ conversationId: input.conversationId, callerId: ctx.user.id, mode: input.mode });
           emitWebRTCCallInvite(session);
+          const caller = await db.getUserById(ctx.user.id);
+          void dispatchIncomingCallPush({
+            callId: session.id,
+            conversationId: session.conversationId,
+            callerId: session.callerId,
+            callerDisplayName: caller ? db.toPublicProfile(caller).displayName : "Người dùng ChatPHT",
+            mode: input.mode,
+            expiresAt: session.expiresAt,
+          });
           return session;
         } catch (error) {
           return appError(error, "Không thể bắt đầu cuộc gọi.");

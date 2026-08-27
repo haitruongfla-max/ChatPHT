@@ -1,18 +1,19 @@
-# ChatPHT 1.0.44 — Startup & Login Recovery
+# ChatPHT 1.0.45 — FCM Incoming Call
 
-## Khắc phục khởi động và đăng nhập
+## Thông báo tin nhắn rõ ràng hơn
 
-- Hợp nhất trạng thái xác thực: chỉ một provider đọc phiên cục bộ khi mở app, loại bỏ lượt đọc song song trên màn hình đăng nhập có thể gây chuyển màn hình chồng chéo hoặc giao diện thiếu mượt.
-- Chặn gửi đăng nhập/tạo tài khoản đồng thời; một lần chạm chỉ tạo một yêu cầu, đồng thời báo rõ khi thiếu thông tin.
-- Gia cố đọc dữ liệu phiên và khóa cục bộ: lỗi SecureStore hoặc dữ liệu cũ không hợp lệ không được phép làm hỏng quá trình mở ứng dụng.
-- Thêm màn hình khôi phục an toàn cho lỗi render JavaScript thay vì để người dùng chỉ thấy ứng dụng bị thoát.
+- Thông báo tin nhắn mới hiện dùng **tên hiển thị người gửi** làm tiêu đề và phần xem trước nội dung làm phần thân; ví dụ: `Hải Trường` / `alo bạn ơi`.
+- Phần xem trước được chuẩn hóa khoảng trắng và giới hạn độ dài. Ảnh hoặc video chỉ hiển thị mô tả chung, không lộ URL media hay dữ liệu riêng tư.
+- Thông báo tin nhắn dùng mức ưu tiên thông thường, tránh chiếm quyền hiển thị khẩn cấp của cuộc gọi.
 
-## Giảm quá tải máy chủ
+## Cuộc gọi đến Android khi ứng dụng không ở màn hình trước
 
-- Bảo toàn các chốt giảm polling/retry ở bản trước, không nhân đôi yêu cầu khi máy chủ tạm trả HTTP 429 hoặc nội dung HTML.
-- Ngày phát hành, backend công khai phản hồi `200` với kiểm tra sức khỏe và tRPC tối thiểu. Nếu 429 vẫn lặp lại ở một tài khoản, cần log Android để phân biệt lưu lượng thực tế với giới hạn hạ tầng.
+- Android đăng ký thêm token FCM native song song với token Expo hiện có. Token được phân loại theo kênh gửi; token iOS và luồng thông báo cũ vẫn được giữ nguyên.
+- Lời mời gọi 1:1 còn đang đổ chuông được gửi trực tiếp qua FCM HTTP v1 với ưu tiên cao và thời gian sống ngắn. Màn hình native tạo kênh `calls`, thông báo `CallStyle`, full-screen intent và `ConnectionService` để hiện **Nghe/Từ chối**.
+- Chạm **Nghe** hoặc **Từ chối** chỉ mở ứng dụng bằng deep link có `callId`; sau khi phiên đăng nhập sẵn sàng, ứng dụng truy vấn lại trạng thái lời mời và mới gọi API accept/decline. Payload FCM không chứa SDP, ICE, TURN, bearer/session token hoặc thông tin xác thực Firebase.
 
-## Lưu ý nghiệm thu
+## Kiểm tra trước khi sử dụng
 
-- Bản này đã qua kiểm thử nguồn. Cần cài đè và thử mở app, đăng nhập, mở chat và gửi text trên Android thật trước khi kết luận lỗi buộc đóng đã hết.
-- Chưa khẳng định audio, video hoặc chia sẻ màn hình P2P hoạt động trên thiết bị thật nếu chưa có nghiệm thu hai máy. Trường hợp ứng dụng bị hệ điều hành tắt hẳn vẫn cần push/native-call riêng để báo cuộc gọi đến.
+- Đã chạy kiểm thử nguồn cho payload, quyền riêng tư, token FCM, plugin Android và các hồi quy hiện có. APK này cần được cài trên Android thật để nghiệm thu cả máy khóa/mở khóa, chạy nền và ứng dụng bị hệ thống dừng.
+- Android có thể chặn thông báo của ứng dụng **Force stop** cho tới khi người dùng tự mở lại ứng dụng; đây là giới hạn của hệ điều hành, không phải trạng thái có thể khẳng định chỉ bằng kiểm thử nguồn.
+- Hãy cho phép thông báo và full-screen notifications của ChatPHT trong cài đặt Android trước khi kiểm thử. Chưa kết luận audio, video hoặc chia sẻ màn hình P2P hoạt động trên thiết bị thật nếu chưa có nghiệm thu hai máy.

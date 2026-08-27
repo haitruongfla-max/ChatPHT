@@ -139,17 +139,25 @@ export async function upsertPushDevice(input: {
   userId: number;
   token: string;
   platform: "ios" | "android";
+  transport?: "expo" | "fcm";
 }) {
   const db = requireDb(await getDb());
   const now = new Date();
-  await db.insert(pushDevices).values({ ...input, enabled: true, lastSeenAt: now }).onDuplicateKeyUpdate({
-    set: { userId: input.userId, platform: input.platform, enabled: true, lastSeenAt: now },
+  const transport = input.transport ?? "expo";
+  await db.insert(pushDevices).values({ ...input, transport, enabled: true, lastSeenAt: now }).onDuplicateKeyUpdate({
+    set: { userId: input.userId, platform: input.platform, transport, enabled: true, lastSeenAt: now },
   });
 }
 
 export async function removePushDevice(userId: number, token: string) {
   const db = requireDb(await getDb());
   await db.delete(pushDevices).where(and(eq(pushDevices.userId, userId), eq(pushDevices.token, token)));
+}
+
+/** Chỉ vô hiệu hóa token không còn hợp lệ; giữ lịch sử tối thiểu để không spam đăng ký lại. */
+export async function disablePushDevice(token: string) {
+  const db = requireDb(await getDb());
+  await db.update(pushDevices).set({ enabled: false }).where(eq(pushDevices.token, token));
 }
 
 export async function listConversationRecipientDevices(conversationId: number, senderId: number) {
@@ -163,7 +171,7 @@ export async function listConversationRecipientDevices(conversationId: number, s
   const devices = await Promise.all(
     recipients.map(({ userId }) =>
       db
-        .select({ token: pushDevices.token, platform: pushDevices.platform })
+        .select({ token: pushDevices.token, platform: pushDevices.platform, transport: pushDevices.transport })
         .from(pushDevices)
         .where(and(eq(pushDevices.userId, userId), eq(pushDevices.enabled, true))),
     ),

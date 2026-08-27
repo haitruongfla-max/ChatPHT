@@ -417,6 +417,7 @@ describe("chat media access controls", () => {
       userId: 7,
       token: "ExponentPushToken[private-device-token]",
       platform: "android",
+      transport: "expo",
     });
   });
 });

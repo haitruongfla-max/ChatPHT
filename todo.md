@@ -461,3 +461,7 @@
 - [ ] Kiểm thử luồng khởi động, đăng nhập và chat trên APK signed mới trước khi tiếp tục bất kỳ sửa chữa gọi nào.
 - [x] Cổng nguồn 1.0.44/vc48 đã đạt: TypeScript, lint không lỗi, backend build, Expo config/export Android, diff sạch và 119 test pass; 2 test credential skip có chủ đích.
 - [x] GitHub Actions run 33032230487 đã tạo Release 1.0.44/vc48; APK được tải lại, xác minh định dạng và SHA-256 khớp asset phát hành.
+- [x] Thay payload FCM tin nhắn mới để title là tên hiển thị người gửi và body là nội dung text đã kiểm soát an toàn.
+- [x] Tích hợp FCM data/high priority cho incoming call Android khi app nền hoặc bị tắt, không lộ SDP/ICE/token trong payload.
+- [x] Thêm luồng Android native full-screen incoming call với quyền cần thiết, Notification/ConnectionService và thao tác Nghe/Từ chối an toàn.
+- [ ] Kiểm thử hồi quy thông báo, tăng version/releaseId và phát hành APK signed mới; nghiệm thu thực tế khi app tắt trên Android.

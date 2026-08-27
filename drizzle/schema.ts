@@ -97,6 +97,8 @@ export const pushDevices = mysqlTable(
     userId: int("userId").notNull(),
     token: varchar("token", { length: 255 }).notNull(),
     platform: mysqlEnum("platform", ["ios", "android"]).notNull(),
+    /** Expo Push tiếp tục phục vụ tin nhắn; FCM native chỉ dành cho cuộc gọi Android nhạy thời gian. */
+    transport: mysqlEnum("transport", ["expo", "fcm"]).default("expo").notNull(),
     enabled: boolean("enabled").default(true).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     lastSeenAt: timestamp("lastSeenAt").defaultNow().onUpdateNow().notNull(),
@@ -104,6 +106,7 @@ export const pushDevices = mysqlTable(
   (table) => [
     uniqueIndex("push_device_token_unique_idx").on(table.token),
     index("push_device_user_enabled_idx").on(table.userId, table.enabled),
+    index("push_device_user_transport_enabled_idx").on(table.userId, table.transport, table.enabled),
   ],
 );
 

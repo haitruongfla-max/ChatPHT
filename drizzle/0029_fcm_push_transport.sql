@@ -1,0 +1,2 @@
+ALTER TABLE `push_devices` ADD `transport` enum('expo','fcm') DEFAULT 'expo' NOT NULL;--> statement-breakpoint
+CREATE INDEX `push_device_user_transport_enabled_idx` ON `push_devices` (`userId`,`transport`,`enabled`);
