@@ -212,6 +212,7 @@ import android.os.Bundle
 import android.telecom.Connection
 import android.telecom.ConnectionRequest
 import android.telecom.ConnectionService
+import android.telecom.DisconnectCause
 import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
@@ -255,7 +256,7 @@ class ChatPhtConnectionService : ConnectionService() {
     fun finishConnection(callId: String?, action: String) {
       if (callId.isNullOrBlank()) return
       connections.remove(callId)?.let { connection ->
-        if (action == IncomingCallContract.ANSWER) connection.setActive() else connection.setDisconnected(Connection.DisconnectCause(Connection.DisconnectCause.REJECTED))
+        if (action == IncomingCallContract.ANSWER) connection.setActive() else connection.setDisconnected(DisconnectCause(DisconnectCause.REJECTED))
         connection.destroy()
       }
     }
