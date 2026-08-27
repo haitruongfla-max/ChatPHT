@@ -55,6 +55,7 @@ export type WebRTCController = {
   startCall: (conversationId: number, mode: CallMode) => Promise<void>;
   answerIncomingCall: () => Promise<void>;
   rejectIncomingCall: () => Promise<void>;
+  receiveIncomingCall: (event: CallLifecycleEvent) => void;
   endCall: () => Promise<void>;
   toggleMute: () => void;
   toggleCamera: () => Promise<void>;

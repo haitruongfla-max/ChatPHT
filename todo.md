@@ -448,3 +448,9 @@
 - [x] Điều tra và sửa lỗi gửi tin nhận phản hồi HTML gây `JSON Parse error: Unexpected character: <`, giữ nguyên gửi text/media/retry đang hoạt động.
 - [x] Bổ sung hồi quy, tăng phiên bản và phát hành APK GitHub đã xác minh cho batch sửa lỗi gọi/gửi tin.
 - [x] GitHub Release 1.0.42/vc46 đã được tải lại, xác minh định dạng APK và SHA-256 khớp asset phát hành.
+- [ ] Tái hiện và truy vết crash Android “bị buộc đóng do lỗi nội bộ” trên bản 1.0.42, ưu tiên crash log và cleanup vòng đời.
+- [x] Chẩn đoán HTTP 429 trả `text/html` khi mở hội thoại/gửi tin; phân biệt giới hạn proxy, retry client và lỗi endpoint.
+- [x] Khôi phục phản hồi chat ổn định, giảm giật/lag và bảo đảm thao tác mở hội thoại không bị kẹt khi API tạm lỗi.
+- [ ] Truy vết riêng lỗi gọi 1:1 từ bản Android thật, không kết luận audio/video/screen hoạt động trước khi có bằng chứng hai thiết bị.
+- [ ] Chạy hồi quy, tăng định danh phát hành và tạo APK GitHub signed mới chỉ sau khi các lỗi trên được sửa và xác minh.
+- [x] Cổng nguồn 1.0.43/vc47 đã đạt: TypeScript, lint không lỗi, backend build, Expo config/export Android, diff sạch và 115 test pass; 2 test credential skip có chủ đích.

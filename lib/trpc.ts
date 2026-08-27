@@ -14,6 +14,16 @@ import * as Auth from "@/lib/_core/auth";
  */
 export const trpc = createTRPCReact<AppRouter>();
 
+let apiCooldownUntil = 0;
+
+function getRetryAfterMs(response: Response) {
+  const retryAfterSeconds = Number(response.headers.get("retry-after"));
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return Math.min(Math.round(retryAfterSeconds * 1_000), 60_000);
+  }
+  return 15_000;
+}
+
 /**
  * Creates the tRPC client with proper configuration.
  * Call this once in your app's root layout.
@@ -38,14 +48,23 @@ export function createTRPCClient() {
         },
         // Custom fetch to include credentials for cookie-based auth
         async fetch(url, options) {
+          const now = Date.now();
+          if (now < apiCooldownUntil) {
+            const remainingSeconds = Math.max(1, Math.ceil((apiCooldownUntil - now) / 1_000));
+            throw new Error(`Máy chủ ChatPHT đang tạm giới hạn yêu cầu (HTTP 429). Ứng dụng sẽ thử lại sau ${remainingSeconds} giây.`);
+          }
           const response = await fetch(url, {
             ...options,
             credentials: "include",
           });
           const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-          const preview = (await response.clone().text()).replace(/\s+/g, " ").trim().slice(0, 80);
-          const looksLikeHtml = /^<(?:!doctype|html|head|body|div|title)\b/i.test(preview);
-          if (!contentType.includes("application/json") || looksLikeHtml) {
+          if (response.status === 429) {
+            apiCooldownUntil = Date.now() + getRetryAfterMs(response);
+            const preview = (await response.clone().text()).replace(/\s+/g, " ").trim().slice(0, 80);
+            throw new Error(`Máy chủ ChatPHT đang tạm giới hạn yêu cầu (HTTP 429). ${preview ? "Vui lòng đợi ít giây rồi thử lại." : ""}`);
+          }
+          if (!contentType.includes("application/json")) {
+            const preview = (await response.clone().text()).replace(/\s+/g, " ").trim().slice(0, 80);
             throw new Error(`Máy chủ ChatPHT trả về dữ liệu không hợp lệ (HTTP ${response.status}; ${contentType || "không có Content-Type"}). ${preview ? "Vui lòng thử lại khi mạng ổn định." : ""}`);
           }
           return response;

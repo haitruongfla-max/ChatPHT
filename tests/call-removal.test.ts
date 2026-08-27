@@ -108,6 +108,31 @@ describe("WebRTC Calling cô lập", () => {
     expect(chat).toContain("clientRequestId");
   });
 
+  it("giảm polling dày và tôn trọng cooldown khi proxy đang trả HTTP 429", () => {
+    const client = source("lib/trpc.ts");
+    const inbox = source("app/(tabs)/index.tsx");
+    const chat = source("app/chat/[id].tsx");
+    expect(client).toContain("apiCooldownUntil");
+    expect(client).toContain("response.status === 429");
+    expect(client).toContain("getRetryAfterMs");
+    expect(inbox).toContain("refetchInterval: 12_000");
+    expect(inbox).toContain("refetchInterval: 20_000");
+    expect(chat).toContain("refetchInterval: 3_000");
+    expect(chat).toContain("refetchInterval: 4_000");
+    expect(chat).toContain("refetchInterval: 30_000");
+    expect(chat).not.toContain("refetchInterval: 650");
+  });
+
+  it("dùng polling cuộc gọi đến làm fallback khi Socket.IO bị rơi event và không để cleanup native ném lỗi", () => {
+    const manager = source("components/calling-manager.tsx");
+    const core = source("src/features/webrtc-calling/hooks/useWebRTC.ts");
+    expect(manager).toContain("controller.receiveIncomingCall");
+    expect(manager).toContain('session.p2pMode === "audio" ? "voice"');
+    expect(core).toContain("receiveIncomingCall: handleLifecycle");
+    expect(core).toContain("handleSignal(signal).catch");
+    expect(core).toContain("Đóng lặp lại peer không được phép chặn cleanup UI");
+  });
+
   it("chỉ mở điều khiển gọi từ header chat 1:1, nhưng overlay/controller được mount toàn cục", () => {
     const chat = source("app/chat/[id].tsx");
     const callingManager = source("components/calling-manager.tsx");

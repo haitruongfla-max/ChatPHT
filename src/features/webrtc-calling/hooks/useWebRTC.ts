@@ -57,7 +57,13 @@ function describeMediaError(error: unknown) {
 }
 
 function stopStream(stream: WebRTCMediaStream | null) {
-  stream?.getTracks().forEach((track) => track.stop?.());
+  stream?.getTracks().forEach((track) => {
+    try {
+      track.stop?.();
+    } catch {
+      // Native track đã dừng vẫn phải được bỏ qua để cleanup còn lại tiếp tục.
+    }
+  });
 }
 
 /**
@@ -98,10 +104,17 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
   }, []);
 
   const releaseResources = useCallback(async (nextStatus: CallStatus = "ended") => {
-    if (peerRef.current && systemAudioSenderRef.current) {
-      peerRef.current.removeTrack?.(systemAudioSenderRef.current);
+    const peer = peerRef.current;
+    try {
+      if (peer && systemAudioSenderRef.current) peer.removeTrack?.(systemAudioSenderRef.current);
+    } catch {
+      // Track native có thể đã bị giải phóng khi người dùng tắt media ngoài app.
     }
-    peerRef.current?.close();
+    try {
+      peer?.close();
+    } catch {
+      // Đóng lặp lại peer không được phép chặn cleanup UI.
+    }
     peerRef.current = null;
     systemAudioSenderRef.current = null;
     didAttemptIceRestartRef.current = false;
@@ -308,14 +321,23 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
 
   useEffect(() => {
     if (!userId) return;
-    const unsubscribe = callSignaling.subscribe({ onSignal: (signal) => void handleSignal(signal), onInvite: handleLifecycle, onLifecycle: handleLifecycle });
+    const unsubscribe = callSignaling.subscribe({
+      onSignal: (signal) => {
+        void handleSignal(signal).catch((error) => {
+          if (stateRef.current.callId !== signal.callId) return;
+          failPeerCall(signal.callId, `Không thể xử lý tín hiệu cuộc gọi: ${describeMediaError(error)}`);
+        });
+      },
+      onInvite: handleLifecycle,
+      onLifecycle: handleLifecycle,
+    });
     void callSignaling.connect().catch((error) => updateState({ error: describeMediaError(error) }));
     return () => {
       unsubscribe();
       callSignaling.disconnect();
       void releaseResources("ended");
     };
-  }, [handleLifecycle, handleSignal, releaseResources, updateState, userId]);
+  }, [failPeerCall, handleLifecycle, handleSignal, releaseResources, updateState, userId]);
 
   useEffect(() => {
     const tone = state.status === "ringing" ? (state.direction === "incoming" ? "incoming" : "outgoing") : null;
@@ -451,16 +473,25 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
   const switchCamera = useCallback(async () => {
     const track = localStreamRef.current?.getVideoTracks()[0];
     if (!track) return;
-    isFrontCameraRef.current = !isFrontCameraRef.current;
-    await webrtcService.switchCamera(track, isFrontCameraRef.current ? "user" : "environment");
-  }, []);
+    try {
+      isFrontCameraRef.current = !isFrontCameraRef.current;
+      await webrtcService.switchCamera(track, isFrontCameraRef.current ? "user" : "environment");
+    } catch (error) {
+      isFrontCameraRef.current = !isFrontCameraRef.current;
+      updateState({ error: describeMediaError(error) });
+    }
+  }, [updateState]);
 
   const toggleSpeaker = useCallback(async () => {
     const nextSpeakerOn = !stateRef.current.isSpeakerOn;
-    if (Platform.OS !== "web") {
-      await setAudioModeAsync({ allowsRecording: true, shouldRouteThroughEarpiece: !nextSpeakerOn });
+    try {
+      if (Platform.OS !== "web") {
+        await setAudioModeAsync({ allowsRecording: true, shouldRouteThroughEarpiece: !nextSpeakerOn });
+      }
+      updateState({ isSpeakerOn: nextSpeakerOn });
+    } catch (error) {
+      updateState({ error: describeMediaError(error) });
     }
-    updateState({ isSpeakerOn: nextSpeakerOn });
   }, [updateState]);
 
   const startScreenShare = useCallback(async () => {
@@ -497,12 +528,17 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
     const cameraTrack = localStreamRef.current?.getVideoTracks()[0] ?? null;
     if (!peer || !display) return;
     const sender = peer.getSenders().find((entry) => entry.track?.kind === "video");
-    if (sender && cameraTrack) await sender.replaceTrack(cameraTrack);
-    if (systemAudioSenderRef.current) peer.removeTrack?.(systemAudioSenderRef.current);
-    systemAudioSenderRef.current = null;
-    stopStream(display);
-    displayStreamRef.current = null;
-    updateState({ isScreenSharing: false, hasSystemAudio: false, localStream: localStreamRef.current });
+    try {
+      if (sender && cameraTrack) await sender.replaceTrack(cameraTrack);
+      if (systemAudioSenderRef.current) peer.removeTrack?.(systemAudioSenderRef.current);
+    } catch (error) {
+      updateState({ error: describeMediaError(error) });
+    } finally {
+      systemAudioSenderRef.current = null;
+      stopStream(display);
+      displayStreamRef.current = null;
+      updateState({ isScreenSharing: false, hasSystemAudio: false, localStream: localStreamRef.current });
+    }
   }, [updateState]);
 
   return {
@@ -510,6 +546,7 @@ export function useWebRTC({ userId }: { userId: number | undefined }): WebRTCCon
     startCall,
     answerIncomingCall,
     rejectIncomingCall,
+    receiveIncomingCall: handleLifecycle,
     endCall,
     toggleMute,
     toggleCamera,

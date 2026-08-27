@@ -62,8 +62,12 @@ export default function RootLayout() {
           queries: {
             // Disable automatic refetching on window focus for mobile
             refetchOnWindowFocus: false,
-            // Retry failed requests once
-            retry: 1,
+            // Không nhân đôi request khi proxy đang trả HTML/429; polling sẽ thử lại sau.
+            retry: (failureCount, error) => {
+              const message = error instanceof Error ? error.message : String(error);
+              return failureCount < 1 && !/HTTP 429|dữ liệu không hợp lệ/i.test(message);
+            },
+            retryDelay: 1_500,
           },
         },
       }),

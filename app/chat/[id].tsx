@@ -197,14 +197,14 @@ export default function ChatScreen() {
     { conversationId },
     {
       enabled: Boolean(user) && Number.isInteger(conversationId),
-      refetchInterval: 1000,
+      refetchInterval: 3_000,
     },
   );
   const typingStatus = trpc.messages.typingStatus.useQuery(
     { conversationId },
     {
       enabled: Boolean(user) && Number.isInteger(conversationId),
-      refetchInterval: 650,
+      refetchInterval: 4_000,
     },
   );
   const wallpaper = trpc.conversations.wallpaper.useQuery(
@@ -219,7 +219,7 @@ export default function ChatScreen() {
   }, [conversationId, user, utils]);
   const groupDetails = trpc.conversations.groupDetails.useQuery(
     { conversationId },
-    { enabled: Boolean(user) && isGroup && Number.isInteger(conversationId), refetchInterval: 3000 },
+    { enabled: Boolean(user) && isGroup && Number.isInteger(conversationId), refetchInterval: 15_000 },
   );
   const groupMembers = trpc.conversations.groupMembers.useQuery(
     { conversationId },
@@ -231,11 +231,11 @@ export default function ChatScreen() {
   });
   const peerPresence = trpc.presence.forConversation.useQuery(
     { conversationId },
-    { enabled: Boolean(user) && !isGroup && Number.isInteger(conversationId), refetchInterval: 12_000 },
+    { enabled: Boolean(user) && !isGroup && Number.isInteger(conversationId), refetchInterval: 20_000 },
   );
   const callHistory = trpc.calling.history.useQuery(
     { conversationId },
-    { enabled: Boolean(user) && !isGroup && Number.isInteger(conversationId), refetchInterval: 8_000 },
+    { enabled: Boolean(user) && !isGroup && Number.isInteger(conversationId), refetchInterval: 30_000 },
   );
   const messageCount = messages.data?.length ?? 0;
   const stableMediaUrls = useRef(new Map<string, string>());
@@ -310,9 +310,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!userId || messageCount === 0 || !Number.isInteger(conversationId))
       return;
-    void markRead({ conversationId })
-      .then(() => utils.messages.list.invalidate({ conversationId }))
-      .catch(() => undefined);
+    void markRead({ conversationId }).catch(() => undefined);
   }, [conversationId, markRead, messageCount, userId, utils.messages.list]);
 
   if (loading)

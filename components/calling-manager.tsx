@@ -33,6 +33,24 @@ export function CallingProvider({ children }: { children: ReactNode }) {
     if (caller?.displayName) setPeerName(caller.displayName);
   }, [controller.state.callId, controller.state.direction, incoming.data]);
 
+  // Socket.IO là đường chính. Query này là fallback khi thiết bị vừa mất socket hoặc
+  // proxy làm rơi event; nhờ vậy caller không chỉ đổ chuông vô thời hạn.
+  useEffect(() => {
+    const session = incoming.data?.[0];
+    if (!session || (controller.state.status !== "idle" && controller.state.status !== "ended")) return;
+    controller.receiveIncomingCall({
+      callId: session.id,
+      conversationId: session.conversationId,
+      callerId: session.callerId,
+      recipientId: session.recipientId,
+      mode: session.p2pMode === "audio" ? "voice" : session.p2pMode,
+      status: "ringing",
+      createdAt: new Date(session.createdAt).toISOString(),
+      answeredAt: null,
+      endedAt: null,
+    });
+  }, [controller, incoming.data]);
+
   const startCall = useCallback(async ({ conversationId, mode, peerName: nextPeerName }: { conversationId: number; mode: CallMode; peerName: string }) => {
     setPeerName(nextPeerName || "Liên hệ ChatPHT");
     await controller.startCall(conversationId, mode);

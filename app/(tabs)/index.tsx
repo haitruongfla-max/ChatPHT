@@ -17,9 +17,9 @@ function preview(message: { body: string | null; contentType: "text" | "image" |
 
 export default function InboxScreen() {
   const { user, loading } = useAuth();
-  const conversations = trpc.conversations.list.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 2500 });
-  const requests = trpc.friends.incoming.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 5000 });
-  const notificationSummary = trpc.notifications.summary.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 5000 });
+  const conversations = trpc.conversations.list.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 12_000 });
+  const requests = trpc.friends.incoming.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 20_000 });
+  const notificationSummary = trpc.notifications.summary.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 20_000 });
   const clearConversation = trpc.conversations.clearForSelfAndExitInbox.useMutation();
   const [refreshing, setRefreshing] = useState(false);
   const refreshInbox = useCallback(async () => {
