@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, "..");
 describe("mã phát hành ChatPHT", () => {
   it("nhúng releaseId bất biến vào cấu hình APK hiện tại", () => {
     const config = readFileSync(resolve(root, "app.config.ts"), "utf8");
-    expect(config).toContain('const releaseId = "CPHT-1.0.45-vc49-fcm-incoming-call"');
+    expect(config).toContain('const releaseId = "CPHT-1.0.46-vc50-native-webrtc-adapter-fix"');
     expect(config).toContain("releaseId,");
   });
 

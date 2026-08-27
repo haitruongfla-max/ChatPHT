@@ -1,4 +1,10 @@
-# ChatPHT 1.0.45 — FCM Incoming Call
+# ChatPHT 1.0.46 — Native WebRTC Adapter Fix
+
+## Sửa lỗi kết nối gọi Android
+
+- Sửa entrypoint WebRTC để Android luôn nạp `react-native-webrtc` thay vì lớp WebRTC của trình duyệt. Đây là lỗi chung trước đó khiến gọi thoại, gọi video và chia sẻ màn hình không thể khởi tạo media native.
+- Không đổi signaling, quyền gọi, luồng chat hay kiến trúc cuộc gọi 1:1; chỉ thay adapter chọn đúng implementation theo nền tảng.
+- Đã thêm kiểm thử ngăn Android quay lại nạp implementation web. APK vẫn cần nghiệm thu audio/video/screen trên hai thiết bị Android thật.
 
 ## Thông báo tin nhắn rõ ràng hơn
 

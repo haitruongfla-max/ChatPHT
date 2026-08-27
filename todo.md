@@ -466,3 +466,7 @@
 - [x] Thêm luồng Android native full-screen incoming call với quyền cần thiết, Notification/ConnectionService và thao tác Nghe/Từ chối an toàn.
 - [ ] Kiểm thử hồi quy thông báo, tăng version/releaseId và phát hành APK signed mới; nghiệm thu thực tế khi app tắt trên Android.
 - [x] Phát hành GitHub Release signed ChatPHT 1.0.45/vc49; tải lại asset, đối chiếu SHA-256, định dạng APK và APK Signing Block v2/v3.
+- [ ] Chẩn đoán và khắc phục tình trạng ứng dụng tự thoát sau bản 1.0.45 mà không làm mất phiên hoặc tính năng hiện có.
+- [ ] Khắc phục hồi quy gửi/nhận và hiển thị chat sau bản 1.0.45, có kiểm thử cho các luồng tin nhắn cốt lõi.
+- [ ] Khoanh vùng và khắc phục việc gọi thoại, gọi video và chia sẻ màn hình không hoạt động; không kết luận media thật khi chưa nghiệm thu hai Android.
+- [ ] Phát hành APK signed bản sửa hồi quy với định danh mới sau khi các cổng kiểm thử đạt và có checklist nghiệm thu thiết bị.
