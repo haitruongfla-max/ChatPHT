@@ -460,3 +460,4 @@
 - [ ] Thêm chẩn đoán crash Android tối thiểu, không lộ dữ liệu cá nhân hoặc secret, để có bằng chứng nếu lỗi không tái hiện trong môi trường build.
 - [ ] Kiểm thử luồng khởi động, đăng nhập và chat trên APK signed mới trước khi tiếp tục bất kỳ sửa chữa gọi nào.
 - [x] Cổng nguồn 1.0.44/vc48 đã đạt: TypeScript, lint không lỗi, backend build, Expo config/export Android, diff sạch và 119 test pass; 2 test credential skip có chủ đích.
+- [x] GitHub Actions run 33032230487 đã tạo Release 1.0.44/vc48; APK được tải lại, xác minh định dạng và SHA-256 khớp asset phát hành.
