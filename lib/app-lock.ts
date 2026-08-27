@@ -19,26 +19,39 @@ function webStorage() {
 }
 
 async function readPin() {
-  const storage = webStorage();
-  return storage ? storage.getItem(PIN_KEY) : SecureStore.getItemAsync(PIN_KEY);
+  try {
+    const storage = webStorage();
+    return storage ? storage.getItem(PIN_KEY) : await SecureStore.getItemAsync(PIN_KEY);
+  } catch {
+    // Không để dữ liệu khóa hỏng hoặc SecureStore lỗi làm sập ứng dụng lúc mở.
+    return null;
+  }
 }
 
 async function writePin(pin: string) {
-  const storage = webStorage();
-  if (storage) {
-    storage.setItem(PIN_KEY, pin);
-    return;
+  try {
+    const storage = webStorage();
+    if (storage) {
+      storage.setItem(PIN_KEY, pin);
+      return;
+    }
+    await SecureStore.setItemAsync(PIN_KEY, pin, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+  } catch {
+    throw new Error("Không thể lưu mã khóa trên thiết bị này. Vui lòng thử lại.");
   }
-  await SecureStore.setItemAsync(PIN_KEY, pin, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
 }
 
 async function removePin() {
-  const storage = webStorage();
-  if (storage) {
-    storage.removeItem(PIN_KEY);
-    return;
+  try {
+    const storage = webStorage();
+    if (storage) {
+      storage.removeItem(PIN_KEY);
+      return;
+    }
+    await SecureStore.deleteItemAsync(PIN_KEY);
+  } catch {
+    // Xóa khóa là thao tác dọn dẹp; không để lỗi storage làm hỏng phiên hiện tại.
   }
-  await SecureStore.deleteItemAsync(PIN_KEY);
 }
 
 export async function hasAppLockPin() {

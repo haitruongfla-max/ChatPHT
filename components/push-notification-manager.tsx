@@ -5,7 +5,7 @@ import {
   storePushToken,
 } from "@/lib/push-notifications";
 import { trpc } from "@/lib/trpc";
-import { router, usePathname } from "expo-router";
+import { router } from "expo-router";
 import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useRef } from "react";
 import { AppState, Platform } from "react-native";
@@ -27,17 +27,9 @@ function openNotification(data: unknown) {
 }
 
 export function PushNotificationManager() {
-  const { user, refresh } = useAuth();
-  const pathname = usePathname();
+  const { user } = useAuth();
   const { mutateAsync: registerDevice } = trpc.notifications.registerDevice.useMutation();
   const registeredToken = useRef<string | null>(null);
-
-  // Login and logout occur in route screens while this manager stays mounted
-  // at the root. Refresh the local auth snapshot on navigation so the device
-  // token is registered as soon as a newly signed-in user reaches the app.
-  useEffect(() => {
-    void refresh();
-  }, [pathname, refresh]);
 
   // A device token belongs to the authenticated account. Clear the in-memory
   // guard when the account changes so a subsequent login registers the token

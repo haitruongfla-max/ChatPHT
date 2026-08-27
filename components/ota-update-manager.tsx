@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { Alert, AppState, Platform } from "react-native";
 
 import { canCheckForOtaUpdate, OTA_FOREGROUND_CHECK_INTERVAL_MS } from "@/lib/ota-update-policy";
+import { useAuth } from "@/hooks/use-auth";
 
 /**
  * EAS Updates already checks on launch through app.config.ts. This manager adds a
@@ -10,10 +11,12 @@ import { canCheckForOtaUpdate, OTA_FOREGROUND_CHECK_INTERVAL_MS } from "@/lib/ot
  * update. Native changes still require an APK.
  */
 export function OtaUpdateManager() {
+  const { user } = useAuth();
   const lastCheckAt = useRef(0);
   const checkRunning = useRef(false);
 
   useEffect(() => {
+    if (!user) return;
     async function checkForUpdate() {
       const now = Date.now();
       const allowed = canCheckForOtaUpdate({
@@ -63,7 +66,7 @@ export function OtaUpdateManager() {
       void checkForUpdate();
     });
     return () => subscription.remove();
-  }, []);
+  }, [user]);
 
   return null;
 }

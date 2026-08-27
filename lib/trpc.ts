@@ -60,11 +60,11 @@ export function createTRPCClient() {
           const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
           if (response.status === 429) {
             apiCooldownUntil = Date.now() + getRetryAfterMs(response);
-            const preview = (await response.clone().text()).replace(/\s+/g, " ").trim().slice(0, 80);
+            const preview = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 80);
             throw new Error(`Máy chủ ChatPHT đang tạm giới hạn yêu cầu (HTTP 429). ${preview ? "Vui lòng đợi ít giây rồi thử lại." : ""}`);
           }
           if (!contentType.includes("application/json")) {
-            const preview = (await response.clone().text()).replace(/\s+/g, " ").trim().slice(0, 80);
+            const preview = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 80);
             throw new Error(`Máy chủ ChatPHT trả về dữ liệu không hợp lệ (HTTP ${response.status}; ${contentType || "không có Content-Type"}). ${preview ? "Vui lòng thử lại khi mạng ổn định." : ""}`);
           }
           return response;

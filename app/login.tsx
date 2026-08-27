@@ -1,7 +1,8 @@
 import * as Auth from "@/lib/_core/auth";
+import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -22,6 +23,7 @@ function formatError(error: unknown) {
 }
 
 export default function LoginScreen() {
+  const { refresh } = useAuth();
   const [mode, setMode] = useState<AuthMode>("login");
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
@@ -30,23 +32,26 @@ export default function LoginScreen() {
   const login = trpc.auth.login.useMutation();
   const signup = trpc.auth.signup.useMutation();
   const submitting = login.isPending || signup.isPending;
-
-  useEffect(() => {
-    void Auth.getUserInfo().then((user) => {
-      if (user) router.replace("/(tabs)");
-    });
-  }, []);
+  const submitLocked = useRef(false);
 
   const completeAuth = async (result: { token: string; user: Auth.User }) => {
     await Auth.setSessionToken(result.token);
     await Auth.setUserInfo(result.user);
+    await refresh();
     router.replace("/(tabs)");
   };
 
   const submit = async () => {
+    if (submitting || submitLocked.current) return;
     setError(null);
+    const normalizedUsername = username.trim().toLowerCase();
+    if (!normalizedUsername || !password) {
+      setError("Vui lòng nhập tên người dùng và mật khẩu.");
+      return;
+    }
+
+    submitLocked.current = true;
     try {
-      const normalizedUsername = username.trim().toLowerCase();
       if (mode === "signup") {
         await completeAuth(await signup.mutateAsync({ displayName: displayName.trim(), username: normalizedUsername, password }));
       } else {
@@ -54,6 +59,8 @@ export default function LoginScreen() {
       }
     } catch (cause) {
       setError(formatError(cause));
+    } finally {
+      submitLocked.current = false;
     }
   };
 

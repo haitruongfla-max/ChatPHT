@@ -455,3 +455,8 @@
 - [ ] Chạy hồi quy, tăng định danh phát hành và tạo APK GitHub signed mới chỉ sau khi các lỗi trên được sửa và xác minh.
 - [x] Cổng nguồn 1.0.43/vc47 đã đạt: TypeScript, lint không lỗi, backend build, Expo config/export Android, diff sạch và 115 test pass; 2 test credential skip có chủ đích.
 - [x] GitHub Actions run 33028497986 đã tạo Release 1.0.43/vc47; APK được tải lại, xác minh định dạng và SHA-256 khớp asset phát hành.
+- [ ] Khẩn cấp tái hiện và chặn crash khởi động/đăng nhập lặp lại của APK 1.0.43 trên Android, ưu tiên đường đi không yêu cầu gọi WebRTC.
+- [ ] Xác định nguồn HTTP 429 kéo dài ở endpoint đăng nhập và thay đổi giới hạn/retry để không chặn người dùng hợp lệ.
+- [ ] Thêm chẩn đoán crash Android tối thiểu, không lộ dữ liệu cá nhân hoặc secret, để có bằng chứng nếu lỗi không tái hiện trong môi trường build.
+- [ ] Kiểm thử luồng khởi động, đăng nhập và chat trên APK signed mới trước khi tiếp tục bất kỳ sửa chữa gọi nào.
+- [x] Cổng nguồn 1.0.44/vc48 đã đạt: TypeScript, lint không lỗi, backend build, Expo config/export Android, diff sạch và 119 test pass; 2 test credential skip có chủ đích.

@@ -23,6 +23,8 @@ import { PushNotificationManager } from "@/components/push-notification-manager"
 import { PresenceManager } from "@/components/presence-manager";
 import { CallingProvider } from "@/components/calling-manager";
 import { OtaUpdateManager } from "@/components/ota-update-manager";
+import { AuthProvider } from "@/hooks/use-auth";
+import { StartupErrorBoundary } from "@/components/startup-error-boundary";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -91,7 +93,8 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
-          <CallingProvider>
+          <AuthProvider>
+            <CallingProvider>
             {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
             {/* If a screen needs the native header, explicitly enable it and set a human title via Stack.Screen options. */}
             {/* in order for ios apps tab switching to work properly, use presentation: "fullScreenModal" for login page, whenever you decide to use presentation: "modal*/}
@@ -106,8 +109,9 @@ export default function RootLayout() {
             <PushNotificationManager />
             <PresenceManager />
             <OtaUpdateManager />
-            <AppLockGate />
-          </CallingProvider>
+              <AppLockGate />
+            </CallingProvider>
+          </AuthProvider>
           <StatusBar style="auto" />
         </QueryClientProvider>
       </trpc.Provider>
@@ -132,7 +136,9 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider>
-      <SafeAreaProvider initialMetrics={providerInitialMetrics}>{content}</SafeAreaProvider>
+      <SafeAreaProvider initialMetrics={providerInitialMetrics}>
+        <StartupErrorBoundary>{content}</StartupErrorBoundary>
+      </SafeAreaProvider>
     </ThemeProvider>
   );
 }

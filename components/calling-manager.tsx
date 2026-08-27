@@ -11,6 +11,11 @@ type CallingContextValue = {
 };
 
 const CallingContext = createContext<CallingContextValue | null>(null);
+const signedOutCallingValue: CallingContextValue = {
+  startCall: async () => {
+    throw new Error("Vui lòng đăng nhập trước khi thực hiện cuộc gọi.");
+  },
+};
 
 /**
  * Sở hữu một controller WebRTC duy nhất trong toàn app. Vì manager sống cùng app shell,
@@ -19,10 +24,18 @@ const CallingContext = createContext<CallingContextValue | null>(null);
  */
 export function CallingProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const controller = useWebRTC({ userId: user?.id });
+  if (!user) {
+    return <CallingContext.Provider value={signedOutCallingValue}>{children}</CallingContext.Provider>;
+  }
+
+  return <AuthenticatedCallingProvider userId={user.id}>{children}</AuthenticatedCallingProvider>;
+}
+
+/** Chỉ mount sau đăng nhập để useWebRTC không chạm native module ở màn hình login. */
+function AuthenticatedCallingProvider({ children, userId }: { children: ReactNode; userId: number }) {
+  const controller = useWebRTC({ userId });
   const [peerName, setPeerName] = useState("Liên hệ ChatPHT");
   const incoming = trpc.calling.incoming.useQuery(undefined, {
-    enabled: Boolean(user),
     refetchInterval: 8_000,
     refetchOnMount: true,
   });

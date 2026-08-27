@@ -1,17 +1,18 @@
-# ChatPHT 1.0.43 — Stability Recovery
+# ChatPHT 1.0.44 — Startup & Login Recovery
 
-## Khôi phục độ ổn định chat
+## Khắc phục khởi động và đăng nhập
 
-- Giảm đáng kể tần suất polling ở hộp thư, hội thoại, trạng thái gõ, hiện diện và lịch sử gọi để tránh bão request, giảm giật giao diện và giảm nguy cơ backend/proxy trả HTTP 429.
-- Khi backend đang giới hạn yêu cầu, ứng dụng tôn trọng thời gian chờ và không nhân đôi retry. Phản hồi HTML/non-JSON tiếp tục được báo rõ thay vì gây lỗi parse mơ hồ.
-- Bỏ một invalidation không cần thiết sau khi đánh dấu đã đọc, giảm tải lại danh sách tin khi người dùng chỉ mở hội thoại.
+- Hợp nhất trạng thái xác thực: chỉ một provider đọc phiên cục bộ khi mở app, loại bỏ lượt đọc song song trên màn hình đăng nhập có thể gây chuyển màn hình chồng chéo hoặc giao diện thiếu mượt.
+- Chặn gửi đăng nhập/tạo tài khoản đồng thời; một lần chạm chỉ tạo một yêu cầu, đồng thời báo rõ khi thiếu thông tin.
+- Gia cố đọc dữ liệu phiên và khóa cục bộ: lỗi SecureStore hoặc dữ liệu cũ không hợp lệ không được phép làm hỏng quá trình mở ứng dụng.
+- Thêm màn hình khôi phục an toàn cho lỗi render JavaScript thay vì để người dùng chỉ thấy ứng dụng bị thoát.
 
-## Ổn định gọi 1:1
+## Giảm quá tải máy chủ
 
-- Socket.IO vẫn là đường signaling chính. Khi event lời mời tạm rơi, ứng dụng dùng truy vấn cuộc gọi đến làm đường dự phòng để máy nhận còn đang mở app có thể nhìn thấy lời mời.
-- Gia cố các thao tác native nhạy cảm khi xử lý tín hiệu, đổi camera, đổi loa, dừng chia sẻ màn hình và giải phóng peer/track. Lỗi riêng lẻ được ghi thành trạng thái có thể đóng thay vì làm chặn cleanup giao diện.
+- Bảo toàn các chốt giảm polling/retry ở bản trước, không nhân đôi yêu cầu khi máy chủ tạm trả HTTP 429 hoặc nội dung HTML.
+- Ngày phát hành, backend công khai phản hồi `200` với kiểm tra sức khỏe và tRPC tối thiểu. Nếu 429 vẫn lặp lại ở một tài khoản, cần log Android để phân biệt lưu lượng thực tế với giới hạn hạ tầng.
 
 ## Lưu ý nghiệm thu
 
-- Bản này đã qua kiểm thử nguồn và hồi quy tự động. Cần tiếp tục thử gửi text, mở hội thoại và gọi Voice/Video/Screen bằng **hai Android thật**, trước trên Wi-Fi rồi qua 4G.
+- Bản này đã qua kiểm thử nguồn. Cần cài đè và thử mở app, đăng nhập, mở chat và gửi text trên Android thật trước khi kết luận lỗi buộc đóng đã hết.
 - Chưa khẳng định audio, video hoặc chia sẻ màn hình P2P hoạt động trên thiết bị thật nếu chưa có nghiệm thu hai máy. Trường hợp ứng dụng bị hệ điều hành tắt hẳn vẫn cần push/native-call riêng để báo cuộc gọi đến.
