@@ -454,3 +454,4 @@
 - [ ] Truy vết riêng lỗi gọi 1:1 từ bản Android thật, không kết luận audio/video/screen hoạt động trước khi có bằng chứng hai thiết bị.
 - [ ] Chạy hồi quy, tăng định danh phát hành và tạo APK GitHub signed mới chỉ sau khi các lỗi trên được sửa và xác minh.
 - [x] Cổng nguồn 1.0.43/vc47 đã đạt: TypeScript, lint không lỗi, backend build, Expo config/export Android, diff sạch và 115 test pass; 2 test credential skip có chủ đích.
+- [x] GitHub Actions run 33028497986 đã tạo Release 1.0.43/vc47; APK được tải lại, xác minh định dạng và SHA-256 khớp asset phát hành.
